@@ -1,0 +1,6 @@
+index: index 9 is out of range for a list of length 2 at line 3
+fail custom problem errors_caught.ok
+2
+null -1
+default
+key

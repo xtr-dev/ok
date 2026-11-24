@@ -1,0 +1,7 @@
+10 30 3 [10, 20, 30, 40] [0, 10, 20, 30]
+ana 34 {name: "bo"} {name: "ana", age: 35} 2
+null null none
+[10, 20, 30] [99, 20, 30, 40]
+{server: {port: 8080}, tags: ["a"], "log-level": "debug"}
+{server: {port: 80}, tags: []}
+true false

@@ -1,0 +1,7 @@
+import "./helpers.ok"
+
+let pi_ish = 3.14
+let _hidden = "not exported"
+
+fn square(x) { x * x }
+fn twice_square(x) { double(square(x)) }

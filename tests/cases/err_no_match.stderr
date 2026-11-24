@@ -1,0 +1,7 @@
+error[value]: no match arm matches 5
+ --> err_no_match.ok:1:9
+  |
+1 | let x = match 5 {
+  |         ^^^^^^^^^
+  |
+  = help: add a `_ => ...` arm for all other values

@@ -1,0 +1,7 @@
+error[type]: cannot use `+` on a string and an int
+ --> err_string_plus.ok:2:7
+  |
+2 | print("n = " + n)
+  |       ^^^^^^^^^^
+  |
+  = help: build strings with interpolation: "{a}{b}"

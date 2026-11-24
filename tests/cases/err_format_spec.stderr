@@ -1,0 +1,5 @@
+error[format]: unknown format type `q` in `q`; use one of d f e x X o b %
+ --> err_format_spec.ok:1:9
+  |
+1 | print("{3:q}")
+  |         ^

@@ -1,0 +1,6 @@
+# A script with main and no required parameters runs it.
+let setup = "top-level runs first"
+print(setup)
+fn main(--verbose: bool) {
+  print("main ran, verbose = {verbose}")
+}

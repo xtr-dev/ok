@@ -1,0 +1,8 @@
+error[fail]: negative value: -1
+ --> err_fail.ok:2:14
+  |
+2 |   if v < 0 { fail("negative value: {v}") }
+  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = in `check`, called at err_fail.ok:5:14
+  = in `outer`, called at err_fail.ok:6:1

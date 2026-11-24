@@ -1,0 +1,5 @@
+error[value]: integer overflow: the result does not fit in 64 bits
+ --> err_overflow.ok:1:7
+  |
+1 | print(9223372036854775807 + 1)
+  |       ^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,7 @@
+error[syntax]: `.name` shorthand needs an argument to belong to
+ --> err_shorthand_alone.ok:2:4
+  |
+2 | if .active { print(users) }
+  |    ^
+  |
+  = help: use it as an argument, like where(.active) or | sort .name, or write a closure: x => x.name

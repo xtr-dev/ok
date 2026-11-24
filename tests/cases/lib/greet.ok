@@ -1,0 +1,6 @@
+# A library: only declarations.
+let greeting = "Hello"
+
+fn hello(name: string) {
+  "{greeting}, {name}!"
+}

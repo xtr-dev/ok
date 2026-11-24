@@ -1,0 +1,2 @@
+fn greet(name, --loud: bool) { name }
+greet("a", lound: true)

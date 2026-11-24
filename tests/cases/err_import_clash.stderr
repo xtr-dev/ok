@@ -1,0 +1,7 @@
+error[name]: `hello` from lib/clash.ok clashes with a name already declared here
+ --> err_import_clash.ok:2:8
+  |
+2 | import "lib/clash.ok"
+  |        ^^^^^^^^^^^^^^
+  |
+  = help: import it under a name instead: import "lib/clash.ok" as lib

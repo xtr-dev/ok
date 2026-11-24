@@ -1,0 +1,5 @@
+error[value]: list pattern expects 2 elements, got 3
+ --> err_destructure_len.ok:1:5
+  |
+1 | let [a, b] = [1, 2, 3]
+  |     ^^^^^^

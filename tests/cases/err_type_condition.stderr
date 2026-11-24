@@ -1,0 +1,7 @@
+error[type]: `if` needs a bool, got a list
+ --> err_type_condition.ok:2:4
+  |
+2 | if files { print(1) }
+  |    ^^^^^
+  |
+  = help: to test for an empty list use `len(xs) > 0` or `xs != []`

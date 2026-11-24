@@ -1,0 +1,57 @@
+# Functions, defaults, named flags, rest parameters, closures (SPEC.md 5.10, 7.2).
+
+# Greet someone.
+fn greet(name: string, --greeting: string = "Hello", --loud: bool) {
+  let text = "{greeting}, {name}"
+  if loud { return "{text}!" }
+  text
+}
+print(greet("Ana"))
+print(greet("Bo", greeting: "Hi", loud: true))
+
+fn total(first: int, ...rest: int) {
+  var sum = first
+  for x in rest { sum += x }
+  sum
+}
+print(total(1), total(1, 2, 3), total(...[4, 5, 6]))
+
+fn ratio(a: float, b: float) { a / b }
+print(ratio(1, 4))
+
+fn open(p: path) { p.name }
+print(open("dir/file.txt"))
+
+fn maybe(x: int?) { x ?? "none" }
+print(maybe(null), maybe(3))
+
+# Recursion and hoisting: fib is used before its declaration.
+print(fib(15))
+fn fib(n) { if n < 2 { n } else { fib(n - 1) + fib(n - 2) } }
+
+# Closures capture variables by reference.
+fn counter() {
+  var count = 0
+  fn next() {
+    count += 1
+    count
+  }
+  next
+}
+let next = counter()
+next()
+next()
+print(next())
+
+let add = (a, b) => a + b
+let double = x => x * 2
+let shout = fn(s) {
+  let up = s + "!"
+  up
+}
+print(add(2, 3), double(21), shout("hey"))
+
+fn apply(value, f) { f(value) }
+print(apply({name: "ok", stars: 3}, .name), apply({n: 4}, .n * 10))
+let by_name = .name
+print(by_name({name: "implicit"}))

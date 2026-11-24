@@ -1,0 +1,2 @@
+# Without main, arguments arrive as the list `args`.
+print(args, len(args))

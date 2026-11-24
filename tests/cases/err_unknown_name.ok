@@ -1,0 +1,2 @@
+let release = true
+if relase { print(1) }

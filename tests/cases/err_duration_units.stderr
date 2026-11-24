@@ -1,0 +1,7 @@
+error[syntax]: invalid duration literal
+ --> err_duration_units.ok:1:9
+  |
+1 | let t = 2min
+  |         ^^^^
+  |
+  = help: durations use the units ms, s, m, h and d, as in 250ms or 1h30m

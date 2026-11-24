@@ -1,0 +1,36 @@
+# if/else, loops, break/continue, match (SPEC.md 6.5, 6.6, 7.3).
+let n = 7
+let size = if n > 5 { "big" } else if n > 2 { "medium" } else { "small" }
+print(size)
+print(if false { 1 })
+
+for x in [1, 2, 3] {
+  if x == 2 { continue }
+  print("x", x)
+}
+for i, x in ["a", "b"] { print(i, x) }
+for k, v in ({one: 1, two: 2}) { print(k, v) }
+for k in ({one: 1, two: 2}) { print(k) }
+
+var i = 0
+while true {
+  i += 1
+  if i >= 3 { break }
+}
+print("i", i)
+
+for v in [0, -1.5, "windows", "linux", null, 42] {
+  let label = match v {
+    0 => "zero"
+    -1.5 => "negative"
+    "windows" => "win"
+    "linux" | "macos" => "unix"
+    null => "nothing"
+    other if other > 40 => "big {other}"
+    _ => "other"
+  }
+  print(label)
+}
+
+for r in range(3) { print("r", r) }
+print(range(2, 10, 3), range(5, 0, -2))

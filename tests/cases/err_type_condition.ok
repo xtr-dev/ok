@@ -1,0 +1,2 @@
+let files = [1]
+if files { print(1) }

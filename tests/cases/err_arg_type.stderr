@@ -1,0 +1,7 @@
+error[type]: argument `p` of `open` must be a path, got an int
+ --> err_arg_type.ok:2:1
+  |
+2 | open(42)
+  | ^^^^^^^^
+  |
+  = note: `open` is declared at err_arg_type.ok:1:4

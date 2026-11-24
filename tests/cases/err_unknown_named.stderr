@@ -1,0 +1,7 @@
+error[arg]: `greet` has no parameter `lound`
+ --> err_unknown_named.ok:2:12
+  |
+2 | greet("a", lound: true)
+  |            ^^^^^
+  |
+  = help: did you mean `loud`?

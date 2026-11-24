@@ -1,0 +1,7 @@
+error[syntax]: an imported file can only declare fn, constant let and import
+ --> lib/side_effect.ok:1:1
+  |
+1 | print("libraries cannot do this")
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: importing never runs code; move this into a function

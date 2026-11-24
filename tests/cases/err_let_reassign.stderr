@@ -1,0 +1,7 @@
+error[name]: cannot assign to `n`: it was declared with let
+ --> err_let_reassign.ok:2:1
+  |
+2 | n = 2
+  | ^
+  |
+  = help: declare it with `var n = ...` to change it

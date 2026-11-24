@@ -1,0 +1,8 @@
+error[key]: the record has no field `emial`
+ --> err_missing_field.ok:2:12
+  |
+2 | print(user.emial)
+  |            ^^^^^
+  |
+  = note: use `.emial?` to get null instead of an error
+  = help: did you mean `email`?

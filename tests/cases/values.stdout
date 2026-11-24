@@ -1,0 +1,11 @@
+null true false
+42 -7 31 1000000
+1.5 2.0 0.30000000000000004 1000.0
+text raw\n
+[1, "two", [3.0], null]
+{name: "ok", "content-type": "json", nested: {a: [1]}}
+a/b/c [path("x/y")]
+250ms 1.5s 1m30s 1h30m 7d -2m 0s
+int float string list record null path duration fn
+<fn print>
+<bytes 6> 6

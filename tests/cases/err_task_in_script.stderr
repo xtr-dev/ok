@@ -1,0 +1,7 @@
+error[syntax]: tasks can only be declared in project files (ok.ok and ok/*.ok)
+ --> err_task_in_script.ok:1:6
+  |
+1 | task build {
+  |      ^^^^^
+  |
+  = help: use fn for a function in a script

@@ -1,0 +1,6 @@
+fn check(v) {
+  if v < 0 { fail("negative value: {v}") }
+  v
+}
+fn outer() { check(-1) }
+outer()

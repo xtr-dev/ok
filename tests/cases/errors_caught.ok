@@ -1,0 +1,22 @@
+# try/catch, ? and ?? (SPEC.md 6.2, 6.7, 10.2).
+let r = try {
+  [1, 2][9]
+} catch e {
+  "{e.kind}: {e.message} at line {e.line}"
+}
+print(r)
+
+let v = try { fail("custom problem") } catch err { err }
+print(v.kind, v.message, v.file)
+
+print(try { 1 + 1 } catch { 0 })
+print(int("x")?, int("x")? ?? -1)
+print({a: {b: 1}}.a.c? ?? "default")
+
+# A caught error can be raised again unchanged.
+let again = try {
+  try { {}.missing } catch e { fail(e) }
+} catch outer {
+  outer.kind
+}
+print(again)

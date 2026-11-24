@@ -1,0 +1,7 @@
+error[syntax]: `&&` is not an ok operator
+ --> err_shell_and.ok:1:14
+  |
+1 | let a = true && false
+  |              ^^
+  |
+  = help: use `and`, as in `a and b`

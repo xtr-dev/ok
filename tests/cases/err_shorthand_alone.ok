@@ -1,0 +1,2 @@
+let users = []
+if .active { print(users) }

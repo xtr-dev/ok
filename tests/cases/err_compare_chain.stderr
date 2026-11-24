@@ -1,0 +1,7 @@
+error[syntax]: comparisons cannot be chained
+ --> err_compare_chain.ok:1:13
+  |
+1 | print(1 < 2 < 3)
+  |             ^
+  |
+  = help: combine them with `and`: a < b and b < c

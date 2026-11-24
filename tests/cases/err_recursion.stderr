@@ -1,0 +1,7 @@
+error[value]: too much recursion: more than 2000 nested calls
+ --> err_recursion.ok:1:17
+  |
+1 | fn forever(n) { forever(n + 1) }
+  |                 ^^^^^^^^^^^^^^
+  |
+  = in `forever`, called at err_recursion.ok:1:17 (repeated)

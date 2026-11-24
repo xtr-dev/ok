@@ -1,0 +1,7 @@
+error[name]: no function `lenght` to call on a string
+ --> err_method_unknown.ok:2:9
+  |
+2 | print(s.lenght())
+  |         ^^^^^^
+  |
+  = help: use `len(x)`

@@ -1,0 +1,2 @@
+fn count(xs) { len(xs) }
+let n = [1, 2] | count > 3

@@ -1,0 +1,7 @@
+error[syntax]: a pipeline stage must be a call
+ --> err_pipeline_stage.ok:2:18
+  |
+2 | let n = [1, 2] | count > 3
+  |                  ^^^^^^^^^
+  |
+  = help: to use `>` on the result, wrap the pipeline in parentheses: (a | f) > b

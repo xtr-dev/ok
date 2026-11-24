@@ -1,0 +1,12 @@
+# Display forms of every kind of value (SPEC.md 5.1).
+print(null, true, false)
+print(42, -7, 0x1F, 1_000_000)
+print(1.5, 2.0, 0.1 + 0.2, 1e3)
+print("text", 'raw\n')
+print([1, "two", [3.0], null])
+print({name: "ok", "content-type": "json", nested: {a: [1]}})
+print(path("a//b/./c/"), [path("x/y")])
+print(250ms, 1.5s, 90s, 1h30m, 7d, -2m, 0s)
+print(type(1), type(1.0), type("s"), type([]), type({}), type(null), type(path(".")), type(5s), type(print))
+print(print)
+print(bytes("héllo"), len(bytes("héllo")))

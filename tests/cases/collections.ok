@@ -1,0 +1,24 @@
+# Lists and records: indexing, spread, shorthand and value semantics (SPEC.md 5.2, 5.7).
+let xs = [10, 20, 30]
+print(xs[0], xs[-1], len(xs), [...xs, 40], [0, ...xs])
+let user = {name: "ana", age: 34}
+let name = "bo"
+print(user.name, user["age"], {name}, {...user, age: 35}, len(user))
+print(xs[5]?, user.email?, user.email? ?? "none")
+
+# Value semantics: changing a var copy never changes the original.
+var copy = xs
+copy[0] = 99
+copy += [40]
+print(xs, copy)
+
+var cfg = {server: {port: 80}, tags: []}
+let snapshot = cfg
+cfg.server.port = 8080
+cfg["log-level"] = "debug"
+cfg.tags += ["a"]
+print(cfg)
+print(snapshot)
+
+# Records compare as maps, lists in order.
+print({a: 1, b: 2} == {b: 2, a: 1}, [1, 2] == [2, 1])

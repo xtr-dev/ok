@@ -1,0 +1,2 @@
+fn forever(n) { forever(n + 1) }
+forever(0)

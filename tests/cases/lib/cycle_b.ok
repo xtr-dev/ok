@@ -1,0 +1,2 @@
+import "./cycle_a.ok"
+fn b() { 2 }

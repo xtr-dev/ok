@@ -1,0 +1,5 @@
+error[syntax]: unterminated string: missing closing `"`
+ --> err_unterminated.ok:1:7
+  |
+1 | print("oops)
+  |       ^

@@ -1,0 +1,7 @@
+error[index]: index 3 is out of range for a list of length 3
+ --> err_index.ok:2:10
+  |
+2 | print(xs[3])
+  |          ^
+  |
+  = note: use `xs[i]?` to get null instead of an error

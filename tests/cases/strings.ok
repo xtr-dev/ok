@@ -1,0 +1,20 @@
+# Strings, escapes, interpolation and format specs (SPEC.md 3.5, 12.6).
+let name = "Bas"
+let n = 1234567
+print("Hello, {name}! {1 + 1} \{literal\} tab:\t|")
+print('raw {name} \n stays')
+print("{n:,} {n:>12,} {3.14159:.2f} {0.256:.1%} {255:x} {255:08b}")
+print("[{"left":<8}] [{"right":>8}] [{"mid":^9}] [{"x":*^5}]")
+print("unicode: \u{1F600} é {len("héllo")}")
+let msg = """
+  Hello {name},
+    indented line
+  done.
+  """
+print(msg)
+print('''
+    raw block {name}
+    second''')
+print(fmt(3.5, "06.2f"), fmt("ab", ".1"))
+let s = "héllo"
+print(s[0], s[-1], len(s))

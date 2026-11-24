@@ -1,0 +1,5 @@
+error[io]: cannot import "lib/nope.ok": no such file
+ --> err_import_missing.ok:1:8
+  |
+1 | import "lib/nope.ok"
+  |        ^^^^^^^^^^^^^

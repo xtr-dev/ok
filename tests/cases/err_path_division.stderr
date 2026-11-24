@@ -1,0 +1,7 @@
+error[type]: cannot use `/` on a string and a string
+ --> err_path_division.ok:1:11
+  |
+1 | let out = "build" / "out"
+  |           ^^^^^^^^^^^^^^^
+  |
+  = help: to join paths, start with a path: path("build") / "out"

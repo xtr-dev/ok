@@ -1,0 +1,8 @@
+# let/var patterns (SPEC.md 7.1).
+let [major, minor, patch] = [1, 2, 3]
+print(major, minor, patch)
+let [first, ...rest] = ["a", "b", "c"]
+print(first, rest)
+let {name, owner: {login}} = {name: "ok", owner: {login: "bas", id: 1}}
+print(name, login)
+for {k, v} in [{k: "x", v: 1}, {k: "y", v: 2}] { print(k, v) }

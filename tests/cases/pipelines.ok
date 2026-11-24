@@ -1,0 +1,25 @@
+# Pipelines pass the left value as the first argument (SPEC.md 8).
+fn add(x, n) { x + n }
+fn twice(x) { x * 2 }
+fn pick(r, key) { r[key] }
+fn keep(xs, pred) {
+  var out = []
+  for x in xs {
+    if pred(x) { out += [x] }
+  }
+  out
+}
+
+print(5 | twice)
+print(5 | add(10) | twice)
+print(5 | add 1)
+print([1, 2, 3, 4] | keep(x => x % 2 == 0))
+print([{n: 1, ok: true}, {n: 2, ok: false}, {n: 3, ok: true}] | keep .ok and .n > 1)
+print({a: 1} | .a)
+print(3 | (x => x * 100))
+let result = [1, 2, 3]
+  | keep(x => x > 1)
+  | len
+print(result)
+let lib = {inc: x => x + 1}
+print(41 | lib.inc)

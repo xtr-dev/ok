@@ -1,0 +1,7 @@
+# Imports: all exported names, or a namespace with `as` (SPEC.md 11).
+import "./lib/greet.ok"
+import "lib/math.ok" as math
+
+print(hello("ok"))
+print(math.square(7), math.pi_ish, math.twice_square(3))
+print(type(math), math._hidden?)

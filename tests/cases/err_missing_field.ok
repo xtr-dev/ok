@@ -1,0 +1,2 @@
+let user = {name: "ana", email: "a@x"}
+print(user.emial)

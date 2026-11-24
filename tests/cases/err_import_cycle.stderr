@@ -1,0 +1,5 @@
+error[name]: import cycle: lib/cycle_a.ok -> lib/cycle_b.ok -> lib/cycle_a.ok
+ --> lib/cycle_b.ok:1:8
+  |
+1 | import "./cycle_a.ok"
+  |        ^^^^^^^^^^^^^^
