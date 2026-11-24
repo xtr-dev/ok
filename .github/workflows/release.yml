@@ -3,9 +3,9 @@
 # Publishing the release (and crates.io) is done by hand by the project owner.
 name: Release
 
+# Tag pushes no longer start this workflow automatically (CI is off for
+# now); run it by hand. Restore `push: tags: ["v*"]` to switch it back on.
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -87,7 +87,7 @@ jobs:
           sha256sum ok-* > SHA256SUMS
           cat SHA256SUMS
       - name: Create draft release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/')  # run by hand on a tag ref
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "${GITHUB_REF_NAME}" dist/* --draft --title "ok ${GITHUB_REF_NAME}" --notes-file <(sed -n "/^## \[${GITHUB_REF_NAME#v}\]/,/^## \[/p" CHANGELOG.md | sed '$d')

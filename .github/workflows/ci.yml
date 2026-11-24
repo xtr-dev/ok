@@ -1,9 +1,10 @@
 name: CI
 
+# Automatic runs are switched off for now (checks run locally, see
+# CLAUDE.md). Start a run by hand from the Actions tab when needed; restore
+# the push/pull_request triggers to switch CI back on.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -77,3 +78,16 @@ jobs:
           tool: cargo-about
       - run: cargo about generate about.hbs > THIRD_PARTY.md
       - run: git diff --exit-code THIRD_PARTY.md
+
+  fuzz:
+    name: fuzz lexer and parser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      # rust-toolchain.toml pins stable, so nightly is selected explicitly.
+      - run: cargo +nightly fuzz run lex -- -max_total_time=60
+      - run: cargo +nightly fuzz run parse -- -max_total_time=60
