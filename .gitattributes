@@ -2,3 +2,6 @@
 *.cmd text eol=crlf
 *.bat text eol=crlf
 *.ps1 text eol=crlf
+# Data fixtures keep their exact bytes (BOM, CRLF) because tests depend on them.
+examples/**/*.csv -text
+tests/fixtures/** -text
