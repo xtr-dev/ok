@@ -29,8 +29,10 @@ The toolchain is pinned in `rust-toolchain.toml`.
 | licences | `ok deny` | `cargo deny check` |
 | notices | `ok third-party` | `cargo about generate about.hbs > THIRD_PARTY.md` |
 
-CI runs format, clippy and tests on Linux, macOS and Windows, plus cargo-deny
-and a check that `THIRD_PARTY.md` is current.
+CI (format, clippy and tests on Linux, macOS and Windows, cargo-deny, a
+`THIRD_PARTY.md` check and fuzzing) is currently switched off and runs only
+when started by hand from the Actions tab. Run the checks listed in
+`CLAUDE.md` locally before committing.
 
 ## Golden tests
 

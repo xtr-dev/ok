@@ -12,9 +12,10 @@ repo and code are built. The original brief is `PROMPT.md`.
 
 ## Current state
 
-- Milestone: **M0 (spec and examples)**, waiting for review. No interpreter
-  code yet; `crates/okrun/src/main.rs` is a placeholder that answers
-  `ok self version`.
+- Milestone: **M1 (core interpreter)** done, waiting for review. Scripts run
+  with `ok file.ok` and `ok -e`; `run`, data formats, the file/env/net
+  stdlib, `main` argument parsing, project mode and trust are later
+  milestones and report "not implemented yet (milestone Mx)".
 - Milestones are in `PROMPT.md`. Stop after each one, report to Bas, and wait
   for a go-ahead.
 - GitHub: private repo `xtr-dev/ok`. Never make it public and never publish
@@ -33,7 +34,28 @@ cargo fmt --all --check             # CI format check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo deny check                    # licences, advisories, sources
 cargo about generate about.hbs > THIRD_PARTY.md
+OK_BLESS=1 cargo test --test golden # regenerate golden expectations, then review git diff
+cargo +nightly fuzz run parse -- -max_total_time=300   # needs nightly + cargo-fuzz
 ```
+
+## Local checks (CI is switched off)
+
+GitHub Actions runs only when started by hand (`workflow_dispatch`); Bas
+asked for local checks only for now. Before every commit run, in order:
+
+```
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo deny check
+cargo about generate about.hbs > THIRD_PARTY.md && git diff --exit-code THIRD_PARTY.md
+```
+
+and at the end of a milestone also `cargo +nightly fuzz run lex -- -max_total_time=60`
+and the same for `parse`. Local checks cover Linux only: macOS and Windows
+behaviour is unverified until CI is switched back on (restore the `push` /
+`pull_request` triggers in `.github/workflows/ci.yml`), so mention that in
+milestone reports.
 
 ## Layout
 
@@ -55,10 +77,26 @@ deny.toml, about.toml, about.hbs   licence tooling
 .github/workflows/      ci.yml (fmt, clippy, test x3 OS, deny, notices), release.yml (6 targets, draft release)
 ```
 
-Planned module layout inside `crates/okrun/src/` (decide finally in M1 and
-update here): `lexer.rs` (expression and command mode), `parser.rs`, `ast.rs`,
-`eval/`, `value.rs`, `error.rs` (snippet rendering), `stdlib/`, `formats/`,
-`cli.rs`, `project.rs`, `trust.rs`.
+Modules in `crates/okrun/src/`:
+
+| Module | Role |
+|---|---|
+| `source.rs` | `SourceMap`, `Span`, line/column lookup |
+| `error.rs` | `OkError`, kinds, rendering with snippets, `suggest` (edit distance) |
+| `lexer.rs` | tokens; strings with nested interpolation token lists; command mode; newline rules |
+| `ast.rs` | syntax tree |
+| `parser.rs` | recursive descent; implicit closures (`wrap_it`/`find_it`); stage parsing |
+| `value.rs` | `Value`, `Record` (ordered map), display/repr, equality, ordering |
+| `path.rs` | `OkPath` normalisation, display (`/`) and native conversion |
+| `format.rs` | format specs for `fmt` and `{x:spec}` |
+| `interp.rs` | scopes, evaluation, calls and type checks, imports and library rules |
+| `builtins.rs` | builtin functions; add new ones to the `BUILTINS` table |
+| `cli.rs` | `ok` command line |
+
+Tests: unit tests next to the code; `tests/golden.rs` (cases in
+`tests/cases/`, libraries for import tests in `tests/cases/lib/`),
+`tests/cli.rs`, `tests/examples_parse.rs` (every example must parse),
+`tests/no_panic.rs`.
 
 ## Conventions
 
@@ -96,5 +134,6 @@ update here): `lexer.rs` (expression and command mode), `parser.rs`, `ast.rs`,
 - **Report honestly.** Each milestone report lists what was built, what was
   decided, what is weak, and what to change in the spec.
 - Commit small and often, Conventional Commits. Never rewrite pushed history.
-- Each milestone ends with CI green on all three OSes, `SPEC.md` and
-  `CHANGELOG.md` updated, and a report.
+- Each milestone ends with the local checks green (CI on all three OSes
+  when it is switched back on), `SPEC.md` and `CHANGELOG.md` updated, and a
+  report.

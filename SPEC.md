@@ -160,7 +160,7 @@ A newline does **not** end a statement when:
 1. it is inside `( )` or `[ ]` (but it is significant directly inside
    `{ }` blocks and is ignored inside `{ }` record literals), or
 2. the last token on the line is a binary operator (`+ - * / % == != < <= > >=
-   and or ?? | = += -= =>`), a `,`, `.`, `:`, or an opening `( [ {`, or
+   and or not in ?? | = += -= =>`), a `,`, `.`, `:`, or an opening `( [ {`, or
 3. the first token on the next non-blank line is `|`, `.` followed by an
    identifier (a method chain), `else`, or `catch`.
 
@@ -427,7 +427,7 @@ A call's `(` must follow the callee with no whitespace: `f(x)` is a call,
 | `float` | `1.5` | `1.5`; integral floats keep `.0`: `2.0` |
 | `string` | `"text"` | the text itself |
 | `bytes` | `bytes("x")`, `read(p, "bytes")` | `<bytes 12>` |
-| `list` | `[1, 2]` | `[1, 2]` (strings inside are quoted: `["a", "b"]`) |
+| `list` | `[1, 2]` | `[1, 2]`; inside lists and records, strings are quoted (`["a"]`) and paths show as `path("a/b")` |
 | `record` | `{a: 1}` | `{a: 1, "b-c": 2}` |
 | `path` | `path("a/b")` | `a/b` (always `/`) |
 | `duration` | `1h30m` | `1h30m`, `1.5s`, `250ms` |
@@ -466,7 +466,8 @@ error: `if` needs a bool, got a list
 
 ### 5.4 Equality and ordering
 
-`==` and `!=` compare structurally. Values of different kinds are unequal,
+`==` and `!=` compare structurally; records are equal when they have the
+same keys with equal values, in any order. Values of different kinds are unequal,
 except that an `int` and a `float` compare numerically (`1 == 1.0`). Comparing
 a `path` with a `string` is always `false`; `ok self check` warns about it.
 
@@ -492,7 +493,8 @@ never a wrap. `float` is IEEE 754 binary64.
 | division or `%` by zero | error, for ints and floats |
 
 An operation that would produce NaN or infinity is an error. Integer division
-is `floor(a / b)`, `ceil`, `round`, or `int(x)` (truncation).
+is `floor(a / b)`, `ceil`, `round` (halves round away from zero: `round(2.5)
+== 3`, `round(-2.5) == -3`), or `int(x)` (truncation toward zero).
 
 ### 5.6 Strings
 
@@ -555,6 +557,8 @@ time). `t.format(pattern, utc: false)` formats with strftime-style patterns
 (12.7).
 
 ### 5.10 Functions
+
+Calls nest at most 2000 deep; deeper recursion is an error, not a crash.
 
 Functions are values. `fn name(...) { }` declares a named function; inside a
 block it is visible in the whole block (declarations are hoisted), at the top
@@ -1004,7 +1008,9 @@ shows the plan of a script, not a guaranteed preview of every branch.
 ### 10.1 Rendering
 
 Every error shows the kind, message, location and a source snippet with the
-span underlined, followed by optional notes and a help line:
+span underlined, followed by optional notes, a call trace and a help line.
+Errors without a source location (command-line and some load errors) show
+only `error: message` and their notes and help.
 
 ```
 error[name]: unknown name `relase`
@@ -1032,7 +1038,10 @@ error[command]: command failed with exit code 101
 ```
 
 When an error passes through function calls, a short call trace (innermost
-first, at most 8 frames) follows the snippet. Colors are used on terminals
+first, at most 8 frames) follows the snippet, one line per frame:
+`= in \`check\`, called at deploy.ok:12:3`. Identical consecutive frames, as
+produced by recursion, are shown once with `(repeated)`. Notes are prefixed
+`note:` and the help line `help:`. Colors are used on terminals
 (2.2). Golden tests render without color.
 
 ### 10.2 Error records
@@ -1262,7 +1271,7 @@ Strings default to left alignment, numbers to right. Examples: `"{n:>6}"`,
 
 | Function | Notes |
 |---|---|
-| `print(...xs)` | Display forms joined by spaces, then `\n`, to stdout. |
+| `print(...xs)` | Display forms joined by spaces, then `\n`, to stdout. If stdout has been closed (output piped into a program that stopped reading), the script ends quietly with exit code 0. |
 | `eprint(...xs)` | The same to stderr. |
 | `fail(msg)` | Raise a `fail` error (10.2). |
 | `exit(code: int = 0)` | Exit after cleanup (temp files). |

@@ -234,3 +234,62 @@ streams its output live, and some commands (downloads, `cargo fetch`, `npm ci`)
 are only noise. `with {quiet: true}` captures and discards stdout and stderr,
 but a failure still reports the stderr tail, so silencing never hides why
 something broke.
+
+## 2026-11-24 (M1)
+
+**Interpreter layout: one module per stage.** `lexer` (including command
+mode), `parser`, `ast`, `interp` (evaluator and module loading), `value`,
+`path`, `format` (format specs), `builtins`, `error`, `source`, `cli`. Nested
+syntax (interpolations, command words) is lexed into nested token lists so
+the parser never re-scans text.
+
+**The interpreter runs on a thread with a 256 MiB stack, and calls nest at
+most 2000 deep.** Default main-thread stacks differ per OS (1 MiB on Windows,
+8 MiB on Linux), so without this the same script could overflow on one OS and
+not another. The stack is reserved virtual memory, not allocated up front.
+The parser limits expression nesting to 150 and the lexer interpolation
+nesting to 32, so no input can crash them.
+
+**Errors are not boxed in `Result`s.** Clippy's `result_large_err` is allowed
+crate-wide: errors are the cold path, and boxing them everywhere would add
+noise across the interpreter for no measurable gain.
+
+**Records compare equal regardless of key order.** Two records with the same
+keys and values describe the same data; insertion order matters for display
+and serialisation, not identity.
+
+**`round` rounds halves away from zero.** It is what most people learned at
+school and what Rust, JavaScript's `Math.round` for positives, and spreadsheets
+do; Python's banker's rounding surprises readers.
+
+**Printing to a closed stdout ends the script quietly with exit code 0.** A
+script piped into `head` should stop, not report an error the user caused on
+purpose.
+
+**Until M2, `range` builds a list and refuses more than ten million
+numbers.** Lazy ranges belong with the lazy lists of M2; the cap keeps a typo
+from exhausting memory in the meantime.
+
+**Until M4, `main` runs only when it needs no arguments.** Command-line
+parsing from the signature is M4's job; a script whose `main` needs arguments
+reports that the feature is not implemented yet instead of guessing.
+
+**Unimplemented features are reported, never silently skipped.** `run`,
+project tasks, trust and most `ok self` commands parse, and evaluating them
+gives "not implemented yet (milestone Mx)".
+
+**Fuzzing: a cargo-fuzz crate outside the workspace plus an in-tree random
+test.** cargo-fuzz needs nightly, so `fuzz/` is excluded from the workspace
+and runs in its own CI job. Its dependency `libfuzzer-sys` is MIT/Apache-2.0
+and NCSA (permissive); it is never linked into the shipped binary. A
+deterministic random-input test in `tests/no_panic.rs` runs in every build.
+
+**Help for names from other languages.** Unknown functions such as `length`,
+`push` or `toUpperCase` get a pointer to the ok equivalent, in addition to the
+edit-distance suggestions.
+
+**GitHub Actions only run when started by hand, for now.** Requested by Bas
+during M1: checks run locally instead. The workflows stay in the repository
+with a `workflow_dispatch` trigger so they can be run on demand or switched
+back on by restoring their triggers. The cost is that macOS and Windows
+behaviour is not verified while CI is off.

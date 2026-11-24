@@ -34,15 +34,17 @@ in `ok`, each next to the original.
 
 ## Status
 
-Milestone **M0: specification and examples**. There is no interpreter yet;
-the binary only answers `ok self version`. The language is described in
-`SPEC.md` and open design choices are logged in `DECISIONS.md`. Expect the
-design to change during review.
+Milestone **M1: core interpreter**. `ok script.ok` and `ok -e '1 + 2'` run
+the core language: values, functions, closures, control flow, string
+interpolation, imports and errors with source snippets. Commands (`run`),
+data formats, most of the standard library, project mode and trust come in
+the next milestones. The language is described in `SPEC.md`; design choices
+are logged in `DECISIONS.md`.
 
 | Milestone | Content | State |
 |---|---|---|
-| M0 | Spec and examples | in review |
-| M1 | Core interpreter | |
+| M0 | Spec and examples | done |
+| M1 | Core interpreter | in review |
 | M2 | Data formats and pipelines | |
 | M3 | Commands and standard library | |
 | M4 | Script CLI | |
