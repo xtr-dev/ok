@@ -1,0 +1,4 @@
+good line 1
+good line 2
+bad ÿþ line 3
+line 4

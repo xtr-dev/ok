@@ -1,0 +1,5 @@
+error[io]: cannot read data/missing.json: no such file
+ --> err_read_missing.ok:1:7
+  |
+1 | print(read("data/missing.json"))
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,5 @@
+error[format]: line 4 of data/broken.csv has 1 fields, but the header has 2
+ --> err_csv_fields.ok:1:12
+  |
+1 | let rows = read("data/broken.csv")
+  |            ^^^^^^^^^^^^^^^^^^^^^^^

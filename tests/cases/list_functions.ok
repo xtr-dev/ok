@@ -1,0 +1,27 @@
+# The list and record functions (SPEC.md 12.5).
+let people = [
+  {name: "ana", age: 34, team: "web"},
+  {name: "bo", age: 27, team: "data"},
+  {name: "cy", age: 41, team: "web"},
+  {name: "di", age: 19, team: "ops"},
+]
+print(people | where .age > 30 | map(.name))
+print(people | sort .age | map(.name), people | sort(.name, desc: true) | map(.name))
+print(sort([3, 1, 2]), sort(["b", "a"]), reverse([1, 2, 3]))
+print(people | group .team | keys)
+print(people | group(.team) | entries | map(e => "{e.key}={len(e.value)}"))
+print(uniq([3, 1, 3, 2, 1]), uniq(people, .team) | map(.name), uniq([{a: 1, b: 2}, {b: 2, a: 1}]))
+print(people | count, people | count .team == "web", count([]))
+print(people | first | .name, people | first(.age < 20) | .name, first([]), last([1, 2, 3]))
+print(take([1, 2, 3], 2), skip([1, 2, 3], 2), take([1], 5), skip([1], 5))
+print(sum([1, 2, 3]), sum([1, 2.5]), sum([]), sum(people, .age), sum([1s, 2m]))
+print(min([3, 1, 2]), max(people, .age) | .name, min([]), max(["a", "c", "b"]))
+print(any(people, .age > 40), all(people, .age > 18), any([], x => true), all([], x => false))
+print(join(["a", "b", "c"], ", "), join([1, 2, 3]), join([path("x/y"), 2], "|"))
+print(flat([[1, 2], [3], 4, []]), enumerate(["a", "b"]))
+print(keys({a: 1, b: 2}), values({a: 1, b: 2}), entries({a: 1}), from_entries([{key: "x", value: 1}]))
+print(get({a: 1}, "a"), get({a: 1}, "b"), get({a: 1}, "b", 0), has({a: 1}, "a"), has({a: 1}, "z"))
+people | where .team == "web" | each(p => print("hi", p.name))
+print(lines("a\nb\r\nc\n"), lines(""), lines(["x\ny", "z"]))
+print(range(5) | map(x => x * x), range(0) | count)
+print([1, 2, 3].where(x => x > 1).map(x => x * 10))

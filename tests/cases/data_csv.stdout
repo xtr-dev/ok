@@ -1,0 +1,16 @@
+4 {name: "Visser, Anna", email: "anna@example.com", age: "34", active: "true"}
+["Visser, Anna", "Bram de Vries", "Chloé \"CJ\" Martin", "Dirk\nJan"]
+string
+[41, 19, 34]
+name,email,age,active
+"Chloé ""CJ"" Martin",chloe@example.com,41,true
+"Dirk
+Jan",dirk@example.com,19,true
+"Visser, Anna",anna@example.com,34,true
+
+[{id: "1", city: "Utrecht"}, {id: "2", city: "\"Den Haag\""}]
+[["name", "email", "age", "active"], ["Visser, Anna", "anna@example.com", "34", "true"]]
+a,b
+1,
+
+["Utrecht", "Den Haag"]

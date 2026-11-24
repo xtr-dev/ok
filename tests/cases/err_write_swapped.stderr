@@ -1,0 +1,7 @@
+error[arg]: write(value, path) writes "out.txt" to a file named hello
+ --> err_write_swapped.ok:1:1
+  |
+1 | write("out.txt", "hello")
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: the value comes first and the path second: write(text, "out.txt")

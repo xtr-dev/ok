@@ -1,0 +1,21 @@
+["ana", "cy"]
+["di", "bo", "ana", "cy"] ["di", "cy", "bo", "ana"]
+[1, 2, 3] ["a", "b"] [3, 2, 1]
+["web", "data", "ops"]
+["web=2", "data=1", "ops=1"]
+[3, 1, 2] ["ana", "bo", "di"] [{a: 1, b: 2}]
+4 2 0
+ana di null 3
+[1, 2] [3] [1] []
+6 3.5 0 121 2m1s
+1 cy null c
+true true false true
+a, b, c 123 x/y|2
+[1, 2, 3, 4] [{index: 0, value: "a"}, {index: 1, value: "b"}]
+["a", "b"] [1, 2] [{key: "a", value: 1}] {x: 1}
+1 null 0 true false
+hi ana
+hi cy
+["a", "b", "c"] [] ["x", "y", "z"]
+[0, 1, 4, 9, 16] 0
+[20, 30]

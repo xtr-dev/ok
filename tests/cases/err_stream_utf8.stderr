@@ -1,0 +1,7 @@
+error[format]: line 3 of data/bad_utf8.txt is not valid UTF-8 text
+ --> err_stream_utf8.ok:1:7
+  |
+1 | print(read("data/bad_utf8.txt") | lines | count)
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: read binary data with read(p, "bytes")

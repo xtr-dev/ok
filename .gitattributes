@@ -5,3 +5,4 @@
 # Data fixtures keep their exact bytes (BOM, CRLF) because tests depend on them.
 examples/**/*.csv -text
 tests/fixtures/** -text
+tests/cases/data/** -text

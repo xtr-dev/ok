@@ -1,0 +1,25 @@
+# Pipelines stream: they stop reading as soon as they have what they need.
+# Line 3 of bad_utf8.txt is not UTF-8 and row 4 of broken.csv is malformed,
+# so these only succeed because the files are never read to the end.
+print(read("data/bad_utf8.txt") | lines | take 2)
+print(read("data/bad_utf8.txt") | lines | first)
+print(read("data/broken.csv") | take 2)
+print(read("data/broken.csv") | first(.a == "3"))
+
+# A range of a trillion numbers is never built.
+print(range(1_000_000_000_000) | where(x => x % 7 == 0) | skip 1 | take 3)
+print(range(10, 0, -3) | map(x => x * 2))
+
+# for loops pull one element at a time.
+for i, line in read("data/app.log") | lines | where(l => "ERROR" in l) {
+  print(i, line)
+  if i == 1 { break }
+}
+
+let errors = read("data/app.log")
+  | lines
+  | where(l => "ERROR" in l)
+  | count
+print("errors:", errors)
+write(range(3) | map(x => {n: x}), "out/stream.jsonl")
+print(read("out/stream.jsonl") | map(.n))

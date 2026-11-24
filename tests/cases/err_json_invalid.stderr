@@ -1,0 +1,5 @@
+error[format]: invalid JSON in the text: expected value at line 1 column 7
+ --> err_json_invalid.ok:1:7
+  |
+1 | print(parse('{"a": }', "json"))
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^

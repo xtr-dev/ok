@@ -1,0 +1,5 @@
+error[format]: TOML has no null (at a); leave the field out instead
+ --> err_toml_null.ok:1:7
+  |
+1 | print(to({a: null}, "toml"))
+  |       ^^^^^^^^^^^^^^^^^^^^^

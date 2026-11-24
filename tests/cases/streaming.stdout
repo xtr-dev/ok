@@ -1,0 +1,10 @@
+["good line 1", "good line 2"]
+good line 1
+[{a: "1", b: "2"}, {a: "3", b: "4"}]
+{a: "3", b: "4"}
+[7, 14, 21]
+[20, 14, 8, 2]
+0 2026-11-20T10:01:12Z ERROR db connection refused
+1 2026-11-20T10:01:13Z ERROR db connection refused
+errors: 3
+[0, 1, 2]

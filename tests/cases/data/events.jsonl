@@ -1,0 +1,4 @@
+{"type": "start", "at": 1}
+
+{"type": "click", "at": 5, "x": 10}
+{"type": "stop", "at": 9}

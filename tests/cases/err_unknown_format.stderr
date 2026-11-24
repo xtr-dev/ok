@@ -1,0 +1,7 @@
+error[arg]: unknown format "xml"
+ --> err_unknown_format.ok:1:7
+  |
+1 | print(read("data/users.csv", "xml"))
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: the formats are json, jsonl, csv, tsv, lines, text, toml, yaml, env, bytes

@@ -1,0 +1,10 @@
+server:
+  port: 8080
+  debug: no        # a string in YAML 1.2, not false
+  ratio: 0.75
+defaults: &defaults
+  retries: 3
+job:
+  <<: *defaults
+tags: [a, b]
+empty: ~

@@ -1,0 +1,7 @@
+error[type]: the test given to `where` must return a bool, got an int
+ --> err_where_not_bool.ok:1:7
+  |
+1 | print([1, 2] | where(x => x))
+  |       ^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: compare explicitly, like .count > 0 or .name != ""

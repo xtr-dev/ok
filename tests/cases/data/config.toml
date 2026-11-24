@@ -1,0 +1,12 @@
+# App settings
+title = "ok demo"
+released = 2026-11-24T10:00:00Z
+day = 2026-11-24
+
+[server]
+port = 8080
+hosts = ["a.example", "b.example"]
+
+[[users]]
+name = "ana"
+admin = true

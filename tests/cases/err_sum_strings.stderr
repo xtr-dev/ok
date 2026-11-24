@@ -1,0 +1,7 @@
+error[type]: `sum` needs numbers or durations, got a string
+ --> err_sum_strings.ok:1:7
+  |
+1 | print(read("data/users.csv") | sum .age)
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: CSV values are strings; convert them first, like sum(rows, r => int(r.amount))

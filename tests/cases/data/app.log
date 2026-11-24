@@ -1,0 +1,6 @@
+2026-11-20T10:00:01Z INFO server listening on :8080
+2026-11-20T10:00:05Z WARN config value cache_size missing
+2026-11-20T10:01:12Z ERROR db connection refused
+2026-11-20T10:01:13Z ERROR db connection refused
+2026-11-20T10:02:00Z ERROR payment provider timeout
+2026-11-20T10:03:00Z INFO request served in 12ms

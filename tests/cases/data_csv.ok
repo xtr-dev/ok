@@ -1,0 +1,20 @@
+# CSV reading: BOM, CRLF, quotes, embedded newlines, empty lines; values stay strings.
+let users = read("data/users.csv")
+print(len(users), users[0])
+print(users | map(.name))
+print(type(users[0].age))
+
+let active = read("data/users.csv")
+  | where .active == "true"
+  | sort .name
+  | map(u => {...u, age: int(u.age)})
+write(active, "out/active.json")
+print(read("out/active.json") | map(.age))
+
+write(active, "out/active.csv")
+print(read("out/active.csv", "text"))
+print(read("data/cities.tsv"))
+print(read("data/users.csv", header: false) | take 2)
+write([["a", "b"], [1, null]], "out/rows.csv", header: false)
+print(read("out/rows.csv", "text"))
+print(read("data/cities.tsv", "csv", delimiter: "\t") | map(.city))

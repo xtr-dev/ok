@@ -1,0 +1,43 @@
+demo 1.2.3 {build: "tsc", test: "vitest"} true float
+ok demo 8080 ["a.example", "b.example"] {name: "ana", admin: true} time 2026-11-24
+{server: {port: 8080, debug: "no", ratio: 0.75}, defaults: {retries: 3}, job: {retries: 3}, tags: ["a", "b"], empty: null}
+{APP_ENV: "dev", DATABASE_URL: "postgres://app:secret@localhost/app", GREETING: "hello\nworld", RAW: "$HOME stays", PORT: "5432"}
+3 ["start", "click", "stop"]
+6
+142
+{
+  "name": "ok",
+  "tags": [
+    "a"
+  ],
+  "n": 1.5,
+  "none": null
+}
+
+{"name": "ok", "tags": ["a"]}
+
+title = "x"
+
+[server]
+port = 80
+
+name: ok
+list:
+  - 1
+  - two
+nested:
+  a: true
+
+A=1
+B="has space"
+
+{"a": 1}
+{"a": 2}
+
+one
+two
+
+{a: [1, 2]} {x: 1} [1, 2.5]
+[{a: 1}, {b: 2}]
+{a: 1} {A: "1"}
+["first", "second", "third"]

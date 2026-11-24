@@ -1,0 +1,7 @@
+error[syntax]: unexpected character `\`
+ --> err_brace_in_string.ok:1:14
+  |
+1 | let body = "{\"name\": \"ok\"}"
+  |              ^
+  |
+  = help: `{` in a double-quoted string starts an interpolation; write \{ for a literal brace, or use a single-quoted string like '{"a": 1}'
