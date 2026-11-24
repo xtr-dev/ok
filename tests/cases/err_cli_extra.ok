@@ -1,0 +1,1 @@
+fn main(a: string) { print(a) }

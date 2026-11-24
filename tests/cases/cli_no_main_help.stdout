@@ -1,0 +1,3 @@
+A script without main gets its arguments as `args`.
+
+Usage: ok cli_no_main_help.ok [ARGS...]

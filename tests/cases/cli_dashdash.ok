@@ -1,0 +1,19 @@
+#!/usr/bin/env ok
+# Show how arguments arrive in main.
+#
+# A second paragraph of help.
+fn main(
+  input: path,                # the file to read
+  count: int = 3,             # how many
+  ...extra: string,           # anything else
+  --out: path = "out.json",   # where to write
+  --ratio: float = 0.5,
+  --wait: duration = 2s,      # how long to wait
+  --tag: list[string],        # tags to add
+  --verbose: bool,            # say more
+  --color: bool = true,       # use colors
+  --label: string?,           # an optional label
+  --dry-run: bool,            # a flag with a dash
+) {
+  print(input, type(input), count, extra, out, ratio, wait, tag, verbose, color, label, dry_run)
+}

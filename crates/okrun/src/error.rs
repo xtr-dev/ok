@@ -105,6 +105,8 @@ pub struct OkError {
     pub stderr: Option<String>,
     /// HTTP status of a `net` error that got a response.
     pub status: Option<u16>,
+    /// Text printed after everything else, such as a usage line.
+    pub trailer: Option<String>,
 }
 
 impl OkError {
@@ -122,6 +124,7 @@ impl OkError {
             command: None,
             stderr: None,
             status: None,
+            trailer: None,
         }
     }
 
@@ -306,6 +309,9 @@ pub fn render(err: &OkError, sources: &SourceMap, color: Color) -> String {
     }
     if let Some(help) = &err.help {
         let _ = writeln!(out, "{pad} {} {}{help}", p.gutter("="), p.help("help: "));
+    }
+    if let Some(t) = &err.trailer {
+        let _ = writeln!(out, "{t}");
     }
     out
 }

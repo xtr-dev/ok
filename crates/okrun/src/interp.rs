@@ -19,6 +19,7 @@ use crate::format;
 use crate::lazy;
 use crate::parser;
 use crate::path::OkPath;
+use crate::sig;
 use crate::source::{SourceMap, Span};
 use crate::value::{Func, Record, Value, compare, equal};
 
@@ -136,6 +137,8 @@ pub struct Interp {
     depth: usize,
     /// Caught error records, so `fail(e)` can re-raise the original error.
     caught: Vec<(Weak<Record>, OkError)>,
+    /// The script's command-line arguments, parsed against `main`.
+    pub script_argv: Vec<String>,
     pub run_opts: RunOpts,
     /// Temporary files and directories to remove when the run ends.
     pub temps: Vec<PathBuf>,
@@ -171,6 +174,7 @@ enum FileKind {
 impl Interp {
     pub fn new(script_args: Vec<String>) -> Interp {
         let globals = Scope::new(None);
+        let script_argv = script_args.clone();
         builtins::install(&globals, script_args);
         Interp {
             sources: SourceMap::default(),
@@ -179,6 +183,7 @@ impl Interp {
             loading: Vec::new(),
             depth: 0,
             caught: Vec::new(),
+            script_argv,
             run_opts: RunOpts::default(),
             temps: Vec::new(),
             upstream: Vec::new(),
@@ -322,45 +327,71 @@ impl Interp {
         let text = self.sources.file(file).text.clone();
         let prog = parser::parse(file, &text)?;
         check_items(&prog, FileKind::Script)?;
+        let main = prog.stmts.iter().find_map(|s| match &s.kind {
+            StmtKind::Fn(d) if d.name == "main" => Some(d.clone()),
+            _ => None,
+        });
+        let name = self.sources.file(file).name.clone();
+        let usage = if name == "<-e>" {
+            "ok -e SOURCE".to_string()
+        } else {
+            format!("ok {name}")
+        };
+        let argv = self.script_argv.clone();
+        // Arguments are checked before any code runs (SPEC.md 14).
+        let parsed = match &main {
+            Some(d) => {
+                let target = sig::Target {
+                    usage,
+                    doc: d.doc.as_deref(),
+                    params: &d.params,
+                };
+                match sig::parse(&target, &argv, &self.invocation_dir)? {
+                    sig::Outcome::Help(_) => {
+                        print!("{}", sig::help(&target, &self.sources));
+                        return Err(Flow::Exit(0));
+                    }
+                    sig::Outcome::Run(p) => Some(p),
+                }
+            }
+            None => {
+                let wants_help = argv
+                    .iter()
+                    .take_while(|a| *a != "--")
+                    .any(|a| a == "-h" || a == "--help");
+                if wants_help {
+                    if let Some(doc) = &prog.doc {
+                        println!("{}\n", doc.trim_end());
+                    }
+                    println!("Usage: {usage} [ARGS...]");
+                    return Err(Flow::Exit(0));
+                }
+                None
+            }
+        };
         let scope = self.file_scope(&dir);
         let last = self.exec_file(&prog, &scope, &dir, file)?;
-        if let Some(Value::Func(f)) = scope.vars.borrow().get("main").map(|b| b.value.clone()) {
-            return self.call_main(&f);
+        if let (Some(d), Some(p)) = (main, parsed) {
+            let Some(Value::Func(f)) = scope.lookup("main") else {
+                return Ok(last);
+            };
+            let Func::User { env, .. } = &*f else {
+                return Ok(last);
+            };
+            let span = d.name_span;
+            let named = p.named.into_iter().map(|(n, v)| (n, v, span)).collect();
+            self.call_user(
+                &d,
+                env,
+                Args {
+                    pos: p.pos,
+                    named,
+                    span,
+                },
+            )?;
+            return Ok(Value::Null);
         }
         Ok(last)
-    }
-
-    /// Calling `main` with arguments parsed from its signature arrives in
-    /// milestone M4; until then `main` runs only when it needs no arguments.
-    fn call_main(&mut self, f: &Rc<Func>) -> R<Value> {
-        let Func::User { decl, env } = &**f else {
-            return Ok(Value::Null);
-        };
-        let has_args = matches!(self.globals.lookup("args"), Some(Value::List(l)) if !l.is_empty());
-        let required = decl.params.iter().any(|p| {
-            p.default.is_none()
-                && !p.rest
-                && !(p.flag && matches!(p.ty, Some(TypeAnn::Bool) | Some(TypeAnn::Optional(_))))
-        });
-        if has_args || required {
-            return Err(OkError::unimplemented(
-                decl.name_span,
-                "parsing command-line arguments into `main`",
-                "M4",
-            )
-            .into());
-        }
-        let span = decl.name_span;
-        self.call_user(
-            decl,
-            env,
-            Args {
-                pos: Vec::new(),
-                named: Vec::new(),
-                span,
-            },
-        )?;
-        Ok(Value::Null)
     }
 
     /// Hoist functions and imports, then run the statements of a file.
@@ -1463,6 +1494,9 @@ impl Interp {
                 None => match &p.default {
                     Some(d) => self.eval(d, &scope)?,
                     None if p.flag && matches!(p.ty, Some(TypeAnn::Bool)) => Value::Bool(false),
+                    None if p.flag && matches!(p.ty, Some(TypeAnn::List(_))) => {
+                        Value::list(Vec::new())
+                    }
                     None if matches!(p.ty, Some(TypeAnn::Optional(_))) => Value::Null,
                     None => {
                         let how = if p.flag {

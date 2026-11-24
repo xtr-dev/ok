@@ -27,6 +27,7 @@ pub mod list;
 pub mod net;
 pub mod parser;
 pub mod path;
+pub mod sig;
 pub mod source;
 pub mod system;
 pub mod text;

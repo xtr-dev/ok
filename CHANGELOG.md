@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- M4 script CLI: `main`'s signature becomes the command line (positional
+  arguments, rest arguments, `--flags` with values, switches with
+  `--no-name`, repeatable `list[T]` flags, `--`), values parsed by type,
+  generated `--help` from the doc comment and trailing parameter comments,
+  argument errors with suggestions and the usage line (exit code 2), and
+  `#!/usr/bin/env ok` scripts.
 - M3 commands: `run`, `run!` and the function form; live, captured and
   piped output by position; `|` between commands and into commands;
   `>`, `>>` and `<` redirects; options `cwd`, `env`, `stdin`, `timeout`,

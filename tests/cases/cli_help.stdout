@@ -1,0 +1,21 @@
+Show how arguments arrive in main.
+
+A second paragraph of help.
+
+Usage: ok cli_help.ok <input> [count] [extra...] [--out <path>] [--ratio <float>] [--wait <duration>] [--tag <value>] [--verbose] [--no-color] [--label <value>] [--dry-run]
+
+Arguments:
+  <input>            the file to read
+  [count]            how many [default: 3]
+  [extra...]         anything else
+
+Options:
+  --out <path>       where to write [default: out.json]
+  --ratio <float>    [default: 0.5]
+  --wait <duration>  how long to wait [default: 2s]
+  --tag <value>      tags to add (repeatable)
+  --verbose          say more
+  --no-color         use colors [default: true]
+  --label <value>    an optional label
+  --dry-run          a flag with a dash
+  -h, --help         print this help

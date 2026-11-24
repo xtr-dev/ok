@@ -84,3 +84,34 @@ fn startup_is_fast() {
     let each = start.elapsed() / 5;
     assert!(each.as_millis() < 250, "ok -e took {each:?} per run");
 }
+
+#[cfg(unix)]
+#[test]
+fn shebang_scripts_run_directly() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("ok-shebang-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let script = dir.join("hello");
+    std::fs::write(
+        &script,
+        "#!/usr/bin/env ok\n# Say hello.\nfn main(name: string) { print(\"hello {name}\") }\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let bin_dir = std::path::Path::new(env!("CARGO_BIN_EXE_ok"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let mut paths = vec![bin_dir];
+    paths.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    let out = Command::new(&script)
+        .arg("bas")
+        .env("PATH", std::env::join_paths(paths).unwrap())
+        .output()
+        .expect("run script");
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "hello bas\n");
+}

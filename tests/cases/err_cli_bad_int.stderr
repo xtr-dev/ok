@@ -1,0 +1,3 @@
+error: <count> expects an integer, got "many"
+usage: ok err_cli_bad_int.ok <input> [count] [extra...] [--out <path>] [--ratio <float>] [--wait <duration>] [--tag <value>] [--verbose] [--no-color] [--label <value>] [--dry-run]
+run with --help for details

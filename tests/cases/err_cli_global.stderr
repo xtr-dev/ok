@@ -1,0 +1,4 @@
+error: unknown flag --trace
+  = help: ok's own options go before the name: ok --trace err_cli_global.ok
+usage: ok err_cli_global.ok <input> [count] [extra...] [--out <path>] [--ratio <float>] [--wait <duration>] [--tag <value>] [--verbose] [--no-color] [--label <value>] [--dry-run]
+run with --help for details

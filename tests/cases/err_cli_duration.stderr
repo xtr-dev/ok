@@ -1,0 +1,3 @@
+error: --wait expects a duration like 30s or 1h30m, got "soon"
+usage: ok err_cli_duration.ok <input> [count] [extra...] [--out <path>] [--ratio <float>] [--wait <duration>] [--tag <value>] [--verbose] [--no-color] [--label <value>] [--dry-run]
+run with --help for details

@@ -730,8 +730,8 @@ requires every named field.
   `--name value`. A `bool` flag without a default defaults to `false`.
 - One rest parameter `...name: T` collects the remaining positional
   arguments into a list whose elements must satisfy `T`.
-- Parameters without a default are required, except `bool` flags and `T?`
-  flags (default `null`).
+- Parameters without a default are required, except `bool` flags (default
+  `false`), `T?` flags (default `null`) and `list[T]` flags (default `[]`).
 
 ### 7.3 Loops
 
@@ -1441,8 +1441,10 @@ fn main(
 - Flag parameters become `--name value` or `--name=value`. A `bool` flag is
   `--name` (true); a bool flag whose default is `true` is turned off with
   `--no-name`. A `list[T]` flag repeats: `--tag a --tag b`.
-- `--` ends flag parsing.
+- `--` ends flag parsing; `-h` and `--help` print help only before it.
 - There are no short flags in v1.
+- Arguments are checked against the signature before any of the script's
+  code runs.
 
 ### 14.2 Help
 

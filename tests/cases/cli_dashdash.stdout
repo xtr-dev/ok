@@ -1,0 +1,1 @@
+a path 2 ["--verbose", "-x"] out.json 0.5 2s [] false true null false

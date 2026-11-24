@@ -1,0 +1,2 @@
+# A script without main gets its arguments as `args`.
+print(args)

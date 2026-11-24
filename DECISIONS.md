@@ -386,3 +386,23 @@ per component, as the M0 spec put it, would be slower and harder to explain.
 **`ok-fixture`: a test-only program instead of system tools.** Tests of
 `run` call `ok-fixture echo|args|cat|exit|lines|forever|env|pwd|...`, which
 behaves identically on every OS. It lives in its own unpublished crate.
+
+## 2026-11-25 (M4)
+
+**Arguments are parsed before any code runs.** A script with `main` gets its
+command line checked against the signature first, so a typo in a flag exits
+with code 2 before the top-level statements have done anything.
+
+**`--help` intercepts only before `--`.** `ok tool.ok -- --help` passes
+`--help` to the script as a positional value.
+
+**Relative `path` arguments resolve against `invocation_dir`.** In script
+mode that is the working directory, so the value stays relative and prints
+as typed; in project mode, where tasks run in the project root, the path is
+made absolute so it still means what the user typed.
+
+**`list[T]` flags default to `[]`.** A repeatable flag that is never given is
+an empty list, not a missing-argument error.
+
+**`--flag=value` and `--flag value` are both accepted; switches accept
+`--flag`, `--no-flag` and `--flag=true|false`.**
