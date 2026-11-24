@@ -368,10 +368,10 @@ readers disagree on how it groups.
 ```
 expr        = pipeline
 pipeline    = coalesce { "|" stage }
-stage       = ident_path [ "(" [ args ] ")" ] [ juxt_args ]     (* 8.2 *)
+stage       = ident_path [ "(" [ args ] ")" ] [ juxt_arg ]      (* 8.2 *)
             | run_expr
             | coalesce
-juxt_args   = juxt_arg { "," juxt_arg }
+juxt_arg    = arg                                    (* exactly one *)
 coalesce    = or_expr { "??" or_expr }
 or_expr     = and_expr { "or" and_expr }
 and_expr    = not_expr { "and" not_expr }
@@ -768,12 +768,14 @@ The right side of `|` (a **stage**) is one of:
 1. **A call** `name(args)` or `module.name(args)`: the left value is
    prepended to the arguments.
 2. **A bare name** `name`: called with the left value as its only argument.
-3. **A juxtaposed call** `name arg, arg`: the name followed by whitespace
-   and one or more comma-separated arguments. Equivalent to `name(left, arg,
-   arg)`. Juxtaposition is allowed only in pipeline stages, and its first
-   argument cannot begin with an operator other than `.`, `not` or `-`
-   followed directly by a digit. `| take 5`, `| sort .name`, `| join ", "`,
-   `| where not .done`.
+3. **A juxtaposed call** `name arg`: the name followed by whitespace and
+   exactly one argument. Equivalent to `name(left, arg)`. A comma after it
+   belongs to the surrounding call or list, so `print(xs | count, ys |
+   count)` passes two values to `print`; a stage that needs more arguments
+   uses parentheses: `| sort(.size, desc: true)`. Juxtaposition is allowed
+   only in pipeline stages, and its argument cannot begin with an operator
+   other than `.`, `not` or `-` followed directly by a digit. `| take 5`,
+   `| sort .name`, `| join ", "`, `| where not .done`.
 4. **A command** `run ...`: the left value becomes the command's stdin
    (9.5).
 5. **Any other expression** that evaluates to a function: it is called with
@@ -789,12 +791,15 @@ error: a pipeline stage must be a call
 
 ### 8.3 Laziness
 
-`read` of a line-oriented or row-oriented format, `lines`, and the stdout of
-a piped command produce **lazy** values (13.2). The stages `where`, `map`,
-`take`, `skip`, `uniq`, `flat`, `each`, `count`, `sum`, `min`, `max`, `first`,
-`any`, `all`, `join` and `write` consume them element by element. `sort`,
-`group`, `reverse`, `last`, and anything that needs the whole value
-(indexing, `len`, `print`) materialise them.
+`read` of a line-oriented or row-oriented format, `lines`, `range`,
+`stdin()` and the stdout of a piped command produce **lazy** values (13.2).
+The stages `where`, `map`, `take`, `skip`, `uniq`, `flat`, `enumerate` and
+`lines` stream: given a lazy list they return one. `each`, `count`, `sum`,
+`min`, `max`, `first`, `last`, `any`, `all`, `join` and `write` consume a
+lazy list element by element, and `first`, `any`, `all` and `take` stop
+early. A `for` loop also pulls one element per iteration. Everything else,
+including `sort`, `group`, `reverse`, indexing, `len` and `print`,
+materialises the value first.
 
 ## 9. Commands (`run`)
 
@@ -1107,7 +1112,7 @@ directory (the project root in project mode).
 | Function | Returns | Notes |
 |---|---|---|
 | `read(p: path, format: string? = null)` | value | Format from the extension or `format` (13). |
-| `write(value, p: path, format: string? = null, --append: bool)` | `null` | Creates parent directories. Writes `\n` line endings. |
+| `write(value, p: path, format: string? = null, --append: bool)` | `null` | Creates parent directories. Writes `\n` line endings. Streams lazy values. When the value is a short string that looks like a file name (`"out.txt"`) and the path has no extension, the arguments are almost certainly swapped, and `write` refuses with a hint. |
 | `copy(src: path, dst: path)` | `null` | Files or directories (recursive). `dst` is the exact destination, never "into". Overwrites files. |
 | `move(src: path, dst: path)` | `null` | Rename; falls back to copy and remove across file systems. |
 | `remove(p: path)` | `bool` | File or directory tree. `false` if nothing existed. Refuses the file-system root, the home directory and the project root. |
@@ -1235,7 +1240,7 @@ argument is a function, usually an implicit closure.
 | `any(xs, pred)`, `all(xs, pred)` | `bool` | |
 | `join(xs, sep: string = "")` | `string` | Elements converted with `str`; lists, records, bytes are errors. |
 | `flat(xs)` | list | One level. |
-| `range(n)`, `range(start, end, step = 1)` | list | `end` exclusive, lazy. |
+| `range(n)`, `range(start, end, step = 1)` | list | `end` exclusive, lazy, so `range(1_000_000_000)` costs nothing until consumed. |
 | `enumerate(xs)` | list | `[{index, value}, ...]` |
 | `keys(r)`, `values(r)` | list | |
 | `entries(r)` | list | `[{key, value}, ...]` |
@@ -1340,16 +1345,27 @@ true)` write JSON on one line.
 
 ### 13.2 Lazy values
 
-`read` of `jsonl`, `csv`, `tsv`, `lines` and `text`, `stdin()`, and the
-stdout of a piped command are lazy: the data is read as it is consumed, at
-most once. A lazy value is indistinguishable from a normal one except for
+`read` of `jsonl`, `csv`, `tsv`, `lines` and `text`, `stdin()`, `range`, and
+the stdout of a piped command are lazy: the data is produced as it is
+consumed. A lazy value is indistinguishable from a normal one except for
 when reading happens and when read or parse errors are raised (at the point
-of consumption, with the location of the consuming stage and the line number
-in the data). If a lazy value is consumed more than once, for example because
-it is bound to a variable that is used twice, the elements read so far are
-kept in memory so the second use sees the same data. A pipeline that consumes
-a `read` directly, without binding it, runs in memory bounded by the size of
-the largest line or row.
+of consumption, with the location of the consuming expression and the line
+number in the data).
+
+A lazy value streams through the pipeline that consumes it directly. It is
+**materialised** (read completely into an ordinary list or string) as soon as
+it is bound to a name, stored in a list or record, passed to a function that
+does not stream (any user function, and the builtins not listed in 8.3),
+printed, interpolated or compared. So
+
+```
+read("big.log") | lines | where(l => "ERROR" in l) | count   # bounded memory
+let all = read("big.log") | lines                             # whole file in memory
+```
+
+Streaming stages stop pulling as soon as they have what they need, so
+`read(p) | lines | first` reads one line, and `range(1_000_000_000) | take 3`
+produces three numbers.
 
 ### 13.3 JSON
 
@@ -1387,7 +1403,9 @@ local date-times become strings. Writing requires a record.
 YAML 1.2 core schema: only `true`/`false` are booleans (not `yes`/`no`/`on`),
 `null`/`~`/empty are null. A file with several documents is an error that
 suggests `parse(text, "yaml_all")`, which returns the list of documents.
-Anchors and aliases are resolved; tags other than the core ones are errors.
+Anchors and aliases are resolved. Merge keys (`<<: *defaults`), common in
+CI and compose files, are applied: the merged mapping's keys are added unless
+the mapping already has them.
 
 ### 13.7 .env
 

@@ -1125,8 +1125,10 @@ impl Parser {
                 self.bump();
                 args = self.call_args()?;
             }
+            // A juxtaposed stage takes exactly one argument, so a following
+            // comma belongs to the enclosing call or list (SPEC.md 8.2).
             if self.juxt_starts() {
-                args.extend(self.juxt_args()?);
+                args.push(self.one_arg(true)?);
             }
             if self.stage_ends() {
                 return Ok(Stage::Call {
@@ -1158,19 +1160,6 @@ impl Parser {
                 "a pipeline stage must be a call, like `| count` or `| where .active`",
             )),
         }
-    }
-
-    fn juxt_args(&mut self) -> PResult<Vec<Arg>> {
-        let mut args = Vec::new();
-        loop {
-            args.push(self.one_arg(true)?);
-            if self.at(&Tok::Comma) {
-                self.bump();
-                continue;
-            }
-            break;
-        }
-        Ok(args)
     }
 
     /// One call argument: `expr`, `name: expr` or `...expr`.

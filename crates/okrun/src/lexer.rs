@@ -1063,7 +1063,12 @@ impl<'a> Lexer<'a> {
                     if !lit.is_empty() {
                         parts.push(StrPart::Lit(std::mem::take(&mut lit)));
                     }
-                    let (tokens, spec) = self.tokens(Mode::Interp { spec: true })?;
+                    let (tokens, spec) = self.tokens(Mode::Interp { spec: true }).map_err(|e| {
+                        if e.help.is_some() {
+                            return e;
+                        }
+                        e.with_help("`{` in a double-quoted string starts an interpolation; write \\{ for a literal brace, or use a single-quoted string like '{\"a\": 1}'")
+                    })?;
                     if tokens.is_empty() {
                         return Err(self
                             .err(brace, self.pos, "empty interpolation `{}`")
