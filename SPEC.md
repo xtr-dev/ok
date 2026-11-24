@@ -1569,8 +1569,13 @@ ok build --help
 ```
 
 The first argument names a root task or a namespace; for a namespace, the
-second names the task in it. An unknown name exits with code 2 and suggests
-close matches.
+second names the task in it. A namespace given without a task prints that
+namespace's listing. An unknown name exits with code 2 and suggests close
+matches. A task's `--help` also lists the tasks it runs first and its
+confirmation question.
+
+Relative `path` arguments of a task are made absolute against
+`invocation_dir`, because the task runs in the project root.
 
 ### 15.5 Dependencies (`needs`)
 
@@ -1602,7 +1607,7 @@ time; there is no content-hash mode in v1.
 
 ### 15.7 Modifiers and environment
 
-- `confirm "text"` asks `text` and `Continue? [y/N]` before running. For an
+- `confirm "text"` asks `text. Continue? [y/N]` before running. For an
   invocation, all confirmations of the task and its dependencies are asked
   before anything runs. `--yes` answers yes. Without a terminal and without
   `--yes`, ok fails with an error naming `--yes`.
@@ -1716,7 +1721,9 @@ ok untrust [DIR]          remove trust for the project at DIR
 
 The store lives in the platform configuration directory: `~/.config/ok/` on
 Linux (or `$XDG_CONFIG_HOME/ok/`), `~/Library/Application Support/ok/` on
-macOS, `%APPDATA%\ok\` on Windows. It holds `trust.json` (entries of root,
+macOS, `%APPDATA%\ok\` on Windows. `OK_CONFIG_DIR` overrides the location
+(tests use it to get an empty store). `ok untrust` removes every entry for
+the project's root, content and directory trust alike. It holds `trust.json` (entries of root,
 fingerprint or directory mode, and time) and `snapshots/<fingerprint>/`, a
 copy of each trusted version used for diffs. Writes are atomic.
 
@@ -1732,11 +1739,11 @@ The only reserved first arguments are `trust`, `untrust` and `self`.
 
 | Command | Meaning |
 |---|---|
-| `ok self init` | Write a starter `ok.ok` and the wrappers `./ok`, `ok.cmd`, `ok.ps1` (18) in the current directory. Refuses to overwrite. |
+| `ok self init [--checksums FILE]` | Write a starter `ok.ok` and the wrappers `./ok`, `ok.cmd`, `ok.ps1` (18) in the current directory. The checksums of this version's release are downloaded from the release (`SHA256SUMS`), or read from `FILE`. Refuses to overwrite. |
 | `ok self completions SHELL` | Print a completion script for `zsh`, `bash`, `fish` or `powershell`. |
 | `ok self complete -- WORDS...` | Used by completion scripts; prints candidates. |
-| `ok self fmt [--check] [FILES...]` | Format ok files in the canonical style (the style of `examples/`), preserving comments. Default: the project files. |
-| `ok self check [FILES...]` | Parse and statically check files without running them: syntax, project top-level rules, undefined names, task references and cycles, and warnings (5.4). |
+| `ok self fmt [--check] [FILES...]` | Format ok files in the canonical layout (the style of `examples/`). It changes whitespace only: two-space indentation per open bracket plus one level for continuation lines (a leading `\|` or `.`, or a previous line ending in an operator), no trailing whitespace, at most one blank line in a row, one final newline. Multi-line strings and continued commands are left as written. Default: the project files. `--check` lists files that would change and exits with 1. |
+| `ok self check [FILES...]` | Parse and check files without running them: syntax, the top-level rules for scripts, libraries and project files, and, for a project, namespaces, mounts, task references, dependency cycles and import confinement. (Static detection of undefined names is not in v0.1.) |
 | `ok self tasks [--all]` | The task listing; `--all` includes hidden tasks. |
 | `ok self version` | Print `ok X.Y.Z`. |
 

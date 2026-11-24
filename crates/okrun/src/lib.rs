@@ -18,6 +18,7 @@ pub mod cli;
 pub mod command;
 pub mod error;
 pub mod files;
+pub mod fmt;
 pub mod format;
 pub mod formats;
 pub mod interp;
@@ -27,10 +28,13 @@ pub mod list;
 pub mod net;
 pub mod parser;
 pub mod path;
+pub mod project;
 pub mod sig;
 pub mod source;
 pub mod system;
 pub mod text;
+pub mod tools;
+pub mod trust;
 pub mod value;
 
 /// The version of `ok`, taken from the workspace `Cargo.toml`.

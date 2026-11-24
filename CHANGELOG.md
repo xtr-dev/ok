@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- M5 project mode: discovery of `ok.ok` upwards (or `-C DIR`), namespaces
+  from `ok/*.ok` (`_` files are helpers), mounted sub-projects
+  (`import "web/ok.ok" as web`), the declaration-only rule, `needs` with
+  cycle detection, `sources`/`outputs` up-to-date checks and `--force`,
+  `confirm` (all asked before anything runs, `--yes`), `hidden`, `env file`
+  and `--env NAME`, `requires`, task arguments and `--help`, the task
+  listing, `ok self tasks`, completions for bash, zsh, fish and PowerShell,
+  `ok self check` and `ok self fmt`.
+- M6 trust: content fingerprints, the trust store with snapshots, the prompt
+  with view and diff, `ok trust [--dir] [--list]`, `ok untrust`, `--trust` and
+  `OK_TRUST=1` for CI, a clear failure without a terminal, and import and
+  symlink confinement to the project root.
 - M4 script CLI: `main`'s signature becomes the command line (positional
   arguments, rest arguments, `--flags` with values, switches with
   `--no-name`, repeatable `list[T]` flags, `--`), values parsed by type,

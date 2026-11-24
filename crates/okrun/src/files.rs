@@ -503,6 +503,42 @@ fn glob(_: &mut Interp, mut args: Args) -> R<Value> {
     ))
 }
 
+/// Paths under `root` matching `pattern`, as native paths, sorted. Used by
+/// the `sources`/`outputs` up-to-date checks.
+pub fn glob_native(pattern: &str, root: &Path) -> Result<Vec<PathBuf>, String> {
+    let pattern = pattern.replace('\\', "/");
+    let matcher = globset::GlobBuilder::new(&pattern)
+        .literal_separator(true)
+        .backslash_escape(false)
+        .build()
+        .map(|g| g.compile_matcher())
+        .map_err(|e| format!("invalid glob pattern {pattern:?}: {}", e.kind()))?;
+    let allow_hidden = pattern
+        .split('/')
+        .any(|c| c.starts_with('.') && c != "." && c != "..");
+    let (prefix, depth) = literal_prefix(&pattern);
+    let start = if prefix.is_empty() {
+        root.to_path_buf()
+    } else {
+        root.join(OkPath::parse(&prefix).native())
+    };
+    let mut found = Vec::new();
+    walk(
+        &start,
+        &prefix,
+        depth,
+        allow_hidden,
+        &matcher,
+        &[],
+        &mut found,
+    );
+    found.sort();
+    Ok(found
+        .into_iter()
+        .map(|rel| root.join(OkPath::parse(&rel).native()))
+        .collect())
+}
+
 fn walk(
     dir: &Path,
     rel: &str,

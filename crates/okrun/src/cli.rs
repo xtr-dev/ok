@@ -18,8 +18,10 @@ ok: a portable scripting language and task runner
 Usage:
   ok [OPTIONS] SCRIPT [ARGS...]   run a script (a path ending in .ok, or containing /)
   ok [OPTIONS] -e SOURCE          evaluate SOURCE and print the result
-  ok [OPTIONS] TASK [ARGS...]     run a project task (not implemented yet: milestone M5)
-  ok self version                 print the version
+  ok [OPTIONS]                    list the tasks of the project
+  ok [OPTIONS] TASK [ARGS...]     run a project task (ok NAMESPACE TASK for ok/NAMESPACE.ok)
+  ok trust | untrust [DIR]        manage which projects may run tasks
+  ok self COMMAND                 init, completions, fmt, check, tasks, version
 
 Options (before the script or task name):
   -C DIR          discover the project from DIR
@@ -151,16 +153,41 @@ fn run(args: Vec<String>) -> i32 {
         return finish(&mut interp, result, color, true);
     }
 
+    let start = match &opts.dir {
+        Some(d) => PathBuf::from(d),
+        None => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+    };
+    if opts.dir.as_ref().is_some_and(|d| !Path::new(d).is_dir()) {
+        return usage_error(
+            &format!(
+                "-C {}: no such directory",
+                opts.dir.as_deref().unwrap_or("")
+            ),
+            None,
+        );
+    }
     let Some(name) = rest.first().cloned() else {
+        // `ok` alone: the task listing inside a project, usage outside.
+        if let Some(root) = crate::project::discover(&start) {
+            let mut interp = new_interp(Vec::new(), &opts);
+            let result = interp.load_project(&root).map(|p| {
+                print!("{}", p.listing(false, None));
+                Value::Null
+            });
+            return finish(&mut interp, result, color, false);
+        }
         print!("{USAGE}");
         return 2;
     };
     let script_args = rest[1..].to_vec();
     match name.as_str() {
-        "self" => return self_command(&script_args),
+        "self" => return self_command(&script_args, &opts, &start, color),
         "trust" | "untrust" => {
-            eprintln!("error: `ok {name}` is not implemented yet (milestone M6)");
-            return 1;
+            let mut interp = new_interp(Vec::new(), &opts);
+            let result =
+                crate::trust::command(name == "untrust", &script_args, &start, &mut interp)
+                    .map(|_| Value::Null);
+            return finish(&mut interp, result, color, false);
         }
         _ => {}
     }
@@ -180,41 +207,102 @@ fn run(args: Vec<String>) -> i32 {
         let result = interp.run_file(&name, path);
         return finish(&mut interp, result, color, false);
     }
-    usage_error(
-        &format!(
-            "`{name}` is not a script, and running project tasks is not implemented yet (milestone M5)"
-        ),
-        Some(format!(
-            "to run a script, give its path: ok ./{name} or ok {name}.ok"
-        )),
-    )
+    let Some(root) = crate::project::discover(&start) else {
+        return usage_error(
+            &format!(
+                "no ok.ok found in {} or its parents, so `{name}` is not a task",
+                crate::path::OkPath::from_native(&start).display()
+            ),
+            Some(format!(
+                "to run a script, give its path: ok ./{name} or ok {name}.ok; to start a project, run ok self init"
+            )),
+        );
+    };
+    let mut interp = new_interp(Vec::new(), &opts);
+    let task_opts = crate::project::TaskOpts {
+        force: opts.force,
+        env: opts.env.clone(),
+        trust: opts.trust,
+        all: false,
+    };
+    let result = interp
+        .load_project(&root)
+        .and_then(|p| interp.run_task(&p, &rest, &task_opts));
+    finish(&mut interp, result, color, false)
 }
 
-fn self_command(args: &[String]) -> i32 {
-    match args.first().map(String::as_str) {
+fn self_command(args: &[String], opts: &Opts, start: &Path, color: Color) -> i32 {
+    let rest = args.get(1..).unwrap_or(&[]);
+    let mut interp = new_interp(Vec::new(), opts);
+    let result: Result<Value, Flow> = match args.first().map(String::as_str) {
         Some("version") => {
             println!("ok {}", crate::VERSION);
-            0
+            Ok(Value::Null)
         }
-        Some(cmd @ ("init" | "completions" | "complete" | "fmt" | "check" | "tasks")) => {
-            let milestone = match cmd {
-                "init" => "M7",
-                "fmt" | "check" => "M5",
-                _ => "M5",
+        Some("tasks") => {
+            let all = rest.iter().any(|a| a == "--all");
+            match crate::project::discover(start) {
+                Some(root) => interp.load_project(&root).map(|p| {
+                    print!("{}", p.listing(all, None));
+                    Value::Null
+                }),
+                None => {
+                    return usage_error("no ok.ok found in this directory or its parents", None);
+                }
+            }
+        }
+        Some("completions") => match rest
+            .first()
+            .map(String::as_str)
+            .and_then(crate::project::completion_script)
+        {
+            Some(script) => {
+                print!("{script}");
+                Ok(Value::Null)
+            }
+            None => {
+                return usage_error(
+                    "`ok self completions` needs a shell: bash, zsh, fish or powershell",
+                    None,
+                );
+            }
+        },
+        Some("complete") => {
+            let words: Vec<String> = rest.iter().skip_while(|w| *w == "--").cloned().collect();
+            let candidates = match crate::project::discover(start)
+                .and_then(|root| interp.load_project(&root).ok())
+            {
+                Some(p) => p.complete(&words),
+                None => {
+                    let current = words.last().map(String::as_str).unwrap_or("");
+                    ["self", "trust", "untrust"]
+                        .iter()
+                        .filter(|c| c.starts_with(current))
+                        .map(|c| c.to_string())
+                        .collect()
+                }
             };
-            eprintln!("error: `ok self {cmd}` is not implemented yet (milestone {milestone})");
-            1
+            for c in candidates {
+                println!("{c}");
+            }
+            Ok(Value::Null)
         }
+        Some("check") => crate::tools::check(&mut interp, rest, start),
+        Some("fmt") => crate::tools::fmt(&mut interp, rest, start),
+        Some("init") => crate::tools::init(rest, start),
         Some(other) => {
             let names = ["init", "completions", "fmt", "check", "tasks", "version"];
             let help = suggest(other, names).map(|s| format!("did you mean `ok self {s}`?"));
-            usage_error(&format!("unknown command `ok self {other}`"), help)
+            return usage_error(&format!("unknown command `ok self {other}`"), help);
         }
-        None => usage_error(
-            "`ok self` needs a command: init, completions, fmt, check, tasks or version",
-            None,
-        ),
-    }
+        None => {
+            return usage_error(
+                "`ok self` needs a command: init, completions, fmt, check, tasks or version",
+                None,
+            );
+        }
+    };
+    finish(&mut interp, result, color, false)
 }
 
 fn pick_color(choice: Option<&str>) -> Color {

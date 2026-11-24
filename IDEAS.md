@@ -20,3 +20,6 @@ in the code. Each needs a spec change and review before it is built.
 - A REPL beyond `ok -e`.
 - A lint in `ok self check` for `write(value, path)` called with the arguments
   swapped.
+- Static detection of undefined names and wrong argument counts in
+  `ok self check`.
+- A syntax-tree based formatter (line breaking, spacing inside lines).

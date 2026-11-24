@@ -720,11 +720,11 @@ checksum = "521739c6d2bac4aa25192232afe6841231376b2b26d4d9fae5ecf8ca5772e441"
 
 [[package]]
 name = "ok-fixture"
-version = "0.0.0"
+version = "0.1.0"
 
 [[package]]
 name = "okrun"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "csv",
  "flate2",

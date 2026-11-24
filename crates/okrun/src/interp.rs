@@ -166,9 +166,13 @@ pub struct RunOpts {
 /// What kind of file is being loaded; decides which top-level items are
 /// allowed (SPEC.md 4.1).
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum FileKind {
+pub(crate) enum FileKind {
     Script,
     Library,
+    /// A project file (SPEC.md 15.2); `root` for the root `ok.ok`.
+    Project {
+        root: bool,
+    },
 }
 
 impl Interp {
@@ -346,7 +350,7 @@ impl Interp {
                     doc: d.doc.as_deref(),
                     params: &d.params,
                 };
-                match sig::parse(&target, &argv, &self.invocation_dir)? {
+                match sig::parse(&target, &argv, &self.invocation_dir, false)? {
                     sig::Outcome::Help(_) => {
                         print!("{}", sig::help(&target, &self.sources));
                         return Err(Flow::Exit(0));
@@ -396,7 +400,13 @@ impl Interp {
 
     /// Hoist functions and imports, then run the statements of a file.
     /// Returns the value of the last statement if it is an expression.
-    fn exec_file(&mut self, prog: &Program, scope: &Rc<Scope>, dir: &Path, file: u32) -> R<Value> {
+    pub(crate) fn exec_file(
+        &mut self,
+        prog: &Program,
+        scope: &Rc<Scope>,
+        dir: &Path,
+        file: u32,
+    ) -> R<Value> {
         self.hoist(&prog.stmts, scope)?;
         for stmt in &prog.stmts {
             if let StmtKind::Import {
@@ -423,7 +433,7 @@ impl Interp {
         Ok(last)
     }
 
-    fn hoist(&mut self, stmts: &[Stmt], scope: &Rc<Scope>) -> R<()> {
+    pub(crate) fn hoist(&mut self, stmts: &[Stmt], scope: &Rc<Scope>) -> R<()> {
         for stmt in stmts {
             if let StmtKind::Fn(decl) = &stmt.kind {
                 let f = Value::Func(Rc::new(Func::User {
@@ -466,6 +476,10 @@ impl Interp {
                 with_help(f, "write the path relative to this file, like \"./lib.ok\"")
             });
         }
+        if as_path.name() == "ok.ok" && self.project_root.is_some() {
+            // Mounts are handled by the project loader (SPEC.md 15.8).
+            return Ok(());
+        }
         if as_path.name() == "ok.ok" {
             return err(
                 ErrKind::Name,
@@ -481,6 +495,24 @@ impl Interp {
                 format!("cannot import \"{raw}\": {}", io_reason(&e)),
             )
         })?;
+        if let Some(root) = &self.project_root {
+            // Imports may not leave the project, whether by `..` or a
+            // symlink (SPEC.md 16.6).
+            let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.clone());
+            if !full.starts_with(&root) {
+                return Err(OkError::at(
+                    ErrKind::Trust,
+                    span,
+                    format!("\"{raw}\" is outside the project"),
+                )
+                .with_note(format!(
+                    "it resolves to {}",
+                    OkPath::from_native(&full).display()
+                ))
+                .with_help("project files may only import files inside the project root")
+                .into());
+            }
+        }
         let importer = self.sources.file(file).name.clone();
         let display = OkPath::parse(&importer).parent().join(&as_path).display();
         if let Some(i) = self.loading.iter().position(|(p, _)| *p == full) {
@@ -1393,7 +1425,7 @@ impl Interp {
         )
     }
 
-    fn call_user(&mut self, decl: &Rc<FnDecl>, env: &Rc<Scope>, args: Args) -> R<Value> {
+    pub(crate) fn call_user(&mut self, decl: &Rc<FnDecl>, env: &Rc<Scope>, args: Args) -> R<Value> {
         if self.depth >= MAX_CALL_DEPTH {
             return err(
                 ErrKind::Value,
@@ -2092,7 +2124,7 @@ pub fn io_reason(e: &std::io::Error) -> String {
 }
 
 /// Check which top-level items a file may contain (SPEC.md 4.1).
-fn check_items(prog: &Program, kind: FileKind) -> Result<(), OkError> {
+pub(crate) fn check_items(prog: &Program, kind: FileKind) -> Result<(), OkError> {
     let mut consts: HashSet<String> = HashSet::new();
     for stmt in &prog.stmts {
         if let StmtKind::Import {
@@ -2103,8 +2135,11 @@ fn check_items(prog: &Program, kind: FileKind) -> Result<(), OkError> {
             consts.insert(n.clone());
         }
     }
+    let project = matches!(kind, FileKind::Project { .. });
+    let root = matches!(kind, FileKind::Project { root: true });
     for stmt in &prog.stmts {
         match (&stmt.kind, kind) {
+            (StmtKind::Task(_), FileKind::Project { .. }) => {}
             (StmtKind::Task(t), _) => {
                 return Err(OkError::at(
                     ErrKind::Syntax,
@@ -2113,7 +2148,8 @@ fn check_items(prog: &Program, kind: FileKind) -> Result<(), OkError> {
                 )
                 .with_help("use fn for a function in a script"));
             }
-            (StmtKind::Requires { .. }, _) | (StmtKind::EnvFile { .. }, _) => {
+            (StmtKind::Requires { .. } | StmtKind::EnvFile { .. }, _) if root => {}
+            (StmtKind::Requires { .. } | StmtKind::EnvFile { .. }, _) => {
                 return Err(OkError::at(
                     ErrKind::Syntax,
                     stmt.span,
@@ -2121,25 +2157,43 @@ fn check_items(prog: &Program, kind: FileKind) -> Result<(), OkError> {
                 ));
             }
             (_, FileKind::Script) => {}
-            (StmtKind::Fn(d), FileKind::Library) => {
+            (StmtKind::Fn(d), _) => {
                 consts.insert(d.name.clone());
             }
-            (StmtKind::Import { .. }, FileKind::Library) => {}
+            (StmtKind::Import { .. }, _) => {}
             (
                 StmtKind::Let {
                     pattern,
                     value,
                     mutable: false,
                 },
-                FileKind::Library,
+                _,
             ) => {
                 if let Some(span) = non_const(value, &consts) {
-                    return Err(OkError::at(ErrKind::Syntax, span, "a library's top-level `let` must be a constant")
-                        .with_help("libraries never run code when imported; compute the value inside a function instead"));
+                    let (msg, help) = if project {
+                        (
+                            "a project file's top-level `let` must be a constant",
+                            "loading a project never runs code; compute the value inside the task that needs it",
+                        )
+                    } else {
+                        (
+                            "a library's top-level `let` must be a constant",
+                            "libraries never run code when imported; compute the value inside a function instead",
+                        )
+                    };
+                    return Err(OkError::at(ErrKind::Syntax, span, msg).with_help(help));
                 }
                 let mut names = Vec::new();
                 pattern.names(&mut names);
                 consts.extend(names.into_iter().map(|(n, _)| n));
+            }
+            (_, FileKind::Project { .. }) => {
+                return Err(OkError::at(
+                    ErrKind::Syntax,
+                    stmt.span,
+                    "project files cannot run code at the top level",
+                )
+                .with_help("move it into a task, or compute it inside the task that needs it"));
             }
             (_, FileKind::Library) => {
                 return Err(OkError::at(

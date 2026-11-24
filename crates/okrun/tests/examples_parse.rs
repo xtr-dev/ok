@@ -53,3 +53,29 @@ fn repo_ok_file_parses() {
     let src = std::fs::read_to_string(path).expect("read ok.ok");
     okrun::parser::parse(0, &src).expect("ok.ok parses");
 }
+
+#[test]
+fn examples_are_in_canonical_format() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+    let mut files = Vec::new();
+    ok_files(&root, &mut files);
+    files.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ok.ok"));
+    let mut problems = Vec::new();
+    for f in &files {
+        let src = std::fs::read_to_string(f).expect("read example");
+        let formatted = okrun::fmt::format_source(&src).expect("format");
+        if formatted != src {
+            let first = src
+                .lines()
+                .zip(formatted.lines())
+                .enumerate()
+                .find(|(_, (a, b))| a != b);
+            problems.push(format!("{}: {:?}", f.display(), first));
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "examples that `ok self fmt` would change:\n{}",
+        problems.join("\n")
+    );
+}

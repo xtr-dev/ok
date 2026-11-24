@@ -406,3 +406,49 @@ an empty list, not a missing-argument error.
 
 **`--flag=value` and `--flag value` are both accepted; switches accept
 `--flag`, `--no-flag` and `--flag=true|false`.**
+
+## 2026-11-25 (M5)
+
+**Tasks run with the process working directory set to the project root.**
+Changing ok's own working directory (rather than only passing `cwd` to
+commands) makes every relative path in a task, from `read` to `glob` to
+`run`, mean the same thing. Mounted sub-project tasks switch to their
+directory for their duration.
+
+**A task's declarations load before its dependencies run, but only after
+trust and confirmations.** Order: parse everything, pick the task, parse its
+arguments, check trust, ask confirmations, load env files, evaluate
+declarations, run the plan. Nothing a project contains runs before the user
+approved it.
+
+**`ok NAMESPACE` alone lists the namespace.** It is the natural "what can I
+run here" question and costs nothing.
+
+**`ok self fmt` changes whitespace only.** A formatter that rebuilds code from
+the syntax tree would need comment preservation everywhere; one that only
+re-indents cannot change a program's meaning. Every example is kept in this
+format by a test.
+
+**`ok self check` checks structure, not undefined names.** A sound name
+check needs the full scope rules (hoisting, imports, implicit closures, match
+bindings) and false positives would erode trust in it; it is left for a
+later version and logged in IDEAS.md.
+
+**The version moved to 0.1.0 during M5.** Project files say `requires
+"0.1"`, which a 0.0.0 binary refuses; the version is the one being built.
+
+## 2026-11-25 (M6)
+
+**The trust store is JSON plus snapshot directories.** `trust.json` lists
+entries (root, mode, fingerprint, time); `snapshots/<fingerprint>/` holds the
+trusted files for diffs. Both are plain files a user can inspect or delete.
+
+**The diff is computed in ok, not by a crate.** Project files are small, and
+a longest-common-subsequence line diff with three lines of context is about
+fifty lines of code; it avoids a dependency for one prompt.
+
+**`OK_CONFIG_DIR` overrides the store location.** Tests need an isolated
+store, and users with unusual setups can point it elsewhere.
+
+**An empty answer to the trust prompt means no.** Pressing Enter must never
+run someone else's code.

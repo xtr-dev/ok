@@ -4007,8 +4007,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Used by:
 
-- [ok-fixture 0.0.0](https://crates.io/crates/ok-fixture)
-- [okrun 0.0.0](https://github.com/xtr-dev/ok)
+- [ok-fixture 0.1.0](https://crates.io/crates/ok-fixture)
+- [okrun 0.1.0](https://github.com/xtr-dev/ok)
 
 ```
 Creative Commons Legal Code

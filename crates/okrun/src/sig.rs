@@ -232,6 +232,7 @@ fn parse_value(
     ty: Option<&TypeAnn>,
     text: &str,
     base: &Path,
+    anchor: bool,
 ) -> Result<Value, OkError> {
     let shown = if p.flag {
         format!("--{}", p.cli_name)
@@ -242,7 +243,7 @@ fn parse_value(
     Ok(match ty {
         None | Some(TypeAnn::Any) | Some(TypeAnn::String) => Value::str(text),
         Some(TypeAnn::Optional(inner)) | Some(TypeAnn::List(Some(inner))) => {
-            return parse_value(t, p, Some(inner), text, base);
+            return parse_value(t, p, Some(inner), text, base, anchor);
         }
         Some(TypeAnn::List(None)) => Value::str(text),
         Some(TypeAnn::Int) => Value::Int(text.trim().parse().map_err(|_| bad("an integer"))?),
@@ -252,9 +253,8 @@ fn parse_value(
         },
         Some(TypeAnn::Path) => {
             let p = OkPath::parse(text);
-            let cwd = std::env::current_dir().unwrap_or_default();
             // Relative paths mean "relative to where the user typed it".
-            if !p.is_abs() && cwd != base {
+            if !p.is_abs() && anchor {
                 Value::path(OkPath::from_native(base).join(&p))
             } else {
                 Value::path(p)
@@ -284,7 +284,8 @@ fn parse_value(
 
 /// Parse `argv` against the signature. `base` is the directory relative
 /// path arguments are resolved against (`invocation_dir`).
-pub fn parse(t: &Target, argv: &[String], base: &Path) -> Result<Outcome, OkError> {
+/// When `anchor` is set, relative path arguments are joined to `base`.
+pub fn parse(t: &Target, argv: &[String], base: &Path, anchor: bool) -> Result<Outcome, OkError> {
     let positional: Vec<&Param> = t.params.iter().filter(|p| !p.flag && !p.rest).collect();
     let rest = t.params.iter().find(|p| p.rest);
     let flags: Vec<&Param> = t.params.iter().filter(|p| p.flag).collect();
@@ -362,7 +363,7 @@ pub fn parse(t: &Target, argv: &[String], base: &Path) -> Result<Outcome, OkErro
                     }
                 },
             };
-            let v = parse_value(t, p, p.ty.as_ref(), &text, base)?;
+            let v = parse_value(t, p, p.ty.as_ref(), &text, base, anchor)?;
             if is_list(p) {
                 let mut items = match lists.get(&p.name) {
                     Some(Value::List(l)) => (**l).clone(),
@@ -379,9 +380,9 @@ pub fn parse(t: &Target, argv: &[String], base: &Path) -> Result<Outcome, OkErro
         // A positional argument.
         if pos_values.len() < positional.len() {
             let p = positional[pos_values.len()];
-            pos_values.push(parse_value(t, p, p.ty.as_ref(), a, base)?);
+            pos_values.push(parse_value(t, p, p.ty.as_ref(), a, base, anchor)?);
         } else if let Some(r) = rest {
-            rest_values.push(parse_value(t, r, r.ty.as_ref(), a, base)?);
+            rest_values.push(parse_value(t, r, r.ty.as_ref(), a, base, anchor)?);
         } else {
             let help = if a.starts_with('-') && !a.starts_with("--") && a.len() > 1 {
                 Some("ok has no short flags; use the --long form".to_string())
