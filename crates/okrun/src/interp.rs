@@ -16,6 +16,7 @@ use crate::ast::*;
 use crate::builtins;
 use crate::error::{ErrKind, Frame, MAX_TRACE, OkError, suggest};
 use crate::format;
+use crate::lazy;
 use crate::parser;
 use crate::path::OkPath;
 use crate::source::{SourceMap, Span};
@@ -118,6 +119,9 @@ pub struct Args {
 pub struct Builtin {
     pub name: &'static str,
     pub f: fn(&mut Interp, Args) -> R<Value>,
+    /// Whether the builtin accepts lazy (streaming) arguments. All others
+    /// receive their arguments materialised.
+    pub lazy: bool,
 }
 
 // ----- the interpreter -----------------------------------------------------------
@@ -654,7 +658,13 @@ impl Interp {
         body: &Block,
         scope: &Rc<Scope>,
     ) -> R<()> {
-        let v = self.eval(iter, scope)?;
+        let v = self.eval_lazy(iter, scope)?;
+        if let Value::Lazy(l) = &v
+            && !l.text
+        {
+            return self.exec_for_stream(first, second, v, iter.span, body, scope);
+        }
+        let v = lazy::force(self, v, iter.span)?;
         let pairs: Vec<(Value, Option<Value>)> = match &v {
             Value::List(items) => {
                 if second.is_some() {
@@ -712,6 +722,37 @@ impl Interp {
         Ok(())
     }
 
+    /// A `for` loop over a lazy list pulls one element per iteration.
+    fn exec_for_stream(
+        &mut self,
+        first: &Pattern,
+        second: Option<&Pattern>,
+        v: Value,
+        span: Span,
+        body: &Block,
+        scope: &Rc<Scope>,
+    ) -> R<()> {
+        let mut src = lazy::cursor(self, v, span, "`for`")?;
+        let mut index = 0i64;
+        while let Some(item) = lazy::at_span(src.next(self), span)? {
+            let iter_scope = Scope::new(Some(scope.clone()));
+            match second {
+                Some(p) => {
+                    self.bind(first, Value::Int(index), false, &iter_scope)?;
+                    self.bind(p, item, false, &iter_scope)?;
+                }
+                None => self.bind(first, item, false, &iter_scope)?,
+            }
+            index += 1;
+            match self.exec_stmts(&body.stmts, &iter_scope) {
+                Ok(_) | Err(Flow::Continue) => {}
+                Err(Flow::Break) => break,
+                Err(other) => return Err(other),
+            }
+        }
+        Ok(())
+    }
+
     // ----- expressions ----------------------------------------------------------
 
     fn unknown_name(&self, name: &str, span: Span, scope: &Rc<Scope>) -> OkError {
@@ -732,7 +773,21 @@ impl Interp {
             .maybe_help(help)
     }
 
+    /// Evaluate to a materialised value: lazy results are collected
+    /// (SPEC.md 13.2). Almost everything uses this.
     pub fn eval(&mut self, e: &Expr, scope: &Rc<Scope>) -> R<Value> {
+        let v = self.eval_lazy(e, scope)?;
+        if lazy::is_lazy(&v) {
+            lazy::force(self, v, e.span)
+        } else {
+            Ok(v)
+        }
+    }
+
+    /// Evaluate, keeping a lazy result lazy. Used where streaming is allowed:
+    /// pipeline inputs, call arguments (forced again unless the callee
+    /// streams) and `for` loops.
+    fn eval_lazy(&mut self, e: &Expr, scope: &Rc<Scope>) -> R<Value> {
         match &e.kind {
             ExprKind::Null => Ok(Value::Null),
             ExprKind::Bool(b) => Ok(Value::Bool(*b)),
@@ -819,7 +874,7 @@ impl Interp {
                 }
                 Ok(Value::record(r))
             }
-            ExprKind::Group(inner) => self.eval(inner, scope),
+            ExprKind::Group(inner) => self.eval_lazy(inner, scope),
             ExprKind::Unary(op, inner) => {
                 let v = self.eval(inner, scope)?;
                 match (op, v) {
@@ -876,7 +931,7 @@ impl Interp {
                 name_span,
                 args,
             } => {
-                let rv = self.eval(recv, scope)?;
+                let rv = self.eval_lazy(recv, scope)?;
                 let args = self.eval_args(args, scope, e.span)?;
                 self.method_call(rv, name, *name_span, args, scope)
             }
@@ -934,7 +989,7 @@ impl Interp {
                 env: scope.clone(),
             }))),
             ExprKind::Pipe { lhs, stage } => {
-                let left = self.eval(lhs, scope)?;
+                let left = self.eval_lazy(lhs, scope)?;
                 self.eval_stage(left, stage, scope, e.span)
             }
             ExprKind::Run(_) | ExprKind::RunFn { .. } => {
@@ -956,7 +1011,7 @@ impl Interp {
         };
         for a in args {
             match a {
-                Arg::Pos(e) => out.pos.push(self.eval(e, scope)?),
+                Arg::Pos(e) => out.pos.push(self.eval_lazy(e, scope)?),
                 Arg::Spread(e) => match self.eval(e, scope)? {
                     Value::List(items) => out.pos.extend(items.iter().cloned()),
                     other => {
@@ -982,7 +1037,7 @@ impl Interp {
                             format!("argument `{name}` is given twice"),
                         );
                     }
-                    let v = self.eval(value, scope)?;
+                    let v = self.eval_lazy(value, scope)?;
                     out.named.push((name.clone(), v, *name_span));
                 }
             }
@@ -1122,7 +1177,10 @@ impl Interp {
             return err(ErrKind::Type, callee.map_or(span, |c| c.span), what);
         };
         match &**func {
-            Func::Builtin(b) => (b.f)(self, args),
+            Func::Builtin(b) => {
+                let args = if b.lazy { args } else { self.force_args(args)? };
+                (b.f)(self, args)
+            }
             Func::User { decl, env } => {
                 let (decl, env) = (decl.clone(), env.clone());
                 self.call_user(&decl, &env, args)
@@ -1159,7 +1217,23 @@ impl Interp {
         r
     }
 
+    /// Materialise every argument (for functions that do not stream).
+    fn force_args(&mut self, mut args: Args) -> R<Args> {
+        let span = args.span;
+        for v in args
+            .pos
+            .iter_mut()
+            .chain(args.named.iter_mut().map(|(_, v, _)| v))
+        {
+            if lazy::is_lazy(v) {
+                *v = lazy::force(self, std::mem::replace(v, Value::Null), span)?;
+            }
+        }
+        Ok(args)
+    }
+
     fn call_user_inner(&mut self, decl: &Rc<FnDecl>, env: &Rc<Scope>, args: Args) -> R<Value> {
+        let args = self.force_args(args)?;
         let call_span = args.span;
         let scope = Scope::new(Some(env.clone()));
         let fname = display_fn_name(&decl.name);

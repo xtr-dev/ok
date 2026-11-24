@@ -29,6 +29,9 @@ pub enum Value {
     /// Nanoseconds since the Unix epoch, UTC.
     Time(i64),
     Func(Rc<Func>),
+    /// A streaming list or string; see `lazy.rs`. Never visible to scripts
+    /// as a separate kind.
+    Lazy(Rc<crate::lazy::Lazy>),
 }
 
 pub enum Func {
@@ -132,6 +135,13 @@ impl Value {
             Value::Duration(_) => "duration",
             Value::Time(_) => "time",
             Value::Func(_) => "fn",
+            Value::Lazy(l) => {
+                if l.text {
+                    "string"
+                } else {
+                    "list"
+                }
+            }
         }
     }
 
@@ -205,6 +215,7 @@ impl Value {
             Value::Func(f) => {
                 let _ = write!(out, "<fn {}>", f.name());
             }
+            Value::Lazy(_) => out.push_str("<stream>"),
         }
     }
 }
@@ -330,6 +341,18 @@ pub fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
+/// (year, month, day) to days since 1970-01-01, proleptic Gregorian; the
+/// inverse of [`civil_from_days`].
+pub fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y.rem_euclid(400);
+    let mp = (m as i64 + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d as i64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
 /// Structural equality (SPEC.md 5.4). Records compare as maps: same keys and
 /// equal values, in any order.
 pub fn equal(a: &Value, b: &Value) -> bool {
@@ -438,6 +461,10 @@ mod tests {
     fn civil_dates() {
         assert_eq!(civil_from_days(0), (1970, 1, 1));
         assert_eq!(civil_from_days(20_416), (2025, 11, 24));
+        for d in [-1000, 0, 59, 60, 20_416, 100_000] {
+            let (y, m, dd) = civil_from_days(d);
+            assert_eq!(days_from_civil(y, m, dd), d);
+        }
         assert_eq!(format_time_utc(0), "1970-01-01T00:00:00Z");
     }
 }

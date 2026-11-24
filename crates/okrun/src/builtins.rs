@@ -11,85 +11,53 @@ use crate::interp::{Args, Builtin, Flow, Interp, R, Scope};
 use crate::path::OkPath;
 use crate::value::{Func, Record, Value};
 
-/// Largest list `range` builds. Ranges become lazy with the data functions
-/// of milestone M2; until then this keeps a typo from exhausting memory.
-const MAX_RANGE: i64 = 10_000_000;
+/// Builtins that receive their arguments materialised.
+pub const fn eager(name: &'static str, f: BuiltinFn) -> Builtin {
+    Builtin {
+        name,
+        f,
+        lazy: false,
+    }
+}
 
-static BUILTINS: &[Builtin] = &[
+/// Builtins that stream lazy arguments (SPEC.md 8.3).
+pub const fn streaming(name: &'static str, f: BuiltinFn) -> Builtin {
     Builtin {
-        name: "print",
-        f: print,
-    },
-    Builtin {
-        name: "eprint",
-        f: eprint,
-    },
-    Builtin {
-        name: "str",
-        f: str_,
-    },
-    Builtin {
-        name: "int",
-        f: int,
-    },
-    Builtin {
-        name: "float",
-        f: float,
-    },
-    Builtin {
-        name: "type",
-        f: type_,
-    },
-    Builtin {
-        name: "len",
-        f: len,
-    },
-    Builtin {
-        name: "fail",
-        f: fail,
-    },
-    Builtin {
-        name: "exit",
-        f: exit,
-    },
-    Builtin {
-        name: "path",
-        f: path,
-    },
-    Builtin {
-        name: "range",
-        f: range,
-    },
-    Builtin {
-        name: "floor",
-        f: floor,
-    },
-    Builtin {
-        name: "ceil",
-        f: ceil,
-    },
-    Builtin {
-        name: "round",
-        f: round,
-    },
-    Builtin {
-        name: "fmt",
-        f: fmt,
-    },
-    Builtin {
-        name: "bytes",
-        f: bytes,
-    },
-    Builtin {
-        name: "text",
-        f: text,
-    },
+        name,
+        f,
+        lazy: true,
+    }
+}
+
+pub type BuiltinFn = fn(&mut Interp, Args) -> R<Value>;
+
+#[rustfmt::skip]
+static CORE: &[Builtin] = &[
+    eager("print", print),
+    eager("eprint", eprint),
+    eager("str", str_),
+    eager("int", int),
+    eager("float", float),
+    eager("type", type_),
+    eager("len", len),
+    eager("fail", fail),
+    eager("exit", exit),
+    eager("path", path),
+    eager("floor", floor),
+    eager("ceil", ceil),
+    eager("round", round),
+    eager("fmt", fmt),
+    eager("bytes", bytes),
+    eager("text", text),
+    eager("range", range),
 ];
 
 /// Declare the builtins, `os` and `args` in the global scope.
 pub fn install(globals: &Rc<Scope>, script_args: Vec<String>) {
-    for b in BUILTINS {
-        globals.declare(b.name, Value::Func(Rc::new(Func::Builtin(b))), false);
+    for table in [CORE, crate::list::BUILTINS, crate::formats::BUILTINS] {
+        for b in table {
+            globals.declare(b.name, Value::Func(Rc::new(Func::Builtin(b))), false);
+        }
     }
     let mut os = Record::new();
     os.insert("name", Value::str(std::env::consts::OS));
@@ -100,17 +68,17 @@ pub fn install(globals: &Rc<Scope>, script_args: Vec<String>) {
     globals.declare("args", Value::list(args), false);
 }
 
-fn arg_err<T>(args: &Args, msg: impl Into<String>) -> R<T> {
+pub(crate) fn arg_err<T>(args: &Args, msg: impl Into<String>) -> R<T> {
     Err(OkError::at(ErrKind::Arg, args.span, msg).into())
 }
 
-fn type_err<T>(args: &Args, msg: impl Into<String>) -> R<T> {
+pub(crate) fn type_err<T>(args: &Args, msg: impl Into<String>) -> R<T> {
     Err(OkError::at(ErrKind::Type, args.span, msg).into())
 }
 
 /// Check the positional argument count and that no named arguments were
 /// passed (for builtins that take none).
-fn arity(args: &Args, name: &str, min: usize, max: usize) -> R<()> {
+pub(crate) fn arity(args: &Args, name: &str, min: usize, max: usize) -> R<()> {
     if let Some((n, _, span)) = args.named.first() {
         return Err(OkError::at(
             ErrKind::Arg,
@@ -297,7 +265,7 @@ fn path(_: &mut Interp, args: Args) -> R<Value> {
     }
 }
 
-fn int_arg(args: &Args, i: usize, fname: &str) -> R<i64> {
+pub(crate) fn int_arg(args: &Args, i: usize, fname: &str) -> R<i64> {
     match &args.pos[i] {
         Value::Int(n) => Ok(*n),
         other => type_err(
@@ -321,27 +289,16 @@ fn range(_: &mut Interp, args: Args) -> R<Value> {
     if step == 0 {
         return arg_err(&args, "the step of `range` cannot be 0");
     }
-    let count = if step > 0 {
-        (end as i128 - start as i128 + step as i128 - 1) / step as i128
-    } else {
-        (start as i128 - end as i128 - step as i128 - 1) / (-step as i128)
-    };
-    if count > MAX_RANGE as i128 {
-        return arg_err(
-            &args,
-            format!("range of {count} numbers is too large (the limit is {MAX_RANGE})"),
-        );
-    }
-    let mut out = Vec::with_capacity(count.max(0) as usize);
-    let mut i = start;
-    while (step > 0 && i < end) || (step < 0 && i > end) {
-        out.push(Value::Int(i));
-        match i.checked_add(step) {
-            Some(n) => i = n,
-            None => break,
-        }
-    }
-    Ok(Value::list(out))
+    // Lazy, so `range(1_000_000_000) | take 3` and `for i in range(n)` never
+    // build the whole list.
+    Ok(crate::lazy::Lazy::list(Box::new(
+        crate::lazy::RangeSource {
+            next: start,
+            end,
+            step,
+            done: false,
+        },
+    )))
 }
 
 fn rounding(args: Args, name: &str, f: fn(f64) -> f64) -> R<Value> {
