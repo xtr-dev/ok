@@ -13,7 +13,7 @@ repo and code are built. The original brief is `PROMPT.md`.
 ## Current state
 
 - Milestone: **M0 (spec and examples)**, waiting for review. No interpreter
-  code yet; `crates/ok-lang/src/main.rs` is a placeholder that answers
+  code yet; `crates/okrun/src/main.rs` is a placeholder that answers
   `ok self version`.
 - Milestones are in `PROMPT.md`. Stop after each one, report to Bas, and wait
   for a go-ahead.
@@ -22,7 +22,7 @@ repo and code are built. The original brief is `PROMPT.md`.
 
 ## Commands
 
-Toolchain pinned in `rust-toolchain.toml` (1.90.0). Until M5, use cargo
+Toolchain pinned in `rust-toolchain.toml` (1.100.0). Until M5, use cargo
 directly; from M5, `ok <task>` via the repo's `ok.ok`.
 
 ```
@@ -35,16 +35,11 @@ cargo deny check                    # licences, advisories, sources
 cargo about generate about.hbs > THIRD_PARTY.md
 ```
 
-Local tool note: the local cargo-deny is 0.18.3 (newer ones need a newer
-rustc); its advisory check cannot parse CVSS 4.0 entries, so run
-`cargo deny check licenses bans sources` locally and rely on CI for
-advisories.
-
 ## Layout
 
 ```
 Cargo.toml              workspace; shared version, licence, lints, release profile
-crates/ok-lang/         the published package `ok-lang`
+crates/okrun/           the published package `okrun`
   src/lib.rs            the language (lexer, parser, evaluator, stdlib from M1)
   src/main.rs           the `ok` binary: thin, calls into the library
   tests/                integration tests that run the real binary
@@ -60,7 +55,7 @@ deny.toml, about.toml, about.hbs   licence tooling
 .github/workflows/      ci.yml (fmt, clippy, test x3 OS, deny, notices), release.yml (6 targets, draft release)
 ```
 
-Planned module layout inside `crates/ok-lang/src/` (decide finally in M1 and
+Planned module layout inside `crates/okrun/src/` (decide finally in M1 and
 update here): `lexer.rs` (expression and command mode), `parser.rs`, `ast.rs`,
 `eval/`, `value.rs`, `error.rs` (snippet rendering), `stdlib/`, `formats/`,
 `cli.rs`, `project.rs`, `trust.rs`.

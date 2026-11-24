@@ -959,6 +959,13 @@ run("npm", "ci", cwd: "frontend", timeout: 10m)
 | `stdin` | string, bytes, path | Data (string or bytes) or a file (path) for stdin. |
 | `timeout` | duration | Kill the child after this long; raises a `timeout` error (exit 124 if uncaught). |
 | `bytes` | bool | Captured `out`/`err` are bytes, unmodified. |
+| `quiet` | bool | Hide the command's output. It is captured and discarded instead of shown; on failure the error still includes the last lines of stderr. |
+
+A command that should run without printing anything uses `quiet`:
+
+```
+run cargo fetch with {quiet: true}       # nothing on the terminal unless it fails
+```
 
 `with` is special only when followed by `{`; elsewhere it is an ordinary
 word (`run echo with care` passes `with` and `care`).

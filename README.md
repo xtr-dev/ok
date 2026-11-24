@@ -67,7 +67,7 @@ cargo build --release      # binary at target/release/ok
 cargo test --workspace
 ```
 
-The crate is named `ok-lang` because `ok` is taken on crates.io; the binary
+The crate is named `okrun` because `ok` is taken on crates.io; the binary
 is `ok`. Other tools also install a binary called `ok`, so check `which ok`
 if something unexpected runs.
 

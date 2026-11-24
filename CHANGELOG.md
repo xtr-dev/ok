@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Repository setup: Cargo workspace (`ok-lang` package, `ok` binary), CC0
+- Repository setup: Cargo workspace (`okrun` package, `ok` binary), CC0
   licence, cargo-deny licence policy, cargo-about third-party notices, CI for
   format, clippy and tests on Linux, macOS and Windows, and a release workflow
   for six targets.
@@ -20,3 +20,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ok.ok`: the repository's own build and admin tasks (runnable from M5; use
   the documented `cargo` commands until then).
 - Placeholder `ok` binary that answers `ok self version`.
+- `quiet` command option to hide a command's output unless it fails.

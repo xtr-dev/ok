@@ -12,7 +12,7 @@ fn self_version_prints_the_crate_version() {
     let out = ok().args(["self", "version"]).output().expect("run ok");
     assert!(out.status.success());
     let stdout = String::from_utf8(out.stdout).expect("utf-8");
-    assert_eq!(stdout.trim_end(), format!("ok {}", ok_lang::VERSION));
+    assert_eq!(stdout.trim_end(), format!("ok {}", okrun::VERSION));
 }
 
 #[test]

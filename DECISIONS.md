@@ -219,3 +219,18 @@ command failures keep the child's code, timeouts use 124 like `timeout(1)`.
 **Release artefacts are raw binaries plus `SHA256SUMS`.** The bootstrap
 wrappers then need no archive tool; `THIRD_PARTY.md` and `LICENSE` are
 attached next to the binaries. The release workflow only creates a draft.
+
+## 2026-11-24 (M0 review)
+
+**The published package is named `okrun`.** Requested by Bas; the name is free
+on crates.io. The library is `okrun`, the binary stays `ok`. This replaces the
+`ok-lang` name used earlier today.
+
+**Toolchain pinned to Rust 1.100.0.** Bumped from 1.90.0 to the current
+stable release, which also lets the current cargo-deny run locally.
+
+**A `quiet` option silences a command.** Requested in review: a `run` statement
+streams its output live, and some commands (downloads, `cargo fetch`, `npm ci`)
+are only noise. `with {quiet: true}` captures and discards stdout and stderr,
+but a failure still reports the stderr tail, so silencing never hides why
+something broke.

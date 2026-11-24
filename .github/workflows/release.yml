@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.90.0"
+          toolchain: "1.100.0"
           targets: ${{ matrix.target }}
       - if: matrix.tool == 'cross'
         uses: taiki-e/install-action@v2
@@ -43,7 +43,7 @@ jobs:
           tool: cross
       - name: Build
         shell: bash
-        run: ${{ matrix.tool }} build --release --locked --target ${{ matrix.target }} -p ok-lang --bin ok
+        run: ${{ matrix.tool }} build --release --locked --target ${{ matrix.target }} -p okrun --bin ok
       - name: Stage binary
         shell: bash
         run: |
@@ -65,7 +65,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.90.0"
+          toolchain: "1.100.0"
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-about

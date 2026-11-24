@@ -1,5 +1,5 @@
 [package]
-name = "ok-lang"
+name = "okrun"
 description = "ok: a portable scripting language and task runner in one static binary"
 version.workspace = true
 edition.workspace = true
@@ -12,7 +12,7 @@ keywords = ["scripting", "task-runner", "make", "build", "cli"]
 categories = ["command-line-utilities", "development-tools::build-utils"]
 
 [lib]
-name = "ok_lang"
+name = "okrun"
 path = "src/lib.rs"
 
 [[bin]]
