@@ -1,0 +1,93 @@
+# Builds static release binaries for the six supported targets when a tag
+# like v0.1.0 is pushed, and attaches them to a *draft* GitHub release.
+# Publishing the release (and crates.io) is done by hand by the project owner.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl,  os: ubuntu-latest,  tool: cross }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-latest,  tool: cross }
+          - { target: x86_64-apple-darwin,        os: macos-latest,   tool: cargo }
+          - { target: aarch64-apple-darwin,       os: macos-latest,   tool: cargo }
+          - { target: x86_64-pc-windows-msvc,     os: windows-latest, tool: cargo }
+          - { target: aarch64-pc-windows-msvc,    os: windows-latest, tool: cargo }
+    runs-on: ${{ matrix.os }}
+    env:
+      # Windows: link the C runtime statically so the .exe has no VC++ redistributable dependency.
+      RUSTFLAGS: ${{ contains(matrix.target, 'windows') && '-C target-feature=+crt-static' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.90.0"
+          targets: ${{ matrix.target }}
+      - if: matrix.tool == 'cross'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - name: Build
+        shell: bash
+        run: ${{ matrix.tool }} build --release --locked --target ${{ matrix.target }} -p ok-lang --bin ok
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          ext=""
+          case "${{ matrix.target }}" in *windows*) ext=".exe" ;; esac
+          cp "target/${{ matrix.target }}/release/ok${ext}" "dist/ok-${{ matrix.target }}${ext}"
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ok-${{ matrix.target }}
+          path: dist/*
+
+  release:
+    name: draft release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.90.0"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Notices, licence and checksums
+        run: |
+          cargo about generate about.hbs > dist/THIRD_PARTY.md
+          cp LICENSE dist/LICENSE
+          cd dist
+          # Every binary must stay under the 15 MB budget from the definition of done.
+          for f in ok-*; do
+            size=$(stat -c %s "$f")
+            echo "$f: $size bytes"
+            test "$size" -lt 15728640
+          done
+          sha256sum ok-* > SHA256SUMS
+          cat SHA256SUMS
+      - name: Create draft release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --draft --title "ok ${GITHUB_REF_NAME}" --notes-file <(sed -n "/^## \[${GITHUB_REF_NAME#v}\]/,/^## \[/p" CHANGELOG.md | sed '$d')
