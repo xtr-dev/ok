@@ -17,7 +17,7 @@ repo and code are built. The original brief is `PROMPT.md`.
   `ok self version`.
 - Milestones are in `PROMPT.md`. Stop after each one, report to Bas, and wait
   for a go-ahead.
-- GitHub: private repo `bvdaakster/ok`. Never make it public and never publish
+- GitHub: private repo `xtr-dev/ok`. Never make it public and never publish
   to crates.io; Bas does both.
 
 ## Commands
