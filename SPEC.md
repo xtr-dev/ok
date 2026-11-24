@@ -1428,7 +1428,10 @@ Options:
 
 The description is the doc comment above `main` (or, for a script without
 `main`, the first comment block of the file after a shebang). A parameter's
-help is the comment at the end of its line.
+help is the comment at the end of its line. A default that is a literal is
+shown as its value; any other default is shown as its source text
+(`[default: env.get("SRC", "/var/lib/app/data")]`), because printing help
+never runs code.
 
 ### 14.3 Parsing values
 
@@ -1577,7 +1580,9 @@ time; there is no content-hash mode in v1.
 ### 15.8 Mounting a sub-project
 
 `import "frontend/ok.ok" as fe` in the root `ok.ok` mounts the root tasks of
-the sub-project as namespace `fe`: `ok fe build`. Mounted tasks run with the
+the sub-project as namespace `fe`: `ok fe build`. An import of a file named
+`ok.ok` is always a mount; it requires `as` and is only allowed in the root
+`ok.ok`. Mounted tasks run with the
 sub-project's directory as working directory, and their `sources` and
 `outputs` are relative to it. The sub-project's own
 namespaces are not reachable through the mount in v1 (use `ok -C frontend db
