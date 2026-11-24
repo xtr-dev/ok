@@ -1,0 +1,42 @@
+# Build and admin tasks for the ok repository itself.
+#
+# Runnable with `ok` from milestone M5 on. Until then, use the cargo command
+# shown in each task's comment (CLAUDE.md lists them too).
+
+requires "0.1"
+
+# Build a debug binary (cargo build)
+task build(--release: bool) {
+  run cargo build --workspace {...if release { ["--release"] } else { [] }}
+}
+
+# Run all tests (cargo test --workspace)
+task test {
+  run cargo test --workspace
+}
+
+# Format the code (cargo fmt --all)
+task fmt {
+  run cargo fmt --all
+}
+
+# Check formatting and lints like CI does (cargo fmt --all --check; cargo clippy ... -D warnings)
+task lint {
+  run cargo fmt --all --check
+  run cargo clippy --workspace --all-targets -- -D warnings
+}
+
+# Check dependency licences, advisories and sources (cargo deny check)
+task deny {
+  run cargo deny check
+}
+
+# Regenerate THIRD_PARTY.md (cargo about generate about.hbs > THIRD_PARTY.md)
+task third-party {
+  run cargo about generate about.hbs > THIRD_PARTY.md
+}
+
+# Everything CI checks, in order
+task ci needs [lint, test, deny] {
+  print("all checks passed")
+}
