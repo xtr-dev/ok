@@ -1,0 +1,25 @@
+[package]
+name = "ok-lang"
+description = "ok: a portable scripting language and task runner in one static binary"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme = "../../README.md"
+keywords = ["scripting", "task-runner", "make", "build", "cli"]
+categories = ["command-line-utilities", "development-tools::build-utils"]
+
+[lib]
+name = "ok_lang"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ok"
+path = "src/main.rs"
+
+[dependencies]
+
+[lints]
+workspace = true
