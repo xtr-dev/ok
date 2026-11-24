@@ -20,6 +20,10 @@ name = "ok"
 path = "src/main.rs"
 
 [dependencies]
+csv = "1.4.0"
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+toml = { version = "1.2.2", features = ["preserve_order"] }
+yaml-rust2 = "0.13.2"
 
 [lints]
 workspace = true
