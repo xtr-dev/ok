@@ -15,6 +15,19 @@ task test {
   run cargo test --workspace
 }
 
+# Regenerate golden test expectations; review the diff before committing (OK_BLESS=1 cargo test --test golden)
+task bless {
+  run cargo test --test golden with {env: {OK_BLESS: "1"}}
+  run git diff --stat -- tests/cases
+}
+
+# Fuzz the lexer and parser for a while (cargo +nightly fuzz run parse -- -max_total_time=300)
+task fuzz(--seconds: int = 300) {
+  for target in ["lex", "parse"] {
+    run cargo +nightly fuzz run {target} -- -max_total_time={seconds}
+  }
+}
+
 # Format the code (cargo fmt --all)
 task fmt {
   run cargo fmt --all
