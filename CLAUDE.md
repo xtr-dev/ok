@@ -1,0 +1,105 @@
+# CLAUDE.md: maintainer handbook
+
+Working notes for whoever maintains this repository next (usually a future
+Claude Code session). Keep this file current; it is the source of truth for
+how the repo is run. The language itself is defined in `SPEC.md`.
+
+## What this is
+
+`ok`: a portable scripting language and task runner, one static Rust binary.
+Project owner: Bas (decides what the language is). Maintainer: decides how the
+repo and code are built. The original brief is `PROMPT.md`.
+
+## Current state
+
+- Milestone: **M0 (spec and examples)**, waiting for review. No interpreter
+  code yet; `crates/ok-lang/src/main.rs` is a placeholder that answers
+  `ok self version`.
+- Milestones are in `PROMPT.md`. Stop after each one, report to Bas, and wait
+  for a go-ahead.
+- GitHub: private repo `bvdaakster/ok`. Never make it public and never publish
+  to crates.io; Bas does both.
+
+## Commands
+
+Toolchain pinned in `rust-toolchain.toml` (1.90.0). Until M5, use cargo
+directly; from M5, `ok <task>` via the repo's `ok.ok`.
+
+```
+cargo build --workspace
+cargo test --workspace
+cargo fmt --all                     # format
+cargo fmt --all --check             # CI format check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo deny check                    # licences, advisories, sources
+cargo about generate about.hbs > THIRD_PARTY.md
+```
+
+Local tool note: the local cargo-deny is 0.18.3 (newer ones need a newer
+rustc); its advisory check cannot parse CVSS 4.0 entries, so run
+`cargo deny check licenses bans sources` locally and rely on CI for
+advisories.
+
+## Layout
+
+```
+Cargo.toml              workspace; shared version, licence, lints, release profile
+crates/ok-lang/         the published package `ok-lang`
+  src/lib.rs            the language (lexer, parser, evaluator, stdlib from M1)
+  src/main.rs           the `ok` binary: thin, calls into the library
+  tests/                integration tests that run the real binary
+examples/<name>/        real scripts rewritten in ok, original alongside
+tests/cases/            golden tests (from M1)
+fuzz/                   cargo-fuzz targets for lexer and parser (from M1)
+ok.ok                   the repo's own tasks (dogfooding)
+SPEC.md                 normative language spec
+DECISIONS.md            dated design decisions
+IDEAS.md                out-of-scope ideas
+THIRD_PARTY.md          generated licence notices (cargo-about); shipped with binaries
+deny.toml, about.toml, about.hbs   licence tooling
+.github/workflows/      ci.yml (fmt, clippy, test x3 OS, deny, notices), release.yml (6 targets, draft release)
+```
+
+Planned module layout inside `crates/ok-lang/src/` (decide finally in M1 and
+update here): `lexer.rs` (expression and command mode), `parser.rs`, `ast.rs`,
+`eval/`, `value.rs`, `error.rs` (snippet rendering), `stdlib/`, `formats/`,
+`cli.rs`, `project.rs`, `trust.rs`.
+
+## Conventions
+
+- Rust edition 2024, rustfmt config in `rustfmt.toml`, clippy warnings are
+  errors in CI. `unsafe_code = "forbid"` at the workspace level; any exception
+  needs a logged reason in `DECISIONS.md`.
+- Lexer, parser and evaluator are hand-written. Use well-maintained crates for
+  formats, regex, TLS (rustls only, never OpenSSL), archives.
+- Dependencies: permissive licences only (see `deny.toml`). Regenerate
+  `THIRD_PARTY.md` whenever `Cargo.lock` changes; CI checks it.
+- Errors are part of the product: every error has a span, a snippet, and a
+  help line when the fix is knowable. Golden-test the rendering.
+- Output must be identical across OSes (paths print with `/`, `\n` line
+  endings, deterministic ordering).
+- Tests must not depend on system tools; use fixture commands built in the
+  repo for `run` tests.
+- Comments explain purpose and reasoning so they make sense without the
+  conversation that produced them.
+
+## Working rules (from the brief)
+
+- **Spec first.** Change `SPEC.md` before changing behaviour, in the same
+  commit or the one before.
+- **Decide and log.** For anything the brief leaves open, pick the option that
+  makes scripts easier to read, record it in `DECISIONS.md`, move on.
+- **Stop and ask** when a decision would contradict the brief, change syntax
+  in an approved example, add a dependency with a non-permissive licence, or
+  weaken the trust model or the no-shell rule.
+- **Readability wins ties.**
+- **Portability is a feature, not a port.** No behaviour may depend on a Unix
+  shell or coreutils.
+- **Few dependencies.** No `unsafe` outside dependencies without a logged
+  reason.
+- **No scope creep.** Ideas go to `IDEAS.md`.
+- **Report honestly.** Each milestone report lists what was built, what was
+  decided, what is weak, and what to change in the spec.
+- Commit small and often, Conventional Commits. Never rewrite pushed history.
+- Each milestone ends with CI green on all three OSes, `SPEC.md` and
+  `CHANGELOG.md` updated, and a report.
