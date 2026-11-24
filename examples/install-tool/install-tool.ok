@@ -1,0 +1,35 @@
+# Download a pinned release of a tool, verify its checksum and install it into ./bin.
+let name = "protolint"
+let version = "1.6.0"
+
+let target = match "{os.name}-{os.arch}" {
+  "linux-x86_64" => "linux-amd64"
+  "linux-aarch64" => "linux-arm64"
+  "macos-x86_64" => "darwin-amd64"
+  "macos-aarch64" => "darwin-arm64"
+  "windows-x86_64" => "windows-amd64"
+  other => fail("unsupported platform: {other}")
+}
+let file = "{name}-{target}.tar.gz"
+
+# checksums.txt has lines like "<sha256>  protolint-linux-amd64.tar.gz".
+let expected = read(script_dir / "checksums.txt")
+  | lines
+  | map(line => line.split())
+  | first(parts => parts[1] == file)
+if expected == null { fail("no checksum listed for {file}") }
+
+let tmp = tempdir()                          # removed when the script exits
+let archive = tmp / file
+fetch("https://github.com/example/{name}/releases/download/v{version}/{file}", to: archive)
+let actual = hash(archive, "sha256")
+if actual != expected[0] {
+  fail("checksum mismatch for {target}: expected {expected[0]}, got {actual}")
+}
+
+untar(archive, tmp)
+let exe = "{name}{os.exe}"
+let installed = mkdir("bin") / exe
+copy(tmp / exe, installed)
+chmod(installed, 0o755)                      # does nothing on Windows
+print("installed {installed} {version}")

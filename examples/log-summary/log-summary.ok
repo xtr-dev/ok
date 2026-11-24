@@ -1,0 +1,34 @@
+# Summarise an application log: lines per level and the most common errors.
+# Log lines look like: 2026-11-20T10:00:01Z ERROR db connection refused
+fn main(
+  log: path = "app.log",  # the log file to read
+  --top: int = 5,         # how many distinct errors to show
+) {
+  let records = read(log)
+    | lines
+    | where .trim() != ""
+    | map(parse_line)
+
+  print("== {log} ==")
+  print("lines: {len(records)}")
+  for level in ["ERROR", "WARN", "INFO"] {
+    let n = records | count .level == level
+    print("{level:<6} {n:>6}")
+  }
+
+  print()
+  print("top {top} errors:")
+  records
+    | where .level == "ERROR"
+    | group .message
+    | entries
+    | sort(e => len(e.value), desc: true)
+    | take top
+    | each(e => print("{len(e.value):>7} {e.key}"))
+}
+
+# Split "2026-11-20T10:00:01Z ERROR db connection refused" into its parts.
+fn parse_line(line: string) {
+  let [stamp, level, ...words] = line.split()
+  {stamp, level, message: words | join " "}
+}

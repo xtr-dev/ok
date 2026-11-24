@@ -1,0 +1,29 @@
+let image = "ghcr.io/example/api"
+
+# Build the container image, tagged with the commit and the version
+task image {
+  let {version, sha} = git_info()
+  run docker build --build-arg VERSION={version} -t {image}:{sha} -t {image}:{version} .
+}
+
+# Push the image; refuses builds from a dirty working tree
+task push needs [image] {
+  let {version, sha} = git_info()
+  if version.ends_with("-dirty") { fail("refusing to push a dirty build ({version})") }
+  for tag in [sha, version] {
+    run docker push {image}:{tag}
+  }
+}
+
+# Run the image locally
+task serve(--port: int = 8080) needs [image] {
+  let {sha} = git_info()
+  run docker run --rm -p {port}:8080 --env-file .env {image}:{sha}
+}
+
+fn git_info() {
+  {
+    version: (run git describe --tags --always --dirty).out,
+    sha: (run git rev-parse --short HEAD).out,
+  }
+}

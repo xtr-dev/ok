@@ -1,0 +1,19 @@
+import "./_lib.ok"
+
+# Apply pending migrations
+task migrate {
+  # Inside a command, `run` is an ordinary word: this runs `sqlx migrate run`.
+  run sqlx migrate run --database-url {env.DATABASE_URL}
+}
+
+# Wipe and reseed the local database
+task reset confirm "This wipes the local database" {
+  refuse_in_prod()
+  run sqlx database reset -y --database-url {env.DATABASE_URL}
+  seed_database()
+}
+
+# Load the seed data
+task seed {
+  seed_database()
+}

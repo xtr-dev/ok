@@ -1,0 +1,30 @@
+# Nightly backup: archive the data directory, keep the newest backups and
+# remove anything older than the age limit.
+fn main(
+  --src: path = env.get("SRC", "/var/lib/app/data"),  # directory to back up
+  --dest: path = env.get("DEST", "/backups/app"),     # where archives go
+  --keep: int = 7,                                    # archives to keep
+  --max-age: duration = 30d,                          # delete archives older than this
+) {
+  mkdir(dest)
+  let stamp = now().format("%Y-%m-%d_%H%M%S")
+  let archive = dest / "data-{stamp}.tar.gz"
+  tar(src, archive)
+  write("{hash(archive)}  {archive.name}\n", checksum_file(archive))
+
+  let newest_first = glob("data-*.tar.gz", root: dest)
+    | sort(f => stat(f).modified, desc: true)
+  for old in skip(newest_first, keep) {
+    remove(old)
+    remove(checksum_file(old))
+  }
+
+  for f in glob("data-*.tar.gz*", root: dest) {
+    if now() - stat(f).modified > max_age { remove(f) }
+  }
+  print("backup done: {archive}")
+}
+
+fn checksum_file(archive: path) {
+  archive.parent / "{archive.name}.sha256"
+}

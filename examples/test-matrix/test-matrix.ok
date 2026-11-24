@@ -1,0 +1,20 @@
+# Run the test suite for each feature combination and print a summary.
+let combos = [[], ["json"], ["yaml"], ["json", "yaml"], ["full"]]
+
+var results = []
+for features in combos {
+  let label = if features == [] { "(none)" } else { join(features, ",") }
+  let flags = if features == [] { [] } else { ["--features", join(features, ",")] }
+  print("==> {label}")
+  let r = run! cargo test --no-default-features {...flags}   # captured: not a statement on its own
+  results += [{label, ok: r.ok, time: r.duration}]
+  if not r.ok { eprint(r.err) }
+}
+
+print()
+print(pad("features", 16), pad("result", 6), pad("time", 8, align: "right"))
+for r in results {
+  let status = if r.ok { "ok" } else { "FAIL" }
+  print("{r.label:<16} {status:<6} {r.time.seconds:>7.1f}s")
+}
+exit(if all(results, .ok) { 0 } else { 1 })

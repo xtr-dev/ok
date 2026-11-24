@@ -1,0 +1,25 @@
+# Show the largest files under a directory, skipping .git, node_modules and target.
+fn main(
+  root: path = ".",  # directory to scan
+  --top: int = 10,   # how many files to show
+) {
+  let files = glob("**/*", root: root, hidden: true, exclude: ["**/.git", "**/node_modules", "**/target"])
+    | where is_file
+    | map(f => {path: f, size: stat(f).size})
+    | sort(.size, desc: true)
+
+  for f in take(files, top) {
+    print("{human(f.size):>10}  {f.path.relative_to(root)}")
+  }
+  print("{len(files)} files, {human(sum(files, .size))} total")
+}
+
+# Format a byte count with binary units: 1536 becomes "1.5 KiB".
+fn human(size: int) {
+  var n = float(size)
+  for unit in ["B", "KiB", "MiB", "GiB"] {
+    if n < 1024 { return "{n:.1f} {unit}" }
+    n = n / 1024
+  }
+  "{n:.1f} TiB"
+}

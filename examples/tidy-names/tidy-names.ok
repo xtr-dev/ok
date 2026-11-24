@@ -1,0 +1,22 @@
+# Normalise file names in a folder: lowercase, runs of spaces and underscores
+# become dashes, and each name gets its modification date as a prefix.
+#
+# Preview without renaming anything: ok --dry-run tidy-names.ok photos
+fn main(dir: path = ".") {
+  for file in list_dir(dir).where(is_file) {
+    var name = file.name.lower().sub('[ _]+', "-")
+    if not name.matches('^\d{4}-') {
+      let date = stat(file).modified.format("%Y-%m-%d")
+      name = "{date}-{name}"
+    }
+    if name == file.name { continue }
+
+    let target = dir / name
+    if exists(target) {
+      eprint("skip {file.name}: {name} exists")
+      continue
+    }
+    print("{file.name} -> {name}")
+    move(file, target)
+  }
+}

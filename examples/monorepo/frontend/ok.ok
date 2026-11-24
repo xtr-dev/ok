@@ -1,0 +1,14 @@
+# Install dependencies when the lockfile changed
+task deps hidden sources ["package-lock.json"] outputs ["node_modules/.package-lock.json"] {
+  run npm ci
+}
+
+# Build the bundle
+task build needs [deps] {
+  run npm run build
+}
+
+# Run the frontend tests
+task test needs [deps] {
+  run npm test
+}

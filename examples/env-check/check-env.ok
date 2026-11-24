@@ -1,0 +1,28 @@
+# Check that a developer machine has the tools and settings the project needs.
+let tools = ["git", "node", "npm", "docker"]
+let env_vars = ["DATABASE_URL", "API_KEY"]
+
+var problems = []
+for tool in tools {
+  # which() searches PATH, and PATHEXT on Windows, so npm finds npm.cmd.
+  if which(tool) == null { problems += ["missing tool: {tool}"] }
+}
+
+if which("node") != null {
+  let version = (run node --version).out     # like "v22.3.0"
+  let major = int(version.match('^v(\d+)').groups[0])
+  if major < 20 { problems += ["node {major} is too old (need 20 or newer)"] }
+}
+
+for name in env_vars {
+  if not env.has(name) { problems += ["missing environment variable: {name}"] }
+}
+
+if not exists(".env") { print("hint: copy .env.example to .env") }
+
+if problems == [] {
+  print("all good")
+} else {
+  problems | each(eprint)
+  exit(1)
+}

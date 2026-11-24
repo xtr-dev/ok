@@ -1,0 +1,10 @@
+2026-11-20T10:00:01Z INFO server listening on :8080
+2026-11-20T10:00:05Z WARN config value cache_size missing, using 64
+2026-11-20T10:01:12Z ERROR db connection refused
+2026-11-20T10:01:13Z ERROR db connection refused
+2026-11-20T10:01:20Z INFO retrying database connection
+2026-11-20T10:02:00Z ERROR payment provider timeout
+2026-11-20T10:02:30Z ERROR db connection refused
+2026-11-20T10:03:00Z INFO request served in 12ms
+2026-11-20T10:03:05Z WARN slow query took 1.2s
+2026-11-20T10:04:00Z ERROR template not found: invoice.html

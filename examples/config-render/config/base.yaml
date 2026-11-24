@@ -1,0 +1,9 @@
+server:
+  port: 8080
+  workers: 4
+database:
+  host: localhost
+  name: app
+  user: app
+feature_flags:
+  new_checkout: false

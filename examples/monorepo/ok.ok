@@ -1,0 +1,20 @@
+requires "0.1"
+env file ".env"
+
+import "ok/_lib.ok"            # bin()
+import "frontend/ok.ok" as fe  # the frontend's tasks, as `ok fe build`
+
+# Run the server locally
+task dev(--port: int = 3000) needs [build] {
+  run {bin("server")} --port {port}
+}
+
+# Build the frontend and the server
+task build needs [fe.build] {
+  run cargo build
+}
+
+# Run all tests
+task test needs [fe.test] {
+  run cargo test
+}

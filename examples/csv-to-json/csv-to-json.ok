@@ -1,0 +1,18 @@
+# Convert a CSV export to JSON, keeping only active users.
+fn main(
+  input: path,               # CSV export with name, email, age, active columns
+  --out: path = "out.json",  # where to write the JSON
+  --verbose: bool,           # print each user to stderr
+) {
+  # CSV values are always strings; convert the ones that are numbers.
+  let users = read(input)
+    | where .active == "true"
+    | sort .name
+    | map(u => {...u, age: int(u.age)})
+
+  if verbose {
+    users | each(u => eprint("{u.name} ({u.email})"))
+  }
+  write(users, out)
+  print("wrote {len(users)} users to {out}")
+}

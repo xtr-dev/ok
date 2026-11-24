@@ -1,0 +1,25 @@
+# Render the app config for one environment: config/base.yaml merged with
+# config/<env>.yaml, secrets taken from the environment, written as JSON.
+fn main(environment: string = "dev") {
+  let base = read("config/base.yaml")
+  let overrides = read("config/{environment}.yaml") ?? {}   # an empty file reads as null
+  var cfg = merge(base, overrides)
+  cfg.database.password = env.DB_PASSWORD
+
+  let out = path("build") / "config.{environment}.json"
+  write(cfg, out)
+  print(out)
+}
+
+# Deep-merge two records; values from `b` win, nested records are merged.
+fn merge(a: record, b: record) {
+  var out = a
+  for key, value in b {
+    out[key] = if type(value) == "record" and type(a[key]?) == "record" {
+      merge(a[key], value)
+    } else {
+      value
+    }
+  }
+  out
+}

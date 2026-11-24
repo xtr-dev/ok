@@ -1,0 +1,28 @@
+# List open issues with a label that nobody is assigned to, oldest first.
+# Needs GITHUB_TOKEN in the environment.
+fn main(
+  repo: string,             # owner/name
+  --label: string = "bug",  # issue label to look for
+  --json: bool,             # print JSON instead of a table
+) {
+  let response = fetch(
+    "https://api.github.com/repos/{repo}/issues?state=open&labels={label}&per_page=100",
+    headers: {
+      authorization: "Bearer {env.GITHUB_TOKEN}",
+      accept: "application/vnd.github+json",
+    },
+  )
+  # The issues endpoint also returns pull requests; they have a pull_request field.
+  let issues = parse(response.body, "json")
+    | where(i => "pull_request" not in i)
+    | where .assignees == []
+    | sort .created_at
+
+  if json {
+    print(to(issues | map(i => {number: i.number, title: i.title, url: i.html_url}), "json"))
+  } else {
+    for i in issues {
+      print("#{i.number}\t{i.created_at.split("T")[0]}\t{i.title}")
+    }
+  }
+}

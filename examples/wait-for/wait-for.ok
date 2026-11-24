@@ -1,0 +1,28 @@
+# Wait until a URL answers with a 2xx status, then optionally run a command.
+#
+# Example: ok wait-for.ok http://localhost:8080/health --timeout 2m -- npm test
+fn main(
+  url: string,                # URL to poll
+  ...command: string,         # command to run once the URL is up
+  --timeout: duration = 60s,  # give up after this long
+  --interval: duration = 1s,  # pause between attempts
+) {
+  let start = now()
+  while not is_up(url) {
+    if now() - start >= timeout {
+      fail("timed out after {timeout} waiting for {url}")
+    }
+    sleep(interval)
+  }
+  print("{url} is up after {now() - start}")
+  if command != [] {
+    run {...command}   # a failure exits with the command's own exit code
+  }
+}
+
+fn is_up(url: string) {
+  # check: false returns 4xx/5xx responses instead of raising; ? turns
+  # connection errors into null.
+  let response = fetch(url, timeout: 2s, check: false)?
+  response != null and response.ok
+}

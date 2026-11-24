@@ -1,0 +1,6 @@
+server:
+  workers: 16
+database:
+  host: db.internal
+feature_flags:
+  new_checkout: true

@@ -1,0 +1,29 @@
+let hosts = {staging: "staging.example.com", production: "app.example.com"}
+
+# Build the frontend bundle
+task build sources ["src/**", "package.json", "package-lock.json"] outputs ["dist/index.html"] {
+  run npm ci
+  run npm run build
+}
+
+# Deploy the current build to staging
+task deploy-staging needs [build] {
+  deploy("staging")
+}
+
+# Deploy the current build to production
+task deploy-production needs [build] confirm "This deploys the current build to PRODUCTION" {
+  deploy("production")
+}
+
+fn deploy(environment: string) {
+  let host = hosts[environment]
+  let version = (run git describe --tags --always).out
+  let archive = tempdir() / "app-{version}.tar.gz"   # removed when ok exits
+  tar("dist", archive)
+  run scp {archive} "deploy@{host}:/srv/app/releases/"
+  # The quoted remote command is one argument; ssh hands it to the remote shell.
+  run ssh "deploy@{host}" "cd /srv/app && ./activate.sh {version}"
+  fetch("https://{host}/health")   # raises unless the status is below 400
+  print("deployed {version} to {environment}")
+}

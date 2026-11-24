@@ -1,0 +1,16 @@
+# Helpers shared by the project files. Not a namespace: the name starts with _.
+
+# Path of a binary built by `cargo build`, with .exe on Windows.
+fn bin(name: string) {
+  path("target/debug") / "{name}{os.exe}"
+}
+
+# Stop unless this is a development machine.
+fn refuse_in_prod() {
+  if env.get("APP_ENV", "dev") == "prod" { fail("refusing to run in prod") }
+}
+
+# Load db/seed.sql into the database.
+fn seed_database() {
+  run psql {env.DATABASE_URL} -f db/seed.sql
+}

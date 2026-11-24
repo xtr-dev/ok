@@ -1,0 +1,38 @@
+# Cut a release: check the tree, bump the version, test, tag and build binaries.
+fn main(
+  version: string,  # the new version, like 1.2.3
+  --push: bool,     # push the commit and tag when done
+) {
+  if not version.matches('^\d+\.\d+\.\d+$') {
+    fail("version must look like 1.2.3, got {version}")
+  }
+
+  let branch = (run git rev-parse --abbrev-ref HEAD).out
+  if branch != "main" { fail("releases are cut from main (on {branch})") }
+  if (run git status --porcelain).out != "" { fail("working tree is dirty") }
+  if (run! git rev-parse --verify --quiet "v{version}").ok {
+    fail("tag v{version} already exists")
+  }
+
+  # Edit the text rather than the parsed TOML so comments and layout survive.
+  let manifest = read("Cargo.toml", "text")
+  write(manifest.sub('(?m)^version = ".*"$', "version = \"{version}\""), "Cargo.toml", "text")
+
+  run cargo test --workspace
+  run git commit -am "chore: release v{version}"
+  run git tag -a "v{version}" -m "v{version}"
+
+  let targets = ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"]
+  let dist = mkdir("dist")
+  for target in targets {
+    run cargo build --release --target {target}
+    copy(path("target") / target / "release/myapp", dist / "myapp-{target}")
+  }
+  list_dir(dist)
+    | where .name.starts_with("myapp-")
+    | map(f => "{hash(f)}  {f.name}")
+    | write(dist / "SHA256SUMS", "lines")
+
+  if push { run git push --follow-tags }
+  print("release v{version} ready in {dist}/")
+}

@@ -1,0 +1,9 @@
+import "./_lib.ok"
+
+# Create a user account
+task create-user(
+  name: string,            # login name
+  --role: string = "user", # user or admin
+) needs [build] {
+  run {bin("admin")} create-user {name} --role {role}
+}

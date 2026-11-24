@@ -1,0 +1,10 @@
+{
+  "title": "Invoice",
+  "type": "object",
+  "required": ["number", "total"],
+  "properties": {
+    "number": { "type": "string" },
+    "total": { "type": "number" },
+    "paid": { "type": "boolean" }
+  }
+}

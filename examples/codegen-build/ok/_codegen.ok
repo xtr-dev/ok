@@ -1,0 +1,25 @@
+# Helpers for `ok gen`. A leading underscore keeps this file from becoming a
+# namespace; it only declares functions.
+
+let rust_types = {string: "String", integer: "i64", number: "f64", boolean: "bool"}
+
+# Turn a JSON schema object into a Rust struct definition.
+fn rust_struct(schema: record) {
+  let required = schema.required? ?? []
+  let fields = schema.properties
+    | entries
+    | map(p => field(p.key, p.value, p.key in required))
+  """
+  #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+  pub struct {schema.title} \{
+  {join(fields, "\n")}
+  \}
+  """
+}
+
+# One struct field; optional fields become Option<T>.
+fn field(name: string, prop: record, required: bool) {
+  let base = rust_types[prop.type]? ?? fail("unsupported schema type {prop.type} for field {name}")
+  let ty = if required { base } else { "Option<{base}>" }
+  "    pub {name}: {ty},"
+}

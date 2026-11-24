@@ -1,0 +1,11 @@
+{
+  "title": "User",
+  "type": "object",
+  "required": ["id", "email"],
+  "properties": {
+    "id": { "type": "integer" },
+    "email": { "type": "string" },
+    "display_name": { "type": "string" },
+    "admin": { "type": "boolean" }
+  }
+}

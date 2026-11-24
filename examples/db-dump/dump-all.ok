@@ -1,0 +1,19 @@
+# Dump every database on the server to dumps/<db>-<date>.sql.tar.gz.
+fn main(--out-dir: path = "dumps") {
+  mkdir(out_dir)
+  let date = now().format("%Y-%m-%d")
+
+  let databases = run psql -At -c "SELECT datname FROM pg_database WHERE NOT datistemplate AND datname <> 'postgres'"
+    | lines
+  for db in databases {
+    print("dumping {db}")
+    let dump = out_dir / "{db}-{date}.sql"
+    run pg_dump --no-owner {db} > {dump}
+    tar(dump, out_dir / "{dump.name}.tar.gz")   # no gzip binary needed
+    remove(dump)
+  }
+
+  for f in list_dir(out_dir) {
+    print("{stat(f).size:>14,}  {f.name}")
+  }
+}

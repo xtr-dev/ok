@@ -1,0 +1,30 @@
+#!/usr/bin/env ok
+# Git pre-commit hook: refuse commits with formatting problems, leftover
+# debug statements or large files. Install: copy to .git/hooks/pre-commit.
+let max_size = 1024 * 1024
+
+let staged = run git diff --cached --name-only --diff-filter=ACM
+  | lines
+if staged == [] { exit(0) }
+
+var problems = []
+
+let rust_files = staged | where .ends_with(".rs")
+if rust_files != [] {
+  # Each file is one argument, whatever characters its name contains.
+  let fmt = run! rustfmt --check --edition 2021 {...rust_files}
+  if not fmt.ok { problems += ["rustfmt: run `cargo fmt`"] }
+}
+
+for file in staged {
+  if (run! git grep --cached -q -E 'dbg!\(|console\.log\(' -- {file}).ok {
+    problems += ["{file}: debug statement"]
+  }
+  let size = int((run git cat-file -s ":{file}").out)
+  if size > max_size {
+    problems += ["{file}: {size / 1024:.0f} KiB is over the 1 MiB limit"]
+  }
+}
+
+problems | each(p => eprint("✗ {p}"))
+exit(if problems == [] { 0 } else { 1 })
