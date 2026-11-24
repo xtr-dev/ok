@@ -334,3 +334,55 @@ them, which keeps them readable.
 **A `{` inside a double-quoted string gets a dedicated hint.** JSON written
 in double quotes is the most common way to trip over interpolation, so the
 error says to escape the brace or use a single-quoted string.
+
+## 2026-11-25 (M3)
+
+**Commands use `std::process` directly; program lookup is ok's own.** Rust's
+`Command` does not search `PATHEXT` on Windows, so ok resolves the program
+itself (PATH, then PATHEXT on Windows; never the current directory; on Unix
+only executable files) and passes the full path. Batch files are then run by
+the standard library, whose argument quoting for `.bat`/`.cmd` was hardened
+for CVE-2024-24576 and refuses arguments it cannot pass safely.
+
+**Exit codes 127 and 126 for "not found" and "cannot start".** The same
+codes shells use, so a CI log reads the same as before the switch to ok.
+
+**`env.set` keeps an overlay instead of changing the process environment.**
+`std::env::set_var` is `unsafe` in Rust 2024 because it races with other
+threads, and the workspace forbids `unsafe`. The overlay is consulted by
+`env.NAME` and applied to every child, which is all a script can observe.
+
+**`run a | run b` connects the pipes directly.** The stdout of `a` becomes
+the stdin of `b` without passing through ok; other values piped into a
+command are written to its stdin from a helper thread.
+
+**A pipeline that stops reading kills the command.** `run yes | take 3`
+would otherwise block forever. The command's exit status is then ignored
+(SPEC.md 9.5).
+
+**Network: ureq with rustls (ring) and the platform certificate verifier.**
+No OpenSSL, so the binary stays static; certificates come from the OS store,
+as users expect from curl. `rustls-platform-verifier` brings in
+`webpki-root-certs` (CDLA-Permissive-2.0, a permissive data licence for the
+Mozilla root list), which was added to the cargo-deny allow list.
+
+**Archives: zip (deflate only), tar and flate2, all pure Rust.** Optional zip
+codecs (bzip2, zstd, AES) are off to keep the binary small and the licences
+simple. Extraction checks every member path and link target itself instead
+of trusting the crates.
+
+**Times: jiff.** It reads the system time zone on every OS without extra
+crates and formats with strftime patterns. Golden tests set `TZ=UTC`.
+
+**Hashing: RustCrypto sha2, sha1 and md-5; regexes: regex; globs: globset
+with ok's own directory walk.** The walk starts at the pattern's literal
+prefix, stops at the pattern's depth when there is no `**`, and prunes
+excluded directories.
+
+**Dot-files in `glob`: one rule for all levels.** They are included when the
+pattern has any component starting with `.` or with `hidden: true`. Matching
+per component, as the M0 spec put it, would be slower and harder to explain.
+
+**`ok-fixture`: a test-only program instead of system tools.** Tests of
+`run` call `ok-fixture echo|args|cat|exit|lines|forever|env|pwd|...`, which
+behaves identically on every OS. It lives in its own unpublished crate.

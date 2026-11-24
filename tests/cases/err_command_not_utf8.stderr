@@ -1,0 +1,7 @@
+error[command]: the output of ok-fixture is not valid UTF-8 text
+ --> err_command_not_utf8.ok:1:9
+  |
+1 | let x = run ok-fixture bytes
+  |         ^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: capture raw output with the option bytes: true

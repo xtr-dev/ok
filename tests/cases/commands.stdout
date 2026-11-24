@@ -1,0 +1,35 @@
+live output
+[captured] 0 true ["ok-fixture", "echo", "captured"] duration
+[two words]
+[quoted two words]
+[raw {name}]
+[--flag=two words]
+[]
+[-a]
+[-b]
+[end]
+[dir/file.txt]
+[pre-x/y]
+["line 2", "line 4"]
+["line 1", "line 2", "line 3"]
+PIPED INTO STDIN
+A
+B
+LINE 1
+LINE 2
+3 false it broke
+from the test
+from options
+<unset>
+yes
+sub
+["to a file", "appended"]
+TO A FILE
+APPENDED
+from the stdin option
+bytes 3
+function form
+4
+timeout: command timed out after 50ms
+command 5 ["ok-fixture", "exit", "5", "bad", "thing"] null
+1

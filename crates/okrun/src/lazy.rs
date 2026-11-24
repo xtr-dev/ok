@@ -30,6 +30,18 @@ use crate::value::Value;
 /// consumer attaches its own with [`at_span`].
 pub trait Source {
     fn next(&mut self, interp: &mut Interp) -> R<Option<Value>>;
+
+    /// For the stdout of a piped command: hand over the raw pipe so the next
+    /// command can read it directly (`run a | run b`).
+    fn take_child_stdout(&mut self) -> Option<std::process::ChildStdout> {
+        None
+    }
+
+    /// Finish without reading further, reporting failures (used after a
+    /// command's stdout was handed to another command).
+    fn finish(&mut self) -> R<()> {
+        Ok(())
+    }
 }
 
 enum State {

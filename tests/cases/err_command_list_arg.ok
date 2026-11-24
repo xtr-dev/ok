@@ -1,0 +1,2 @@
+let files = ["a", "b"]
+run ok-fixture args {files}

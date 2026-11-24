@@ -1,0 +1,42 @@
+# run: live, captured, piped, run!, options, redirects, function form (SPEC.md 9).
+run ok-fixture echo live output
+let r = run ok-fixture echo captured
+print("[{r.out}]", r.code, r.ok, r.cmd, type(r.duration))
+let name = "two words"
+run ok-fixture args {name} "quoted {name}" 'raw {name}' --flag={name} ""
+let flags = ["-a", "-b"]
+run ok-fixture args {...flags} {...[]} end
+run ok-fixture args {path("dir/file.txt")} pre-{path("x/y")}
+print(run ok-fixture lines 4 | lines | where(l => "2" in l or "4" in l))
+print(run ok-fixture forever | lines | take 3)
+"piped into stdin\n" | run ok-fixture upper
+let shout = ["a", "b"] | run ok-fixture upper
+print(shout.out)
+print((run ok-fixture lines 2 | run ok-fixture upper).out)
+let failed = run! ok-fixture exit 3 it broke
+print(failed.code, failed.ok, failed.err)
+run ok-fixture env OK_TEST_VAR
+run ok-fixture env EXTRA with {env: {EXTRA: "from options"}}
+run ok-fixture env OK_TEST_VAR with {env: {OK_TEST_VAR: null}}
+env.set("SET_BY_SCRIPT", "yes")
+run ok-fixture env SET_BY_SCRIPT
+let dir = tempdir()
+mkdir(dir / "sub")
+run ok-fixture pwd with {cwd: dir / "sub"}
+run ok-fixture echo to a file > {dir / "out.txt"}
+run ok-fixture echo appended >> {dir / "out.txt"}
+print(read(dir / "out.txt") | lines)
+let rev = run ok-fixture upper < {dir / "out.txt"}
+print(rev.out)
+run ok-fixture cat with {stdin: "from the stdin option\n"}
+run ok-fixture echo quiet please with {quiet: true}
+let raw = run ok-fixture bytes with {bytes: true}
+print(type(raw.out), len(raw.out))
+run("ok-fixture", "echo", "function", "form")
+let fr = run!("ok-fixture", "exit", "4", cwd: dir)
+print(fr.code)
+let slow = try { run ok-fixture sleep 2000 with {timeout: 50ms} } catch e { "{e.kind}: {e.message}" }
+print(slow)
+let caught = try { run ok-fixture exit 5 bad thing } catch e { e }
+print(caught.kind, caught.code, caught.cmd, caught.stderr?)
+print(run ok-fixture echo a b | lines | count)

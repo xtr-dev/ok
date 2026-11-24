@@ -54,7 +54,16 @@ static CORE: &[Builtin] = &[
 
 /// Declare the builtins, `os` and `args` in the global scope.
 pub fn install(globals: &Rc<Scope>, script_args: Vec<String>) {
-    for table in [CORE, crate::list::BUILTINS, crate::formats::BUILTINS] {
+    for table in [
+        CORE,
+        crate::list::BUILTINS,
+        crate::formats::BUILTINS,
+        crate::files::BUILTINS,
+        crate::text::BUILTINS,
+        crate::system::BUILTINS,
+        crate::net::BUILTINS,
+        crate::archive::BUILTINS,
+    ] {
         for b in table {
             globals.declare(b.name, Value::Func(Rc::new(Func::Builtin(b))), false);
         }
@@ -64,6 +73,18 @@ pub fn install(globals: &Rc<Scope>, script_args: Vec<String>) {
     os.insert("arch", Value::str(std::env::consts::ARCH));
     os.insert("exe", Value::str(std::env::consts::EXE_SUFFIX));
     globals.declare("os", Value::record(os), false);
+    globals.declare("env", Value::Env, false);
+    let cwd = std::env::current_dir().unwrap_or_default();
+    globals.declare("cwd", Value::path(OkPath::from_native(&cwd)), false);
+    globals.declare(
+        "invocation_dir",
+        Value::path(OkPath::from_native(&cwd)),
+        false,
+    );
+    let home = crate::files::home_dir()
+        .map(|h| Value::path(OkPath::from_native(&h)))
+        .unwrap_or(Value::Null);
+    globals.declare("home", home, false);
     let args = script_args.into_iter().map(Value::str).collect();
     globals.declare("args", Value::list(args), false);
 }

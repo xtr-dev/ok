@@ -1,0 +1,10 @@
+padded| x| x|
+["a", "b", "c"] ["a", "b", "", "c"] ["k", "v=w"] ["one", "two three"]
+x+y+z HELLO hello ["h", "é", "l", "l", "o"]
+true true true true true
+ababab 007 [  x  ] toolong
+1.24.3 ["1", "24", "3"] 3 8 14
+null true ["1", "22", "333"]
+24/11/2026 a<10>b<20>
+3
+["HELLO", "WORLD"]

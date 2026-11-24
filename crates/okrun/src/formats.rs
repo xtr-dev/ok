@@ -644,6 +644,7 @@ pub fn to_json(
         Value::Bytes(_) => return Err("bytes cannot be written as JSON".into()),
         Value::Func(_) => return Err("a function cannot be written as JSON".into()),
         Value::Lazy(_) => return Err("internal error: unmaterialised value in JSON output".into()),
+        Value::Env => return Err("the env object cannot be written as JSON; use env.all()".into()),
     }
     Ok(())
 }

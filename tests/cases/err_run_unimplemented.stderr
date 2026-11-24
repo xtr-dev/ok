@@ -1,5 +1,0 @@
-error[value]: running commands (`run`) is not implemented yet (milestone M3)
- --> err_run_unimplemented.ok:1:1
-  |
-1 | run cargo build
-  | ^^^^^^^^^^^^^^^

@@ -11,19 +11,25 @@
 // interpreter for no measurable gain.
 #![allow(clippy::result_large_err)]
 
+pub mod archive;
 pub mod ast;
 pub mod builtins;
 pub mod cli;
+pub mod command;
 pub mod error;
+pub mod files;
 pub mod format;
 pub mod formats;
 pub mod interp;
 pub mod lazy;
 pub mod lexer;
 pub mod list;
+pub mod net;
 pub mod parser;
 pub mod path;
 pub mod source;
+pub mod system;
+pub mod text;
 pub mod value;
 
 /// The version of `ok`, taken from the workspace `Cargo.toml`.

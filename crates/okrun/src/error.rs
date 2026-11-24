@@ -96,6 +96,15 @@ pub struct OkError {
     /// Process exit code to use when this error is uncaught (command errors
     /// exit with the child's code). `None` means the default, 1.
     pub exit_code: Option<i32>,
+    /// Labelled detail lines shown as `= label: text` (for example
+    /// `command: cargo test`). Text after the first line is indented.
+    pub details: Vec<String>,
+    /// The command of a command error, as its argument list.
+    pub command: Option<Vec<String>>,
+    /// The captured stderr tail of a command error.
+    pub stderr: Option<String>,
+    /// HTTP status of a `net` error that got a response.
+    pub status: Option<u16>,
 }
 
 impl OkError {
@@ -109,6 +118,10 @@ impl OkError {
             help: None,
             trace: Vec::new(),
             exit_code: None,
+            details: Vec::new(),
+            command: None,
+            stderr: None,
+            status: None,
         }
     }
 
@@ -251,6 +264,15 @@ pub fn render(err: &OkError, sources: &SourceMap, color: Color) -> String {
     }
 
     let pad = " ".repeat(gutter_width);
+    for detail in &err.details {
+        let mut lines = detail.lines();
+        if let Some(first) = lines.next() {
+            let _ = writeln!(out, "{pad} {} {first}", p.gutter("="));
+        }
+        for more in lines {
+            let _ = writeln!(out, "{pad}     {more}");
+        }
+    }
     let has_extra = !err.notes.is_empty() || err.help.is_some() || !err.trace.is_empty();
     if err.span.is_some() && has_extra {
         let _ = writeln!(out, "{pad} {}", p.gutter("|"));

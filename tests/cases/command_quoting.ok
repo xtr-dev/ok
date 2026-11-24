@@ -1,0 +1,13 @@
+# Every argument arrives exactly as written, whatever characters it holds.
+# On Windows this exercises the command-line quoting rules.
+let tricky = [
+  "plain", "two words", "", " ", "quote\"inside", "trailing\\", "back\\\\slashes\\",
+  "\\\"mixed\\\"", "tab\there", "semi;colon", "amp&ersand", "pipe|bar", "percent%PATH%",
+  "caret^", "star*", "dollar$HOME", "unicode ✓ é",
+]
+let r = run ok-fixture args {...tricky}
+let back = r.out.lines().map(l => l.sub('^\[(.*)\]$', "$1"))
+print(back == tricky, len(back))
+for i, a in tricky {
+  if back[i] != a { print("differs:", a, back[i]) }
+}

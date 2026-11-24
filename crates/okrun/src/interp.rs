@@ -136,6 +136,28 @@ pub struct Interp {
     depth: usize,
     /// Caught error records, so `fail(e)` can re-raise the original error.
     caught: Vec<(Weak<Record>, OkError)>,
+    pub run_opts: RunOpts,
+    /// Temporary files and directories to remove when the run ends.
+    pub temps: Vec<PathBuf>,
+    /// Commands whose stdout was connected straight into the command being
+    /// started; finished after it.
+    pub(crate) upstream: Vec<Box<dyn lazy::Source>>,
+    /// Where the user ran `ok` (SPEC.md 12.2).
+    pub invocation_dir: PathBuf,
+    /// The project root in project mode; `remove` refuses to delete it.
+    pub project_root: Option<PathBuf>,
+    /// Environment changes made by the script (`env.set`, `env.remove`,
+    /// `env file`): `None` removes a variable. Applied to every child
+    /// process, so ok never mutates its own process environment.
+    pub env_overlay: Vec<(String, Option<String>)>,
+}
+
+/// Global options that change how commands and file operations behave.
+#[derive(Clone, Copy, Default)]
+pub struct RunOpts {
+    pub trace: bool,
+    pub dry_run: bool,
+    pub yes: bool,
 }
 
 /// What kind of file is being loaded; decides which top-level items are
@@ -157,6 +179,121 @@ impl Interp {
             loading: Vec::new(),
             depth: 0,
             caught: Vec::new(),
+            run_opts: RunOpts::default(),
+            temps: Vec::new(),
+            upstream: Vec::new(),
+            invocation_dir: std::env::current_dir().unwrap_or_default(),
+            project_root: None,
+            env_overlay: Vec::new(),
+        }
+    }
+
+    /// Replace a global value (used by project mode for `cwd` and
+    /// `invocation_dir`).
+    pub fn set_global(&mut self, name: &str, value: Value) {
+        self.globals.vars.borrow_mut().insert(
+            name.into(),
+            Binding {
+                value,
+                mutable: false,
+            },
+        );
+    }
+
+    /// The top-level scope of one file: a child of a scope that holds the
+    /// file's `script_dir`, so user code may still declare that name.
+    pub(crate) fn file_scope(&self, dir: &Path) -> Rc<Scope> {
+        let abs = if dir.as_os_str().is_empty() {
+            std::env::current_dir().unwrap_or_default()
+        } else {
+            std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf())
+        };
+        let holder = Scope::new(Some(self.globals.clone()));
+        holder.declare("script_dir", Value::path(OkPath::from_native(&abs)), false);
+        Scope::new(Some(holder))
+    }
+
+    /// The value of an environment variable, after the script's changes.
+    /// Names are case-insensitive on Windows.
+    pub fn env_var(&self, name: &str) -> Option<String> {
+        let same = |a: &str| {
+            if cfg!(windows) {
+                a.eq_ignore_ascii_case(name)
+            } else {
+                a == name
+            }
+        };
+        if let Some((_, v)) = self.env_overlay.iter().rev().find(|(k, _)| same(k)) {
+            return v.clone();
+        }
+        std::env::var(name).ok()
+    }
+
+    pub fn set_env(&mut self, name: &str, value: Option<String>) {
+        let same = |a: &str| {
+            if cfg!(windows) {
+                a.eq_ignore_ascii_case(name)
+            } else {
+                a == name
+            }
+        };
+        self.env_overlay.retain(|(k, _)| !same(k));
+        self.env_overlay.push((name.to_string(), value));
+    }
+
+    /// Remove temporary files and directories created with `tempdir()` and
+    /// `tempfile()`. Called when a run ends, also after an error.
+    pub fn cleanup(&mut self) {
+        for p in std::mem::take(&mut self.temps).into_iter().rev() {
+            if p.is_dir() {
+                let _ = std::fs::remove_dir_all(&p);
+            } else {
+                let _ = std::fs::remove_file(&p);
+            }
+        }
+    }
+
+    /// Announce a file-system or network change for `--trace` and
+    /// `--dry-run`. Returns false when the change must be skipped.
+    pub fn mutation(&self, what: &str) -> bool {
+        if self.run_opts.dry_run {
+            eprintln!("~ {what}");
+            return false;
+        }
+        if self.run_opts.trace {
+            eprintln!("+ {what}");
+        }
+        true
+    }
+
+    /// Evaluate a `run` expression, or a pipeline ending in one, in `mode`.
+    fn eval_run(&mut self, e: &Expr, scope: &Rc<Scope>, mode: crate::command::Mode) -> R<Value> {
+        use crate::command::{Mode, is_run};
+        match &e.kind {
+            ExprKind::Run(cmd) => self.run_command(cmd, e.span, mode, None, scope),
+            ExprKind::RunFn { bang, args } => {
+                self.run_function(args, *bang, e.span, mode, None, scope)
+            }
+            ExprKind::Pipe {
+                lhs,
+                stage: Stage::Run(inner),
+            } => {
+                let left = if is_run(lhs) {
+                    self.eval_run(lhs, scope, Mode::Piped)?
+                } else {
+                    self.eval_lazy(lhs, scope)?
+                };
+                match &inner.kind {
+                    ExprKind::Run(cmd) => {
+                        self.run_command(cmd, inner.span, mode, Some(left), scope)
+                    }
+                    ExprKind::RunFn { bang, args } => {
+                        self.run_function(args, *bang, inner.span, mode, Some(left), scope)
+                    }
+                    _ => Err(OkError::at(ErrKind::Syntax, inner.span, "expected a command").into()),
+                }
+            }
+            _ => self.eval_lazy(e, scope),
         }
     }
 
@@ -185,7 +322,7 @@ impl Interp {
         let text = self.sources.file(file).text.clone();
         let prog = parser::parse(file, &text)?;
         check_items(&prog, FileKind::Script)?;
-        let scope = Scope::new(Some(self.globals.clone()));
+        let scope = self.file_scope(&dir);
         let last = self.exec_file(&prog, &scope, &dir, file)?;
         if let Some(Value::Func(f)) = scope.vars.borrow().get("main").map(|b| b.value.clone()) {
             return self.call_main(&f);
@@ -246,10 +383,10 @@ impl Interp {
                 continue;
             }
             let v = self.exec_stmt(stmt, scope)?;
-            last = if matches!(stmt.kind, StmtKind::Expr(_)) {
-                v
-            } else {
-                Value::Null
+            // A live `run` already showed its output; `ok -e` prints nothing more.
+            last = match &stmt.kind {
+                StmtKind::Expr(e) if !crate::command::is_run(e) => v,
+                _ => Value::Null,
             };
         }
         Ok(last)
@@ -378,9 +515,9 @@ impl Interp {
         );
         let prog = parser::parse(file, &text)?;
         check_items(&prog, FileKind::Library)?;
-        let scope = Scope::new(Some(self.globals.clone()));
-        self.loading.push((full.to_path_buf(), display.to_string()));
         let dir = full.parent().map(Path::to_path_buf).unwrap_or_default();
+        let scope = self.file_scope(&dir);
+        self.loading.push((full.to_path_buf(), display.to_string()));
         let result = self.exec_file(&prog, &scope, &dir, file);
         self.loading.pop();
         result?;
@@ -426,6 +563,9 @@ impl Interp {
 
     fn exec_stmt(&mut self, stmt: &Stmt, scope: &Rc<Scope>) -> R<Value> {
         match &stmt.kind {
+            StmtKind::Expr(e) if crate::command::is_run(e) => {
+                self.eval_run(e, scope, crate::command::Mode::Live)
+            }
             StmtKind::Expr(e) => self.eval(e, scope),
             StmtKind::Let {
                 pattern,
@@ -989,11 +1129,18 @@ impl Interp {
                 env: scope.clone(),
             }))),
             ExprKind::Pipe { lhs, stage } => {
-                let left = self.eval_lazy(lhs, scope)?;
+                if let Stage::Run(_) = stage {
+                    return self.eval_run(e, scope, crate::command::Mode::Captured);
+                }
+                let left = if crate::command::is_run(lhs) {
+                    self.eval_run(lhs, scope, crate::command::Mode::Piped)?
+                } else {
+                    self.eval_lazy(lhs, scope)?
+                };
                 self.eval_stage(left, stage, scope, e.span)
             }
             ExprKind::Run(_) | ExprKind::RunFn { .. } => {
-                Err(OkError::unimplemented(e.span, "running commands (`run`)", "M3").into())
+                self.eval_run(e, scope, crate::command::Mode::Captured)
             }
         }
     }
@@ -1145,6 +1292,18 @@ impl Interp {
         }
         if let Some(code) = e.exit_code {
             r.insert("code", Value::Int(code as i64));
+        }
+        if let Some(cmd) = &e.command {
+            r.insert(
+                "cmd",
+                Value::list(cmd.iter().map(|a| Value::str(a.as_str())).collect()),
+            );
+        }
+        if let Some(stderr) = &e.stderr {
+            r.insert("stderr", Value::str(stderr.as_str()));
+        }
+        if let Some(status) = e.status {
+            r.insert("status", Value::Int(status as i64));
         }
         let rc = Rc::new(r);
         self.caught.retain(|(w, _)| w.strong_count() > 0);
@@ -1383,6 +1542,9 @@ impl Interp {
         mut args: Args,
         scope: &Rc<Scope>,
     ) -> R<Value> {
+        if let Value::Env = rv {
+            return crate::system::env_method(self, name, name_span, args);
+        }
         if let Value::Record(r) = &rv
             && let Some(f @ Value::Func(_)) = r.get(name)
         {
@@ -1458,9 +1620,15 @@ impl Interp {
                 "millis" => Ok(Value::Int(d / 1_000_000)),
                 _ => no_property(v, name, span, &["seconds", "millis"]),
             },
-            Value::Time(t) => match name {
-                "unix" => Ok(Value::Int(t.div_euclid(1_000_000_000))),
-                _ => no_property(v, name, span, &["unix"]),
+            Value::Env => match self.env_var(name) {
+                Some(v) => Ok(Value::str(v)),
+                None => Err(OkError::at(ErrKind::Key, span, format!("the environment variable {name} is not set"))
+                    .with_help(format!("give a default with env.get(\"{name}\", \"...\"), or test it with env.has(\"{name}\")"))
+                    .into()),
+            },
+            Value::Time(t) => match crate::system::time_field(*t, name) {
+                Some(v) => Ok(v),
+                None => no_property(v, name, span, &["unix", "year", "month", "day", "hour", "minute", "second"]),
             },
             other => {
                 let mut e = OkError::at(

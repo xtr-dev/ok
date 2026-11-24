@@ -1,0 +1,12 @@
+# zip/unzip and tar/untar keep member names relative to the source's parent.
+let d = tempdir()
+write("one", d / "src/a.txt")
+write("two", d / "src/nested/b.txt")
+zip(d / "src", d / "out/src.zip")
+tar(d / "src", d / "out/src.tar.gz")
+tar([d / "src/a.txt"], d / "out/plain.tar")
+unzip(d / "out/src.zip", d / "unzipped")
+untar(d / "out/src.tar.gz", d / "untarred")
+untar(d / "out/plain.tar", d / "plain")
+print(read(d / "unzipped/src/nested/b.txt"), read(d / "untarred/src/a.txt"), read(d / "plain/a.txt"))
+print(glob("**/*.txt", root: d / "untarred") | map(p => str(p.relative_to(d / "untarred"))))

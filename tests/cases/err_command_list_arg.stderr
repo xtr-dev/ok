@@ -1,0 +1,7 @@
+error[type]: a list cannot be one command argument
+ --> err_command_list_arg.ok:2:22
+  |
+2 | run ok-fixture args {files}
+  |                      ^^^^^
+  |
+  = help: spread it into several arguments with {...list}, or join it: {join(list, ",")}

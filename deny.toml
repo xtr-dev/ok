@@ -18,6 +18,9 @@ allow = [
   "BSD-2-Clause",
   "BSD-3-Clause",
   "CC0-1.0",
+  # Permissive data licence of the Mozilla CA root list (webpki-root-certs,
+  # used by rustls-platform-verifier). Not copyleft.
+  "CDLA-Permissive-2.0",
   "ISC",
   "MIT",
   "MIT-0",

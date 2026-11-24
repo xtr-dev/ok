@@ -31,6 +31,31 @@ fn bless(p: &Path, content: &str, default: &str) {
     }
 }
 
+/// PATH for the cases: the directory with the `ok-fixture` test program
+/// (built by `cargo test --workspace`) first, then the original PATH.
+fn fixture_path() -> std::ffi::OsString {
+    let bin_dir = Path::new(env!("CARGO_BIN_EXE_ok"))
+        .parent()
+        .expect("bin dir")
+        .to_path_buf();
+    let fixture = bin_dir.join(format!("ok-fixture{}", std::env::consts::EXE_SUFFIX));
+    if !fixture.exists() {
+        let status = Command::new(env!("CARGO"))
+            .args(["build", "-p", "ok-fixture"])
+            .status()
+            .expect("build ok-fixture");
+        assert!(
+            status.success(),
+            "could not build the ok-fixture test program"
+        );
+    }
+    let mut dirs = vec![bin_dir];
+    dirs.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    std::env::join_paths(dirs).expect("join PATH")
+}
+
 #[test]
 fn golden_cases() {
     let dir = cases_dir();
@@ -46,13 +71,19 @@ fn golden_cases() {
         dir.display()
     );
     let blessing = std::env::var_os("OK_BLESS").is_some();
+    let path = fixture_path();
     let mut failures = Vec::new();
 
     for case in &cases {
         let name = case.file_name().unwrap().to_string_lossy().to_string();
         let stem = case.file_stem().unwrap().to_string_lossy().to_string();
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_ok"));
-        cmd.current_dir(&dir).env("NO_COLOR", "1").arg(&name);
+        cmd.current_dir(&dir)
+            .env("NO_COLOR", "1")
+            .env("TZ", "UTC")
+            .env("PATH", &path)
+            .env("OK_TEST_VAR", "from the test")
+            .arg(&name);
         let args_file = dir.join(format!("{stem}.args"));
         if args_file.exists() {
             cmd.args(read_or_empty(&args_file).lines().filter(|l| !l.is_empty()));

@@ -120,6 +120,8 @@ error: unknown flag --trace for task `build`
 | 2 | Bad command-line usage: unknown task, unknown flag, missing or malformed argument. |
 | N | An uncaught failure of a child command exits with the child's exit code N. |
 | 124 | An uncaught command timeout. |
+| 126 | An uncaught failure to start a program that was found (for example, not executable). |
+| 127 | An uncaught "command not found". |
 | 128+S | On Unix, an uncaught failure of a child killed by signal S. |
 | 130 | Interrupted by Ctrl-C. |
 
@@ -892,7 +894,8 @@ The first argument names the program.
   search also tries each extension in `PATHEXT` (default `.COM;.EXE;.BAT;.CMD`)
   when the name has no extension, so `run npm install` finds `npm.cmd`. The
   current directory is **not** searched on any OS.
-- Not found is an error: `command not found: cargo (searched PATH)`.
+- Not found is an error: `command not found: cargo (searched PATH)`. On Unix
+  a file without execute permission is skipped during the search.
 
 ### 9.4 Process creation
 
@@ -1137,8 +1140,9 @@ skipped by `--dry-run`.
 `*` matches within one path component, `?` one character, `[abc]` and
 `[a-z]` a character class, `**` zero or more whole components, `{a,b}`
 alternatives. Patterns use `/` on every OS. Matching is case-sensitive on
-every OS. Names starting with `.` are matched only by a pattern component
-that starts with `.` or with `--hidden`. Results are sorted by their `/`
+every OS. Names starting with `.` are skipped, at every level, unless the
+pattern has a component that starts with `.` (as in `.*` or `**/.env*`) or
+`hidden: true` is given. Results are sorted by their `/`
 display form, so the order is the same everywhere. A pattern that matches
 nothing returns `[]`.
 
@@ -1174,7 +1178,7 @@ running code is in), `invocation_dir` (where the user ran `ok`).
 | `env.NAME` | `string` | Error if unset, with a hint to use `env.get`. |
 | `env.get(name: string, default = null)` | value | |
 | `env.has(name: string)` | `bool` | |
-| `env.set(name: string, value: string)` | `null` | Affects ok and later children. |
+| `env.set(name: string, value: string)` | `null` | Affects `env.NAME` and every command started afterwards. ok keeps the change itself and passes it to children; the operating-system environment of the ok process is not modified. |
 | `env.remove(name: string)` | `null` | |
 | `env.all()` | `record` | |
 | `os.name` | `string` | `"linux"`, `"macos"`, `"windows"`, or another OS name in lowercase |
@@ -1268,7 +1272,7 @@ Strings default to left alignment, numbers to right. Examples: `"{n:>6}"`,
 |---|---|---|
 | `now()` | `time` | |
 | `time(s: string)` | `time` | RFC 3339, or `YYYY-MM-DD` (local midnight). |
-| `t.format(pattern: string, --utc: bool)` | `string` | `%Y %m %d %H %M %S %z %a %b %j` and `%%`. |
+| `format(t, pattern: string, --utc: bool)`, usually `t.format(...)` | `string` | strftime patterns: `%Y %m %d %H %M %S %z %:z %a %b %j %%` and the rest of the usual set. |
 | `sleep(d: duration)` | `null` | |
 | `duration(s: string)` | `duration` | Parses literal syntax, `"1h30m"`. |
 

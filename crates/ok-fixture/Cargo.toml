@@ -1,0 +1,15 @@
+[package]
+name = "ok-fixture"
+description = "Test helper: a tiny program with predictable behaviour, so tests of `run` behave the same on every OS"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "ok-fixture"
+path = "src/main.rs"
+
+[lints]
+workspace = true

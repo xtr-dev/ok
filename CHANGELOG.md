@@ -15,6 +15,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- M3 commands: `run`, `run!` and the function form; live, captured and
+  piped output by position; `|` between commands and into commands;
+  `>`, `>>` and `<` redirects; options `cwd`, `env`, `stdin`, `timeout`,
+  `bytes`, `quiet`; failures carry the command, exit code and stderr tail
+  and exit with the child's code; `--trace` and `--dry-run`; PATHEXT lookup
+  on Windows.
+- M3 standard library: files (`copy`, `move`, `remove`, `mkdir`, `exists`,
+  `is_file`, `is_dir`, `glob`, `list_dir`, `stat`, `touch`, `tempdir`,
+  `tempfile`, `chmod`), paths (`abs`, `relative_to`, `with_ext`, `parts`,
+  `is_abs`, `home`, `cwd`, `script_dir`, `invocation_dir`), environment
+  (`env.NAME`, `env.get/has/set/remove/all`, `which`), text (`trim`,
+  `split`, `replace`, `contains`, `starts_with`, `ends_with`, `upper`,
+  `lower`, `chars`, `repeat`, `pad`, regex `match`/`matches`/`find`/`sub`),
+  time (`now`, `time`, `format`, `sleep`, `duration`), `prompt`, `confirm`,
+  `hash`, `fetch`, `zip`/`unzip`/`tar`/`untar`.
 - M2 data: `read`, `write`, `parse`, `to` and `stdin` for JSON, JSON Lines,
   CSV, TSV, lines, text, TOML, YAML (including merge keys and `yaml_all`),
   `.env` and bytes, with the format taken from the file name or given

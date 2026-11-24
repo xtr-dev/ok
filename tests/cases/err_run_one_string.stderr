@@ -1,0 +1,7 @@
+error[command]: no program named "ok-fixture echo hi": ok never splits a string into words
+ --> err_run_one_string.ok:1:1
+  |
+1 | run("ok-fixture echo hi")
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: pass each word separately: run("ok-fixture", "echo", "hi") or run ok-fixture echo hi

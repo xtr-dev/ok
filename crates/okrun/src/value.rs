@@ -32,6 +32,8 @@ pub enum Value {
     /// A streaming list or string; see `lazy.rs`. Never visible to scripts
     /// as a separate kind.
     Lazy(Rc<crate::lazy::Lazy>),
+    /// The `env` object (SPEC.md 12.3): fields are environment variables.
+    Env,
 }
 
 pub enum Func {
@@ -135,6 +137,7 @@ impl Value {
             Value::Duration(_) => "duration",
             Value::Time(_) => "time",
             Value::Func(_) => "fn",
+            Value::Env => "record",
             Value::Lazy(l) => {
                 if l.text {
                     "string"
@@ -211,11 +214,12 @@ impl Value {
                 out.push(')');
             }
             Value::Duration(d) => out.push_str(&format_duration(*d)),
-            Value::Time(t) => out.push_str(&format_time_utc(*t)),
+            Value::Time(t) => out.push_str(&crate::system::format_time_local(*t)),
             Value::Func(f) => {
                 let _ = write!(out, "<fn {}>", f.name());
             }
             Value::Lazy(_) => out.push_str("<stream>"),
+            Value::Env => out.push_str("<env>"),
         }
     }
 }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/okrun"]
+members = ["crates/okrun", "crates/ok-fixture"]
 exclude = ["fuzz"]
 
 [workspace.package]

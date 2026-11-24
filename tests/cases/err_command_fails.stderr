@@ -1,0 +1,7 @@
+the tool failed
+error[command]: command failed with exit code 9
+ --> err_command_fails.ok:1:1
+  |
+1 | run ok-fixture exit 9 the tool failed
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = command: ok-fixture exit 9 the tool failed

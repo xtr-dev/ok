@@ -1,0 +1,7 @@
+error[command]: command not found: definitely-not-a-real-program (searched PATH)
+ --> err_command_not_found.ok:1:1
+  |
+1 | run definitely-not-a-real-program --version
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: check that it is installed and on PATH

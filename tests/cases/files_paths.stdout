@@ -1,0 +1,16 @@
+[".hidden", "a.txt", "c.txt", "sub"]
+[path("a.txt"), path("c.txt")]
+[path("sub/deep/b.md")]
+["a.txt", "c.txt", "sub", "sub/deep", "sub/deep/b.md"]
+[".hidden", "a.txt", "c.txt"]
+[".hidden"]
+true false true true
+6 true false time
+true true false true
+true false false
+here true
+json true
+app.tar.gz app.tar gz build/out build/out/app.tar.zip ["build", "out", "app.tar.gz"] false
+b app/x true
+path path path cases path
+dist/y.txt /abs

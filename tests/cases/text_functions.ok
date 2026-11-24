@@ -1,0 +1,12 @@
+# Text functions and regexes (SPEC.md 12.4).
+print("  padded  ".trim() + "|", "  x".trim_start() + "|", "x  ".trim_end() + "|")
+print("a b  c".split(), "a,b,,c".split(","), "k=v=w".split("=", limit: 2), "one two three".split(limit: 2))
+print("x-y-z".replace("-", "+"), "Hello".upper(), "Hello".lower(), "héllo".chars())
+print("hello".contains("ell"), [1, 2].contains(2), {a: 1}.contains("a"), "app.log".ends_with(".log"), "v1.2".starts_with("v"))
+print("ab".repeat(3), pad("7", 3, fill: "0", align: "right"), "[" + pad("x", 5, align: "center") + "]", pad("toolong", 3))
+let m = "version 1.24.3 released".match('(\d+)\.(\d+)\.(?P<patch>\d+)')
+print(m.text, m.groups, m.named.patch, m.start, m.end)
+print("no digits".match('\d')?, "abc123".matches('^[a-z]+\d+$'), "a1b22c333".find('\d+') | map(.text))
+print("2026-11-24".sub('(\d+)-(\d+)-(\d+)', "$3/$2/$1"), "a1b2".sub('\d', d => "<{int(d.text) * 10}>"))
+print(read("data/app.log") | lines | where .contains("ERROR") | count)
+print("Hello, World".lower().split(", ").map(.upper()))

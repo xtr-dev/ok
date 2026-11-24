@@ -8,7 +8,7 @@ use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Color, ErrKind, OkError, render, suggest};
-use crate::interp::{Flow, Interp, flush_stdout};
+use crate::interp::{Flow, Interp, RunOpts, flush_stdout};
 use crate::source::SourceMap;
 use crate::value::Value;
 
@@ -145,10 +145,10 @@ fn run(args: Vec<String>) -> i32 {
     let color = pick_color(opts.color.as_deref());
 
     if let Some(source) = opts.eval.clone() {
-        let mut interp = Interp::new(rest);
+        let mut interp = new_interp(rest, &opts);
         let base = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let result = interp.run_source("<-e>", &source, base);
-        return finish(&interp, result, color, true);
+        return finish(&mut interp, result, color, true);
     }
 
     let Some(name) = rest.first().cloned() else {
@@ -176,9 +176,9 @@ fn run(args: Vec<String>) -> i32 {
             };
             return usage_error(&format!("script {name} {what}"), None);
         }
-        let mut interp = Interp::new(script_args);
+        let mut interp = new_interp(script_args, &opts);
         let result = interp.run_file(&name, path);
-        return finish(&interp, result, color, false);
+        return finish(&mut interp, result, color, false);
     }
     usage_error(
         &format!(
@@ -232,7 +232,31 @@ fn pick_color(choice: Option<&str>) -> Color {
     }
 }
 
-fn finish(interp: &Interp, result: Result<Value, Flow>, color: Color, print_value: bool) -> i32 {
+fn new_interp(args: Vec<String>, opts: &Opts) -> Interp {
+    let mut interp = Interp::new(args);
+    interp.run_opts = RunOpts {
+        trace: opts.trace,
+        dry_run: opts.dry_run,
+        yes: opts.yes,
+    };
+    interp
+}
+
+fn finish(
+    interp: &mut Interp,
+    result: Result<Value, Flow>,
+    color: Color,
+    print_value: bool,
+) -> i32 {
+    // A materialised result must be printed before temporary files go away.
+    let result = match result {
+        Ok(v) if print_value => {
+            let span = crate::source::Span::default();
+            crate::lazy::force(interp, v, span)
+        }
+        other => other,
+    };
+    interp.cleanup();
     match result {
         Ok(v) => {
             if print_value && !matches!(v, Value::Null) {
