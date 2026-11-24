@@ -12,10 +12,11 @@ repo and code are built. The original brief is `PROMPT.md`.
 
 ## Current state
 
-- Milestone: **M1 (core interpreter)** done, waiting for review. Scripts run
-  with `ok file.ok` and `ok -e`; `run`, data formats, the file/env/net
-  stdlib, `main` argument parsing, project mode and trust are later
-  milestones and report "not implemented yet (milestone Mx)".
+- Milestone: **M2 (data)** done, waiting for review. Scripts run with
+  `ok file.ok` and `ok -e`, with formats, pipelines and list functions;
+  `run`, the file/text/env/net stdlib, `main` argument parsing, project mode
+  and trust are later milestones and report "not implemented yet
+  (milestone Mx)".
 - Milestones are in `PROMPT.md`. Stop after each one, report to Bas, and wait
   for a go-ahead.
 - GitHub: private repo `xtr-dev/ok`. Never make it public and never publish
@@ -90,11 +91,22 @@ Modules in `crates/okrun/src/`:
 | `path.rs` | `OkPath` normalisation, display (`/`) and native conversion |
 | `format.rs` | format specs for `fmt` and `{x:spec}` |
 | `interp.rs` | scopes, evaluation, calls and type checks, imports and library rules |
-| `builtins.rs` | builtin functions; add new ones to the `BUILTINS` table |
+| `builtins.rs` | core builtins (`CORE` table), `eager`/`streaming` constructors, argument helpers |
+| `lazy.rs` | lazy values: `Source` trait, `force`, `cursor`, `adapt`, line sources |
+| `list.rs` | list and record functions; `named`/`count_args` helpers |
+| `formats.rs` | `read`/`write`/`parse`/`to`/`stdin` and every format converter |
+
+Laziness rule: `Interp::eval` always materialises; only `eval_lazy` (pipeline
+inputs, call arguments, `for` iterables) may return `Value::Lazy`, and
+`call_value` forces arguments unless the builtin is `streaming`. A new
+builtin that should stream must be declared with `streaming(...)` and pull
+from `lazy::cursor`.
 | `cli.rs` | `ok` command line |
 
 Tests: unit tests next to the code; `tests/golden.rs` (cases in
-`tests/cases/`, libraries for import tests in `tests/cases/lib/`),
+`tests/cases/`, libraries for import tests in `tests/cases/lib/`, data
+fixtures in `tests/cases/data/` (kept byte-exact by `.gitattributes`), and
+files the cases write go to the ignored `tests/cases/out/`),
 `tests/cli.rs`, `tests/examples_parse.rs` (every example must parse),
 `tests/no_panic.rs`.
 

@@ -293,3 +293,44 @@ during M1: checks run locally instead. The workflows stay in the repository
 with a `workflow_dispatch` trigger so they can be run on demand or switched
 back on by restoring their triggers. The cost is that macOS and Windows
 behaviour is not verified while CI is off.
+
+## 2026-11-24 (M2)
+
+**Format crates: serde_json, csv, toml and yaml-rust2.** All MIT/Apache-2.0
+(csv is also Unlicense), well maintained, and pure Rust. serde_json and toml
+use their `preserve_order` features so records keep the document's key order.
+yaml-rust2 replaces the archived serde_yaml and implements the YAML 1.2 core
+schema (`yes` and `no` stay strings). `.env` parsing is hand-written; no crate
+matched the no-expansion rule.
+
+**Lazy values are materialised when bound, stored or passed to a
+non-streaming function, instead of being memoised on second use.** The M0
+spec said a lazy value used twice keeps what was read so far. Materialising
+at the boundary gives the same results with a much simpler rule ("a pipeline
+streams; a variable holds the whole thing"), and it means laziness can never
+leak into code that does not expect it. SPEC.md 13.2 now says so.
+
+**A juxtaposed pipeline stage takes exactly one argument.** With
+comma-separated juxtaposed arguments, `print(xs | count, ys | count)` parsed
+as `count(xs, ys | count)`; readers expect two arguments to `print`. Stages
+needing more arguments use parentheses, as all M0 examples already did.
+
+**`write` refuses a likely argument swap.** `write("out.txt", "hello")` would
+silently create a file named `hello`. When the value is a short string with
+a known data-file extension and the path has none, `write` stops with a hint.
+A real need to write such a string to an extension-less file can pass the
+format explicitly or use a path value: `write("out.txt", path("hello"),
+"text")` still triggers it, so the check is narrow by design and logged as a
+known corner.
+
+**YAML merge keys are applied.** `<<: *defaults` is technically YAML 1.1,
+but CI and compose files rely on it everywhere; reading them without merging
+would give surprising records.
+
+**JSON integers beyond 64 bits become floats.** Matches SPEC.md 13.3; such
+values (IDs from other systems) print without an exponent, as Rust formats
+them, which keeps them readable.
+
+**A `{` inside a double-quoted string gets a dedicated hint.** JSON written
+in double quotes is the most common way to trip over interpolation, so the
+error says to escape the brace or use a single-quoted string.

@@ -7,8 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A juxtaposed pipeline stage (`| take 5`) takes exactly one argument, so
+  `print(xs | count, ys | count)` passes two values to `print`.
+- `range` is lazy and no longer limited to ten million numbers.
+
 ### Added
 
+- M2 data: `read`, `write`, `parse`, `to` and `stdin` for JSON, JSON Lines,
+  CSV, TSV, lines, text, TOML, YAML (including merge keys and `yaml_all`),
+  `.env` and bytes, with the format taken from the file name or given
+  explicitly; CSV/TSV options `header` and `delimiter`, JSON `compact`,
+  `append` for writes.
+- Streaming: line- and row-oriented reads, `lines`, `range` and `stdin()` are
+  lazy; `where`, `map`, `take`, `skip`, `uniq`, `flat`, `enumerate` and
+  `lines` stream, and consumers stop reading early.
+- List and record functions: `where`, `map`, `each`, `sort`, `reverse`,
+  `group`, `uniq`, `count`, `first`, `last`, `take`, `skip`, `sum`, `min`,
+  `max`, `any`, `all`, `join`, `flat`, `enumerate`, `keys`, `values`,
+  `entries`, `from_entries`, `get`, `has`, `lines`.
 - M1 core interpreter: lexer (with command mode), parser for the full
   grammar, and a tree-walking evaluator for values, operators, strings with
   interpolation and format specs, lists, records, paths, durations,

@@ -34,18 +34,18 @@ in `ok`, each next to the original.
 
 ## Status
 
-Milestone **M1: core interpreter**. `ok script.ok` and `ok -e '1 + 2'` run
-the core language: values, functions, closures, control flow, string
-interpolation, imports and errors with source snippets. Commands (`run`),
-data formats, most of the standard library, project mode and trust come in
-the next milestones. The language is described in `SPEC.md`; design choices
+Milestone **M2: data**. `ok script.ok` and `ok -e '1 + 2'` run the core
+language plus built-in formats (JSON, JSON Lines, CSV, TSV, TOML, YAML,
+.env, text) and streaming pipelines with the list functions. Commands
+(`run`), the file, text, environment and network functions, script
+arguments, project mode and trust come in the next milestones. The language is described in `SPEC.md`; design choices
 are logged in `DECISIONS.md`.
 
 | Milestone | Content | State |
 |---|---|---|
 | M0 | Spec and examples | done |
-| M1 | Core interpreter | in review |
-| M2 | Data formats and pipelines | |
+| M1 | Core interpreter | done |
+| M2 | Data formats and pipelines | in review |
 | M3 | Commands and standard library | |
 | M4 | Script CLI | |
 | M5 | Project mode | |
