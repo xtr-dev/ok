@@ -3,8 +3,10 @@
 # Publishing the release (and crates.io) is done by hand by the project owner.
 name: Release
 
-# Tag pushes no longer start this workflow automatically (CI is off for
-# now); run it by hand. Restore `push: tags: ["v*"]` to switch it back on.
+# Runs only when started by hand. Started on a tag ref (`gh workflow run
+# release.yml --ref v0.1.0`) it creates the draft release; started on a
+# branch it only builds and checks, and the binaries are kept as workflow
+# artifacts.
 on:
   workflow_dispatch:
 
