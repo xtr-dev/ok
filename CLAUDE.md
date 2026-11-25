@@ -7,18 +7,18 @@ how the repo is run. The language itself is defined in `SPEC.md`.
 ## What this is
 
 `ok`: a portable scripting language and task runner, one static Rust binary.
-Project owner: Bas (decides what the language is). Maintainer: decides how the
-repo and code are built. The original brief was `PROMPT.md`;
+The project owners (the `xtr-dev` maintainers) decide what the language is;
+the maintainer working on the code decides how the repo and code are built. The original brief was `PROMPT.md`;
 it was removed before the first public release (it is in the git history).
 Its rules are kept below, and the language it described is now `SPEC.md`.
 
 ## Current state
 
-- All milestones M0 to M7 are implemented; `v0.1.0` is tagged locally (not
-  pushed). Bas publishes the repository, the tag/release and the crate.
-- GitHub: public repo `xtr-dev/ok` (made public by Bas on 2026-11-25). Never
-  publish releases or to crates.io; Bas does both. CI runs on every push to `main` and every
-  pull request (Linux, macOS, Windows).
+- All milestones M0 to M7 are implemented; `v0.1.0` is the first release.
+- GitHub: public repo `xtr-dev/ok`. Publishing a release and publishing to
+  crates.io are done by hand by a project owner; never do either yourself.
+  CI runs on every push to `main` and every pull request (Linux, macOS,
+  Windows).
 - The release workflow (started by hand) builds the six binaries, runs
   `tests/smoke/smoke.ok` and the bootstrap wrappers on each target's own OS
   (job `smoke`), and only then creates the draft release.
