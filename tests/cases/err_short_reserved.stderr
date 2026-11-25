@@ -1,0 +1,7 @@
+error[syntax]: the short flag -C is reserved
+ --> err_short_reserved.ok:1:19
+  |
+1 | fn main(--config, -C: path = "ok.toml") {
+  |                   ^^
+  |
+  = help: -C is ok's own option for the project directory; choose another letter

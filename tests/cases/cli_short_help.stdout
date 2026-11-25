@@ -1,0 +1,15 @@
+Convert a CSV export to JSON.
+
+Usage: ok cli_short_help.ok <input> [--out <path>] [--verbose] [--quiet] [--tag <value>] [--role <admin|user>] [--force]
+
+Arguments:
+  <input>                  file to read
+
+Options:
+  -o, --out <path>         where to write the JSON [default: out.json]
+  -v, --verbose            print each row
+  -q, --quiet              print nothing
+  -t, --tag <value>        tags to add (repeatable)
+  -r, --role <admin|user>  [default: user]
+      --force              overwrite the output
+  -h, --help               print this help

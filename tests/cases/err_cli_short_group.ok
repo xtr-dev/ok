@@ -1,0 +1,12 @@
+# Convert a CSV export to JSON.
+fn main(
+  input: string,                     # file to read
+  --out, -o: path = "out.json",      # where to write the JSON
+  --verbose, -v: bool,               # print each row
+  --quiet, -q: bool,                 # print nothing
+  --tag, -t: list[string],           # tags to add
+  --role, -r: "admin" | "user" = "user",
+  --force: bool,                     # overwrite the output
+) {
+  print(input, out.name, verbose, quiet, tag, role, force)
+}

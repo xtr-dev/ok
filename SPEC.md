@@ -303,10 +303,11 @@ Violations are load-time errors with the offending span underlined.
 ```
 fn_decl     = "fn" ident "(" [ params ] ")" block
 params      = param { "," param } [ "," ]
-param       = [ "--" ] param_name [ ":" type ] [ "=" expr ]
+param       = ident [ ":" type ] [ "=" expr ]
+            | "--" flag_name [ "," short_flag ] [ ":" type ] [ "=" expr ]
             | "..." ident [ ":" type ]
-param_name  = ident | flag_name
 flag_name   = ident { "-" ident }                   (* only after "--" *)
+short_flag  = "-" letter                  (* no space after "-"; 14.1 *)
 type        = base_type [ "?" ] | choice_type
 base_type   = "any" | "null" | "bool" | "int" | "float" | "string" | "bytes"
             | "path" | "duration" | "time" | "record" | "fn"
@@ -326,6 +327,8 @@ task_ref    = task_name [ "." task_name ]
 
 A flag parameter `--dry-run` is bound in the body as `dry_run`: dashes
 become underscores. Two parameters that map to the same name are an error.
+A flag may declare a one-letter short form for the command line,
+`--verbose, -v: bool` (14.1); in code it is still passed by its long name.
 
 ### 4.3 Statements
 
@@ -1538,10 +1541,30 @@ fn main(
   `--name` (true); a bool flag whose default is `true` is turned off with
   `--no-name`. A `list[T]` flag repeats: `--tag a --tag b`.
 - `--` ends flag parsing; `-h` and `--help` print help only before it.
-- There are no short flags in v1.
 - Arguments are checked against the signature before any of the script's
   code runs.
 
+**Short flags.** A flag parameter may declare a short form, one ASCII letter
+written after the long name and a comma: `--verbose, -v: bool`,
+`--out, -o: path = "out.json"`. Short letters are case-sensitive.
+
+- A switch (`bool` flag) is `-v`. Switches combine: `-vq` is `-v -q`, and
+  `-vh` asks for help.
+- A flag that takes a value is `-o VALUE`, with the value as the next
+  argument; it does not combine with other letters, and `-oVALUE` or
+  `-o=VALUE` is an argument error that shows the right form. A `list[T]` flag
+  repeats: `-t a -t b`.
+- Before `--`, an argument that starts with `-` followed by an ASCII letter
+  is a short flag (or a group of switches). `-`, `-5` and `-1.5` are values.
+  A value that starts with `-` and a letter is passed after `--`, or as the
+  value of a flag (`--pattern -x`), which always takes the next argument.
+- These are load-time errors: a short form on a positional or rest
+  parameter, a short form that is not a single letter, the same letter
+  twice in one signature, a short form for a `bool` flag whose default is
+  `true` (such a switch is only turned off, with `--no-name`), and the
+  letters `h`, `C` and `e`, which are ok's own options (2.2): `-h` always
+  prints help, and `-C`/`-e` are kept free so a short option means the
+  same before and after the task name.
 ### 14.2 Help
 
 `--help` (and `-h`) prints:
@@ -1568,6 +1591,19 @@ help is the comment at the end of its line. A default that is a literal is
 shown as its value; any other default is shown as its source text
 (`[default: env.get("SRC", "/var/lib/app/data")]`), because printing help
 never runs code.
+
+When any parameter has a short form, the Options column shows it first and
+indents the other flags to line up with the long names:
+
+```
+Options:
+  -o, --out <path>   where to write the JSON [default: out.json]
+  -v, --verbose      print each row
+      --force        overwrite the output
+  -h, --help         print this help
+```
+
+The usage line always uses the long names, which say what they do.
 
 A flag with a choice type (5.11) shows its choices as the value placeholder,
 in the usage line and under Options: `--role <admin|user>`. A positional
@@ -1609,10 +1645,11 @@ error: --role expects one of "admin", "user", got "admn"
 ### 14.5 Completion
 
 `ok self complete` (17) offers, after a task name: the task's flags
-(`--name`), `--help`, and, where a value is expected, the choices of a
-choice type: after a flag with a choice type (`--role <TAB>`, also written
-`--role=<TAB>`), and for the next positional parameter when it has a choice
-type. Completion never runs project code.
+(`--name`), `--help`, the short forms (`-v`) when the word being completed
+starts with a single `-`, and, where a value is expected, the choices of a
+choice type: after a flag with a choice type (`--role <TAB>`, `-r <TAB>`,
+also written `--role=<TAB>`), and for the next positional parameter when it
+has a choice type. Completion never runs project code.
 
 ## 15. Project mode
 
@@ -1892,5 +1929,5 @@ wrappers are the only shell code in the project and stay short.
   ok v1 parses the `allow` modifier and rejects it: `error: task permissions
   (allow) are not implemented yet`.
 - Not in v1: a REPL beyond `ok -e`, a package manager, user-defined types,
-  async, sandboxing, short flags, content-hash up-to-date checks, nested
+  async, sandboxing, content-hash up-to-date checks, nested
   namespaces. Ideas are collected in `IDEAS.md`.

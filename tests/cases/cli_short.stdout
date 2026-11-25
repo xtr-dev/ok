@@ -1,0 +1,1 @@
+-x result.json true true ["a", "b"] admin false

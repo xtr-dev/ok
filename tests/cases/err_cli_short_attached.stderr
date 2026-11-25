@@ -1,0 +1,4 @@
+error: -o takes a value, given as the next argument
+  = help: write -o VALUE (or --out VALUE)
+usage: ok err_cli_short_attached.ok <input> [--out <path>] [--verbose] [--quiet] [--tag <value>] [--role <admin|user>] [--force]
+run with --help for details

@@ -576,3 +576,32 @@ argument error (exit code 2) listing every choice, with a suggestion from a
 unique prefix (`prod` for `production`) or else from edit distance.
 Completion offers the choices after a choice flag, after `--flag=`, and for
 the next positional parameter.
+
+**Short flags are declared after the long name and a comma:
+`--verbose, -v: bool`.** This is the order and punctuation of the Options
+column in `--help` and of most tools' documentation (`-v, --verbose`, with
+the readable name first in a signature), so it reads as one parameter with
+two spellings. An annotation or a separate declaration would put the two
+names apart. A positional parameter cannot start with `-`, so the parser
+never confuses the short form with the next parameter. The short form is
+for the command line only; code still passes `verbose: true`.
+
+**Switches group (`-vq`); a short flag with a value stands alone
+(`-o out.json`).** Grouping switches is what users type out of habit. Values
+glued to the letter (`-oout.json`) or grouped behind switches (`-vo x`) are
+hard to read in a command line, so they are argument errors that show the
+right form instead of being guessed. Before `--`, any argument that starts
+with `-` and a letter is now a flag, as in other tools; `-5` and `-` stay
+values, and other values that start with a dash go after `--`. This changes
+scripts whose positional arguments started with `-` and a letter, which
+used to be accepted as values; the error says to use `--`.
+
+**`-h`, `-C` and `-e` cannot be declared as short flags.** `-h` prints help
+everywhere, and ok's own `-C` and `-e` are kept free so a short option has
+one meaning on any ok command line, and the "ok's own options go before the
+name" hint keeps working. ok's other options have no short form, so their
+long names may still be declared by tasks as before. A short form on a
+`bool` flag that defaults to `true` is rejected too, because it could only
+repeat the default. The usage line keeps the long names, which say what a
+flag does; `--help` lists the short forms, and completion offers them only
+after a single `-`, so the default candidate list stays readable.

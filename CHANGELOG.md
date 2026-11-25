@@ -19,10 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   optional final `| null`. Values are checked on the command line (with a
   did-you-mean hint) and on calls, shown in `--help`, and offered by shell
   completions.
+- Short flags for script and task parameters: `--verbose, -v: bool`.
+  Switches group (`-vq`), values follow as the next argument (`-o out.json`),
+  and `--help` and completions show them. `-h`, `-C` and `-e` are reserved.
 
 ### Changed
 
 - The alternatives of a `match` arm (`p1 | p2`) must bind the same names.
+- A script or task argument that starts with `-` and a letter is a short
+  flag; pass such values after `--` (`-5` and `-` are still values).
 
 ## [0.1.0] - 2026-11-25
 

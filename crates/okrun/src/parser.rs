@@ -703,7 +703,15 @@ impl Parser {
             let start = self.span();
             let mut flag = false;
             let mut rest = false;
+            let mut short = None;
             let cli_name;
+            if self.at(&Tok::Minus) && self.peek_at(1).tok != Tok::Minus {
+                return Err(syntax(
+                    self.span(),
+                    "a short flag must follow the long name of a flag",
+                )
+                .with_help("write it after the flag and a comma: --verbose, -v: bool"));
+            }
             if self.eat(&Tok::Ellipsis) {
                 rest = true;
                 let t = self.bump();
@@ -719,6 +727,13 @@ impl Parser {
                 self.bump();
                 flag = true;
                 cli_name = self.dashed_name("a flag name after `--`")?;
+                if self.at(&Tok::Comma)
+                    && self.peek_at(1).tok == Tok::Minus
+                    && self.peek_at(2).tok != Tok::Minus
+                {
+                    self.bump();
+                    short = Some(self.short_flag(&params)?);
+                }
             } else {
                 let t = self.bump();
                 match t.tok {
@@ -751,6 +766,18 @@ impl Parser {
                 None
             };
             let end_span = self.prev_span();
+            if short.is_some()
+                && matches!(ty, Some(TypeAnn::Bool))
+                && default
+                    .as_ref()
+                    .is_some_and(|d| matches!(d.kind, ExprKind::Bool(true)))
+            {
+                return Err(syntax(
+                    start.to(end_span),
+                    format!("`--{cli_name}` defaults to true, so a short flag could only repeat the default"),
+                )
+                .with_help(format!("the switch is turned off with --no-{cli_name}; remove the short form")));
+            }
             let name = cli_name.replace('-', "_");
             if let Some(prev) = params.iter().find(|p| p.name == name) {
                 return Err(syntax(
@@ -765,6 +792,7 @@ impl Parser {
                 name,
                 cli_name,
                 flag,
+                short,
                 rest,
                 ty,
                 default,
@@ -792,6 +820,39 @@ impl Parser {
             }
         }
         Ok(params)
+    }
+
+    /// The `-v` of `--verbose, -v` (SPEC.md 14.1); the `-` is the current
+    /// token. `params` are the parameters declared so far.
+    fn short_flag(&mut self, params: &[Param]) -> PResult<char> {
+        let dash = self.bump();
+        let t = self.bump();
+        let span = dash.span.to(t.span);
+        let letter = match &t.tok {
+            Tok::Ident(n) if !t.space_before && n.len() == 1 => n.chars().next(),
+            _ => None,
+        }
+        .filter(char::is_ascii_alphabetic);
+        let Some(c) = letter else {
+            return Err(syntax(span, "a short flag is a single letter")
+                .with_help("write it like -v, right after the dash"));
+        };
+        if matches!(c, 'h' | 'C' | 'e') {
+            let meaning = match c {
+                'h' => "-h always prints help",
+                'C' => "-C is ok's own option for the project directory",
+                _ => "-e is ok's own option for evaluating source text",
+            };
+            return Err(syntax(span, format!("the short flag -{c} is reserved"))
+                .with_help(format!("{meaning}; choose another letter")));
+        }
+        if let Some(prev) = params.iter().find(|p| p.short == Some(c)) {
+            return Err(syntax(
+                span,
+                format!("-{c} is already the short flag of --{}", prev.cli_name),
+            ));
+        }
+        Ok(c)
     }
 
     /// A name made of words joined by `-` with no spaces: `dry-run`,
@@ -1565,6 +1626,7 @@ impl Parser {
                 cli_name: name.clone(),
                 name,
                 flag: false,
+                short: None,
                 rest: false,
                 ty: None,
                 default: None,
@@ -2251,6 +2313,7 @@ fn wrap_it(e: Expr) -> Expr {
         name: IT.into(),
         cli_name: IT.into(),
         flag: false,
+        short: None,
         rest: false,
         ty: None,
         default: None,
@@ -2560,6 +2623,28 @@ mod tests {
                 .contains("not one of the choices")
         );
         ok("fn f(--m: \"a\" | \"b\" = env.get(\"M\")) { }");
+    }
+
+    #[test]
+    fn short_flags() {
+        let p = ok("fn main(--verbose, -v: bool, --out, -o: path = \"x\", --dry-run, -n) { }");
+        let StmtKind::Fn(f) = &p.stmts[0].kind else {
+            panic!("not a fn")
+        };
+        let shorts: Vec<_> = f.params.iter().map(|p| p.short).collect();
+        assert_eq!(shorts, [Some('v'), Some('o'), Some('n')]);
+        ok("task build(\n  --release, -r: bool,   # optimised\n  --V, -V: bool,\n) { }");
+        let msg = |src: &str| fails(src).message;
+        assert!(msg("fn f(x, -v) { }").contains("must follow the long name"));
+        assert!(msg("fn f(--verbose, -vv: bool) { }").contains("single letter"));
+        assert!(msg("fn f(--verbose, - v: bool) { }").contains("single letter"));
+        assert!(msg("fn f(--n, -1: int) { }").contains("single letter"));
+        assert!(msg("fn f(--help-me, -h: bool) { }").contains("-h is reserved"));
+        assert!(msg("fn f(--eval, -e: bool) { }").contains("-e is reserved"));
+        assert!(
+            msg("fn f(--a, -x: bool, --b, -x: bool) { }").contains("already the short flag of --a")
+        );
+        assert!(msg("fn f(--color, -c: bool = true) { }").contains("defaults to true"));
     }
 
     #[test]

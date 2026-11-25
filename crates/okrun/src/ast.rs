@@ -200,6 +200,8 @@ pub struct Param {
     /// The name as written, without `--` (`dry-run`); used on the command line.
     pub cli_name: String,
     pub flag: bool,
+    /// The one-letter short form on the command line: `--verbose, -v`.
+    pub short: Option<char>,
     pub rest: bool,
     pub ty: Option<TypeAnn>,
     pub default: Option<Expr>,
