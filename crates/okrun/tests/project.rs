@@ -469,6 +469,26 @@ fn independent_dependencies_run_in_parallel_with_prefixed_output() {
 }
 
 #[test]
+fn workers_need_the_same_trust_as_a_normal_run() {
+    let p = Proj::new("parallel-trust", &[("ok.ok", RENDEZVOUS)]);
+    // A worker started by hand on an untrusted project refuses to run.
+    let o = p.run(&["--task-worker", "0:a"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err(&o).contains("this project is not trusted"),
+        "{}",
+        err(&o)
+    );
+    assert!(p.run(&["trust"]).status.success());
+    // Trusted in the store: the workers find the approval there.
+    let o = p.run(&["--jobs", "2", "both"]);
+    assert!(o.status.success(), "{}", err(&o));
+    // The right trust but a stale fingerprint is refused too.
+    let o = p.run(&["--task-worker", "0:a"]);
+    assert!(err(&o).contains("the project files changed"), "{}", err(&o));
+}
+
+#[test]
 fn jobs_1_runs_dependencies_one_at_a_time_without_prefixes() {
     let p = Proj::new(
         "sequential",

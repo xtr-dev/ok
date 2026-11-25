@@ -596,10 +596,13 @@ failure with that task's exit code.
 as a plan, and a plan whose lines come out in a different order every time
 is hard to read or compare.
 
-**Workers re-check the trusted fingerprint.** The parent passes the
-fingerprint of the files it checked trust (or `--trust`) for; a worker that
-reads different content refuses to run. This keeps the guarantee that only
-approved content runs, although workers read the files again.
+**Workers check trust again, without asking, and the fingerprint.** A
+worker runs the normal trust check non-interactively (the parent's approval
+is in the store, or `--trust` is passed on), so starting a worker by hand
+needs exactly the trust a normal run needs. The parent also passes the
+fingerprint of the files it checked; a worker that reads different content
+refuses to run, so only approved content runs although workers read the
+files again.
 
 **Dependency arguments are named, constant, and checked twice.**
 `needs [build(release: true)]` uses the named-argument syntax of calls,

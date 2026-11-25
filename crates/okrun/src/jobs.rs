@@ -405,6 +405,9 @@ impl Interp {
         if self.run_opts.yes {
             c.arg("--yes");
         }
+        if opts.trust {
+            c.arg("--trust");
+        }
         if let Some(env) = &opts.env {
             c.arg("--env").arg(env);
         }
@@ -459,9 +462,11 @@ impl Interp {
         Ok(())
     }
 
-    /// The worker side: run the one instance that `spec` names. Trust and
-    /// confirmations were handled by the parent; the worker refuses to run
-    /// if the project files changed since (their fingerprint differs).
+    /// The worker side: run the one instance that `spec` names. The parent
+    /// asked for trust and confirmations; the worker checks trust again
+    /// without asking (the parent's approval is in the store, or `--trust`
+    /// is passed on) and refuses to run if the project files changed since
+    /// the parent read them (their fingerprint differs).
     pub fn run_worker(&mut self, project: &Project, spec: &str, opts: &TaskOpts) -> R<Value> {
         let bad = || {
             OkError::new(
@@ -479,6 +484,7 @@ impl Interp {
             ),
             _ => return Err(bad().into()),
         };
+        crate::trust::ensure_trusted(project, opts.trust)?;
         if crate::trust::fingerprint(&project.trust_files)? != fp {
             return Err(OkError::new(
                 ErrKind::Trust,
