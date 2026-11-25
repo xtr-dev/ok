@@ -472,3 +472,17 @@ parsed but not run.
 
 **`v0.1.0` is tagged locally only.** Pushing a tag starts the release
 workflow once CI is on again, and publishing is Bas's call.
+
+## 2026-11-25 (after v0.1.0)
+
+**`fetch` and the archive functions stay built in; ok does not delegate them
+to `curl`, `wget`, `zip` or `tar`.** Bas weighed the cost of keeping that code
+tested and secure against delegating to system tools. Delegating would make
+scripts depend on what each host has installed: Windows and many Linux
+systems have no `zip`/`unzip`, and GNU tar, bsdtar and different `curl`
+versions behave differently. Error reporting, the archive path checks and
+`--dry-run` would also be lost. Scripts that prefer the system tool can
+still use `run curl ...` or `run tar ...`. The price is that the network and
+archive dependencies need watching: a security advisory for rustls, ureq,
+zip, tar or flate2 means a patched ok release (see CLAUDE.md, Security
+upkeep).

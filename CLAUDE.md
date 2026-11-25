@@ -56,6 +56,15 @@ behaviour is unverified until CI is switched back on (restore the `push` /
 `pull_request` triggers in `.github/workflows/ci.yml`), so mention that in
 milestone reports.
 
+## Security upkeep
+
+`fetch` (ureq, rustls) and the archive functions (zip, tar, flate2) are built
+in by decision (DECISIONS.md, after v0.1.0), so their security is ours to
+keep: run `cargo deny check` (advisories) at the start of every session
+and before every release, update a crate with an advisory promptly, and
+ship a patch release. Keep the zip-slip and symlink tests in `archive.rs`
+passing and extend them when extraction code changes.
+
 ## Layout
 
 ```
