@@ -161,6 +161,9 @@ pub struct RunOpts {
     pub trace: bool,
     pub dry_run: bool,
     pub yes: bool,
+    /// This process is a worker running one task in parallel with others
+    /// (SPEC.md 15.5): it has no terminal for questions.
+    pub parallel: bool,
 }
 
 /// What kind of file is being loaded; decides which top-level items are
@@ -2016,7 +2019,7 @@ fn display_fn_name(name: &str) -> String {
     }
 }
 
-fn type_phrase(ty: &TypeAnn) -> String {
+pub(crate) fn type_phrase(ty: &TypeAnn) -> String {
     match ty {
         TypeAnn::Optional(inner) => format!("{} or null", type_phrase(inner)),
         TypeAnn::List(Some(inner)) => format!("a list of {}", type_phrase(inner)),
@@ -2202,6 +2205,27 @@ pub(crate) fn check_items(prog: &Program, kind: FileKind) -> Result<(), OkError>
                     "an imported file can only declare fn, constant let and import",
                 )
                 .with_help("importing never runs code; move this into a function"));
+            }
+        }
+    }
+    // Arguments of dependencies are constant expressions (SPEC.md 15.5),
+    // so planning an invocation never runs project code.
+    for stmt in &prog.stmts {
+        let StmtKind::Task(t) = &stmt.kind else {
+            continue;
+        };
+        for need in &t.needs {
+            for (_, _, value) in &need.args {
+                if let Some(span) = non_const(value, &consts) {
+                    return Err(OkError::at(
+                        ErrKind::Syntax,
+                        span,
+                        "an argument of a dependency must be a constant",
+                    )
+                    .with_help(
+                        "use literals, constant lets, path(...) and os.name/arch/exe; compute other values inside the task",
+                    ));
+                }
             }
         }
     }

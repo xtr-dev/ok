@@ -543,3 +543,77 @@ leave the reader without a place to look.
 command mode with `{...argv}` expresses every function-form call, so a
 second spelling (`stderr: path`, `merge: true`) would add a way to say the
 same thing without making any script clearer.
+
+**Independent dependencies run in parallel by default, limited by
+`--jobs N`.** The default is the number of CPUs ok may use; `-j1` restores
+one-at-a-time running. Parallel by default is what makes `needs [lint,
+test, build]` fast without anyone having to know a flag, and `-j1` is the
+familiar spelling from make and cargo for the rare project that needs order.
+Entries of one list are not ordered against each other; a task that needs
+another first says so with its own `needs`.
+
+**Parallel dependencies run in worker processes, not threads.** The
+interpreter is a single-threaded tree-walker with `Rc` scopes, and a running
+task owns process-wide state: the working directory (tasks `cd` into their
+project or mounted sub-project), stdout and the terminal. A second `ok`
+process started with an internal option gets all of that separately for
+free, prints its own errors with its own source map, and needs no change to
+the interpreter or a new dependency. Starting one costs a few milliseconds
+and a re-parse of the project, which is small next to the commands a task
+runs.
+
+**Whether an instance runs in a worker is decided from the graph.** An
+instance that is ordered against every other one (a chain, a single
+dependency) runs in ok's own process, unprefixed and with the terminal,
+exactly as in v0.1.0; only instances that really can overlap go to
+workers. Deciding by timing (for example "in process when nothing else
+happens to run") would make the output format and terminal access change
+from run to run.
+
+**Worker output is prefixed line by line, not buffered per task.** Each line
+appears as `LABEL | line` as soon as it is complete, with labels padded to
+the same width, which is the docker compose convention many readers know.
+Buffering each task's output until it finishes would keep blocks together,
+but long builds would show nothing for minutes and a hanging task would
+show nothing at all.
+
+**Tasks that run in parallel have no terminal for input.** Their stdin is
+empty, so `prompt()` takes its default or fails and `confirm()` needs
+`--yes`, with a note naming `--jobs 1`. Serialising questions across
+processes would need a protocol between ok and its workers and would still
+let other tasks' output interrupt a question; failing clearly can never
+deadlock or garble the terminal. `confirm "text"` modifiers are unaffected,
+since all of them are asked before anything runs.
+
+**After a failure ok waits for the running workers instead of killing
+them.** Killing an ok worker would not stop the commands it started (a
+child process outlives its parent on every OS ok supports), and interrupting a command halfway can
+leave files half written. No new task starts after the first failure, the
+running ones finish with their output shown, and ok then reports the first
+failure with that task's exit code.
+
+**`--dry-run` always runs dependencies one at a time.** A dry run is read
+as a plan, and a plan whose lines come out in a different order every time
+is hard to read or compare.
+
+**Workers re-check the trusted fingerprint.** The parent passes the
+fingerprint of the files it checked trust (or `--trust`) for; a worker that
+reads different content refuses to run. This keeps the guarantee that only
+approved content runs, although workers read the files again.
+
+**Dependency arguments are named, constant, and checked twice.**
+`needs [build(release: true)]` uses the named-argument syntax of calls,
+including for positional parameters, because a dependency list is read
+far from the task's signature and a bare `true` would not say what it
+means. Values are constant expressions, so loading and planning never run
+project code. Names and required parameters are checked at load time with
+spans; types are checked when the invocation is planned, before anything
+runs, with the span of the value.
+
+**An instance is a task plus the arguments given, compared as values.** The
+same task with equal arguments runs once; different arguments run again,
+which is what a build matrix (`build(target: "linux")`, `build(target:
+"wasm32")`) needs. Defaults are not filled in for the comparison:
+`build` and `build(release: false)` are two instances. Filling them in
+would require evaluating parameter defaults, which may be any expression,
+before the task runs; "the arguments as written" is easy to predict.

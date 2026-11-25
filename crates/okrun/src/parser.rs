@@ -907,7 +907,43 @@ impl Parser {
                             n.push('.');
                             n.push_str(&self.dashed_name("a task name after `.`")?);
                         }
-                        list.push((n, s.to(self.prev_span())));
+                        let name_span = s.to(self.prev_span());
+                        let mut args = Vec::new();
+                        if self.at(&Tok::LParen) && !self.peek_token().space_before {
+                            self.bump();
+                            for a in self.call_args()? {
+                                match a {
+                                    Arg::Named {
+                                        name,
+                                        name_span,
+                                        value,
+                                    } => {
+                                        if args.iter().any(|(n, _, _)| *n == name) {
+                                            return Err(syntax(
+                                                name_span,
+                                                format!("argument `{name}` is given twice"),
+                                            ));
+                                        }
+                                        args.push((name, name_span, value));
+                                    }
+                                    Arg::Pos(e) | Arg::Spread(e) => {
+                                        return Err(syntax(
+                                            e.span,
+                                            "arguments of a dependency must be named",
+                                        )
+                                        .with_help(format!(
+                                            "name the parameter: {n}(name: value)"
+                                        )));
+                                    }
+                                }
+                            }
+                        }
+                        list.push(Need {
+                            name: n,
+                            name_span,
+                            span: s.to(self.prev_span()),
+                            args,
+                        });
                         if !self.eat(&Tok::Comma) {
                             break;
                         }
@@ -2176,7 +2212,7 @@ mod tests {
         };
         assert_eq!(t.name, "reset-db");
         assert_eq!(
-            t.needs.iter().map(|n| n.0.as_str()).collect::<Vec<_>>(),
+            t.needs.iter().map(|n| n.name.as_str()).collect::<Vec<_>>(),
             ["gen", "db.migrate"]
         );
         assert!(t.hidden);
@@ -2185,6 +2221,34 @@ mod tests {
             fails("task x allow [net] {}")
                 .message
                 .contains("not implemented")
+        );
+    }
+
+    #[test]
+    fn needs_with_arguments() {
+        let p = ok("task ship needs [build(release: true, target: \"x86\"), gen] {\n}\n");
+        let StmtKind::Task(t) = &p.stmts[0].kind else {
+            panic!()
+        };
+        assert_eq!(t.needs[0].name, "build");
+        assert_eq!(
+            t.needs[0]
+                .args
+                .iter()
+                .map(|a| a.0.as_str())
+                .collect::<Vec<_>>(),
+            ["release", "target"]
+        );
+        assert!(t.needs[1].args.is_empty());
+        assert!(
+            fails("task x needs [b(true)] {}")
+                .message
+                .contains("must be named")
+        );
+        assert!(
+            fails("task x needs [b(r: 1, r: 2)] {}")
+                .message
+                .contains("twice")
         );
     }
 

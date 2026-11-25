@@ -204,7 +204,7 @@ pub struct TaskDecl {
     pub name: String,
     pub name_span: Span,
     pub params: Vec<Param>,
-    pub needs: Vec<(String, Span)>,
+    pub needs: Vec<Need>,
     pub sources: Option<Expr>,
     pub outputs: Option<Expr>,
     pub confirm: Option<String>,
@@ -212,6 +212,20 @@ pub struct TaskDecl {
     pub body: Block,
     pub doc: Option<String>,
     pub span: Span,
+}
+
+/// One entry of a task's `needs [...]` list (SPEC.md 15.5):
+/// `gen`, `db.migrate` or `build(release: true)`.
+#[derive(Debug, Clone)]
+pub struct Need {
+    /// The task name as written, `ns.task` for another namespace.
+    pub name: String,
+    /// The name only.
+    pub name_span: Span,
+    /// The whole entry, arguments included.
+    pub span: Span,
+    /// Named arguments: (parameter name, its span, constant value).
+    pub args: Vec<(String, Span, Expr)>,
 }
 
 #[derive(Debug, Clone)]

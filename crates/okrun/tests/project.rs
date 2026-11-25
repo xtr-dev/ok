@@ -403,3 +403,223 @@ fn fmt_and_check() {
     assert!(p.run(&["self", "fmt", "--check"]).status.success());
     assert!(out(&p.run(&["self", "check"])).contains("no problems"));
 }
+
+/// Tasks `a` and `b` each wait until the other one has started, so the
+/// invocation only finishes when they really run at the same time.
+const RENDEZVOUS: &str = r#"
+fn meet(me: string, other: string) {
+  write("", path("{me}.started"))
+  var waited = 0
+  while not exists(path("{other}.started")) {
+    if waited > 2000 {
+      fail("{other} never started")
+    }
+    sleep(10ms)
+    waited += 1
+  }
+}
+
+task a {
+  meet("a", "b")
+  print("a ran")
+}
+
+task b {
+  meet("b", "a")
+  eprint("b ran")
+}
+
+task both needs [a, b] {
+  print("both: body")
+}
+
+task broken {
+  fail("it broke")
+}
+
+task slow {
+  sleep(300ms)
+  print("slow finished")
+}
+
+task fails needs [broken, slow] {
+  print("never")
+}
+
+task ask {
+  print(confirm("really?"))
+}
+
+task asks needs [ask, slow] {
+}
+"#;
+
+#[test]
+fn independent_dependencies_run_in_parallel_with_prefixed_output() {
+    let p = Proj::new("parallel", &[("ok.ok", RENDEZVOUS)]);
+    let o = p.run_trusted(&["--jobs", "2", "both"]);
+    assert!(o.status.success(), "{}", err(&o));
+    let stdout = out(&o);
+    assert!(stdout.contains("a | a ran\n"), "{stdout}");
+    assert!(err(&o).contains("b | b ran\n"), "{}", err(&o));
+    assert!(
+        stdout.ends_with("both: body\n"),
+        "the body runs after all dependencies: {stdout}"
+    );
+}
+
+#[test]
+fn jobs_1_runs_dependencies_one_at_a_time_without_prefixes() {
+    let p = Proj::new(
+        "sequential",
+        &[(
+            "ok.ok",
+            "task a { print(\"a\") }\ntask b { print(\"b\") }\ntask c needs [a, b] { print(\"c\") }\n",
+        )],
+    );
+    for args in [&["-j1", "c"][..], &["--jobs", "1", "c"], &["--jobs=1", "c"]] {
+        let o = p.run_trusted(args);
+        assert_eq!(out(&o), "a\nb\nc\n", "{}", err(&o));
+    }
+    // --dry-run is always sequential, so the plan prints in a stable order.
+    let o = p.run_trusted(&["--dry-run", "c"]);
+    assert_eq!(out(&o), "a\nb\nc\n", "{}", err(&o));
+    let o = p.run_trusted(&["--jobs", "0", "c"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(err(&o).contains("--jobs needs a number of at least 1"));
+}
+
+#[test]
+fn a_failed_parallel_dependency_waits_for_the_others_and_stops_the_run() {
+    let p = Proj::new("parallel-fail", &[("ok.ok", RENDEZVOUS)]);
+    let o = p.run_trusted(&["--jobs", "4", "fails"]);
+    assert_eq!(o.status.code(), Some(1));
+    let (stdout, stderr) = (out(&o), err(&o));
+    assert!(stdout.contains("slow   | slow finished"), "{stdout}");
+    assert!(!stdout.contains("never"), "{stdout}");
+    assert!(
+        stderr.contains("broken | error[fail]: it broke"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.ends_with(
+            "error: task `broken` failed with exit code 1\n  = its output is above, each line starting with `broken |`\n"
+        ),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn parallel_tasks_cannot_ask_questions() {
+    let p = Proj::new("parallel-ask", &[("ok.ok", RENDEZVOUS)]);
+    let o = p.run_trusted(&["--jobs", "2", "asks"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err(&o).contains("this task runs in parallel with other tasks and has no terminal"),
+        "{}",
+        err(&o)
+    );
+    let o = p.run_trusted(&["--yes", "--jobs", "2", "asks"]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert!(out(&o).contains("ask  | true"), "{}", out(&o));
+}
+
+const WITH_ARGS: &str = r#"
+let wasm = "wasm32"
+
+task compile(--release: bool, --target: string = "native") {
+  print("compile release={release} target={target}")
+}
+
+task web needs [compile(target: wasm, release: true)] {
+  print("web")
+}
+
+task dist needs [compile(release: true, target: wasm), web, compile] {
+  print("dist")
+}
+"#;
+
+#[test]
+fn dependencies_take_arguments_and_run_once_per_argument_set() {
+    let p = Proj::new("needs-args", &[("ok.ok", WITH_ARGS)]);
+    let o = p.run_trusted(&["-j1", "dist"]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert_eq!(
+        out(&o),
+        "compile release=true target=wasm32\nweb\ncompile release=false target=native\ndist\n"
+    );
+    let o = p.run_trusted(&["--jobs", "2", "dist"]);
+    assert!(o.status.success(), "{}", err(&o));
+    let stdout = out(&o);
+    assert_eq!(
+        stdout.matches("compile release=true").count(),
+        1,
+        "{stdout}"
+    );
+    // Labels are padded to the longest one among the parallel tasks.
+    let longest = "compile(release: true, target: \"wasm32\")";
+    assert!(
+        stdout.contains(&format!(
+            "{:<w$} | compile release=false target=native\n",
+            "compile",
+            w = longest.len()
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("{longest} | compile release=true")),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("dist\n"), "{stdout}");
+    let help = out(&p.run(&["dist", "--help"]));
+    assert!(
+        help.contains("Runs first: compile(release: true, target: wasm), web, compile"),
+        "{help}"
+    );
+}
+
+#[test]
+fn wrong_dependency_arguments_are_errors_with_spans() {
+    let cases: &[(&str, &str)] = &[
+        (
+            "task c(--release: bool) { }\ntask d needs [c(relase: true)] { }\n",
+            "error[arg]: task `c` has no parameter `relase`\n --> ok.ok:2:17\n  |\n2 | task d needs [c(relase: true)] { }\n  |                 ^^^^^^\n  |\n  = help: did you mean `release`?\n",
+        ),
+        (
+            "task c(name: string) { }\ntask d needs [c] { }\n",
+            "error[arg]: task `c` needs the argument `name`\n --> ok.ok:2:15\n  |\n2 | task d needs [c] { }\n  |               ^\n  |\n  = help: give it here: c(name: ...)\n",
+        ),
+        (
+            "task c(--n: int = 1) { }\ntask d needs [c(n: read(\"x\"))] { }\n",
+            "error[syntax]: an argument of a dependency must be a constant\n --> ok.ok:2:20\n  |\n2 | task d needs [c(n: read(\"x\"))] { }\n  |                    ^^^^^^^^^\n  |\n  = help: use literals, constant lets, path(...) and os.name/arch/exe; compute other values inside the task\n",
+        ),
+        (
+            "task c(--n: int = 1) { }\ntask d needs [c(\"x\")] { }\n",
+            "error[syntax]: arguments of a dependency must be named\n --> ok.ok:2:17\n  |\n2 | task d needs [c(\"x\")] { }\n  |                 ^^^\n  |\n  = help: name the parameter: c(name: value)\n",
+        ),
+        (
+            "task c(--n: int = 1) { }\ntask d needs [c(n: \"many\")] { }\n",
+            "error[type]: argument `n` of task `c` must be an int, got a string\n --> ok.ok:2:20\n  |\n2 | task d needs [c(n: \"many\")] { }\n  |                    ^^^^^^\n",
+        ),
+    ];
+    for (i, (src, want)) in cases.iter().enumerate() {
+        let p = Proj::new(&format!("needs-arg-err-{i}"), &[("ok.ok", src)]);
+        let o = p.run_trusted(&["d"]);
+        assert_eq!(o.status.code(), Some(1), "{src}");
+        assert_eq!(err(&o), *want, "{src}");
+    }
+}
+
+#[test]
+fn positional_parameters_are_named_in_needs() {
+    let p = Proj::new(
+        "needs-positional",
+        &[(
+            "ok.ok",
+            "task greet(greeting: string = \"hello\", name: string) {\n  print(\"{greeting} {name}\")\n}\ntask d needs [greet(name: \"bas\")] { }\n",
+        )],
+    );
+    let o = p.run_trusted(&["d"]);
+    assert_eq!(out(&o), "hello bas\n", "{}", err(&o));
+}

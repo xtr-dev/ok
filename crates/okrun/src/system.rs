@@ -326,7 +326,7 @@ fn read_answer(msg: &str) -> std::io::Result<String> {
     Ok(line.trim_end_matches(['\n', '\r']).to_string())
 }
 
-fn prompt(_: &mut Interp, mut args: Args) -> R<Value> {
+fn prompt(interp: &mut Interp, mut args: Args) -> R<Value> {
     let opts = named(&mut args, "prompt", &["default"])?;
     count_args(&args, "prompt", 1, 1)?;
     let msg = args.pos[0].display();
@@ -349,6 +349,7 @@ fn prompt(_: &mut Interp, mut args: Args) -> R<Value> {
                 format!("cannot ask \"{msg}\": there is no terminal"),
             )
             .with_help("give a default: prompt(msg, default: \"...\")")
+            .maybe_note(parallel_note(interp))
             .into()),
         };
     }
@@ -410,12 +411,17 @@ fn confirm(interp: &mut Interp, mut args: Args) -> R<Value> {
     count_args(&args, "confirm", 1, 1)?;
     let default = crate::list::bool_named(&opts, "default", &args)?;
     let msg = args.pos[0].display();
-    Ok(Value::Bool(ask_yes_no(
-        &msg,
-        default,
-        interp.run_opts.yes,
-        Some(args.span),
-    )?))
+    Ok(Value::Bool(
+        ask_yes_no(&msg, default, interp.run_opts.yes, Some(args.span))
+            .map_err(|e| e.maybe_note(parallel_note(interp)))?,
+    ))
+}
+
+/// Why a task has no terminal when it runs in parallel (SPEC.md 15.5).
+fn parallel_note(interp: &Interp) -> Option<String> {
+    interp.run_opts.parallel.then(|| {
+        "this task runs in parallel with other tasks and has no terminal; ok --jobs 1 runs dependencies one at a time".to_string()
+    })
 }
 
 // ----- hashing ---------------------------------------------------------------------

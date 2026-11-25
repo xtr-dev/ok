@@ -12,11 +12,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - stderr redirection in command mode: `2> file`, `2>> file` and `2>&1`
   (stderr merged into stdout, captured, piped or written together with it).
   `--trace` and `--dry-run` show every redirect.
+- Independent task dependencies run in parallel, at most `--jobs N` at a
+  time (default: the number of CPUs; `-j1` runs them one at a time). Tasks
+  that run in parallel show their output line by line with a `task | `
+  prefix; after a failure ok starts nothing new, waits for the running tasks
+  and exits with the failed task's exit code.
+- Arguments to dependencies: `needs [build(release: true)]`. The same task
+  with the same arguments runs once per invocation; different arguments run
+  it again.
 
 ### Changed
 
 - Redirecting the same stream twice in one command (`> a > b`) is an error
   instead of using the last target.
+- A task whose dependencies can run at the same time now runs them in
+  parallel by default, with prefixed output and no terminal input for those
+  dependencies; `--jobs 1` keeps the previous one-at-a-time behaviour.
+- A dependency with a required parameter is allowed when its `needs` entry
+  gives the argument.
 
 ## [0.1.0] - 2026-11-25
 
