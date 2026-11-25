@@ -1,0 +1,57 @@
+error[name]: unknown name `dry_rnu`
+ --> undefined_names.ok:3:6
+  |
+3 |   if dry_rnu { print("would deploy {targte}") }
+  |      ^^^^^^^ not defined here
+  |
+  = help: did you mean `dry_run`?
+error[name]: unknown name `targte`
+ --> undefined_names.ok:3:37
+  |
+3 |   if dry_rnu { print("would deploy {targte}") }
+  |                                     ^^^^^^ not defined here
+  |
+  = help: did you mean `target`?
+error[name]: unknown name `relase`
+ --> undefined_names.ok:7:4
+  |
+7 | if relase { deploy("staging") }
+  |    ^^^^^^ not defined here
+  |
+  = help: did you mean `release`?
+error[name]: unknown name `cuont`
+  --> undefined_names.ok:10:1
+   |
+10 | cuont += 1
+   | ^^^^^ not defined here
+   |
+   = help: did you mean `count`?
+error[name]: unknown name `lenght`
+  --> undefined_names.ok:12:7
+   |
+12 | print(lenght("abc"))
+   |       ^^^^^^ not defined here
+   |
+   = help: use `len(x)`
+error[name]: unknown name `None`
+  --> undefined_names.ok:13:7
+   |
+13 | print(None)
+   |       ^^^^ not defined here
+   |
+   = help: ok spells it `null`
+error[name]: unknown name `relese`
+  --> undefined_names.ok:14:22
+   |
+14 | run ok-fixture echo {relese}
+   |                      ^^^^^^ not defined here
+   |
+   = help: did you mean `release`?
+error[name]: unknown name `later`
+  --> undefined_names.ok:17:7
+   |
+17 | print(later)
+   |       ^^^^^ not defined here
+   |
+   = help: `later` is declared further down; this line runs before that declaration
+ok: 1 file checked: 8 errors

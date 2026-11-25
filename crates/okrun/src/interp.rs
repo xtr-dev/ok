@@ -2012,7 +2012,7 @@ impl Interp {
 
 /// Help for function names people bring from other languages
 /// (SPEC.md 10.3).
-fn habit(name: &str) -> Option<String> {
+pub(crate) fn habit(name: &str) -> Option<String> {
     let fix = match name {
         "length" | "lenght" | "size" | "count_of" => "use `len(x)`",
         "toUpperCase" | "uppercase" | "to_upper" => "use `upper(s)`",

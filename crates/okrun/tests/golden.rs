@@ -133,3 +133,74 @@ fn golden_cases() {
         failures.join("\n\n")
     );
 }
+
+/// The `.ok` files directly in `dir`, sorted.
+fn cases_in(dir: &Path) -> Vec<PathBuf> {
+    let mut cases: Vec<PathBuf> = fs::read_dir(dir)
+        .expect("cases dir exists")
+        .map(|e| e.expect("dir entry").path())
+        .filter(|p| p.extension().is_some_and(|e| e == "ok"))
+        .collect();
+    cases.sort();
+    assert!(!cases.is_empty(), "no cases found in {}", dir.display());
+    cases
+}
+
+/// `ok self check` cases: every `tests/check/NAME.ok` is checked with
+/// `ok self check [ARGS...] NAME.ok`, where ARGS come from `NAME.args`, and
+/// the output is compared like a golden case.
+#[test]
+fn golden_check_cases() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/check");
+    let blessing = std::env::var_os("OK_BLESS").is_some();
+    let mut failures = Vec::new();
+    for case in cases_in(&dir) {
+        let name = case.file_name().unwrap().to_string_lossy().to_string();
+        let stem = case.file_stem().unwrap().to_string_lossy().to_string();
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_ok"));
+        cmd.current_dir(&dir)
+            .env("NO_COLOR", "1")
+            .args(["self", "check"]);
+        let args_file = dir.join(format!("{stem}.args"));
+        if args_file.exists() {
+            cmd.args(read_or_empty(&args_file).lines().filter(|l| !l.is_empty()));
+        }
+        let out = cmd.arg(&name).output().expect("run ok");
+        let stdout = String::from_utf8_lossy(&out.stdout).replace("\r\n", "\n");
+        let stderr = String::from_utf8_lossy(&out.stderr).replace("\r\n", "\n");
+        let code = out.status.code().unwrap_or(-1).to_string();
+        let (p_out, p_err, p_exit) = (
+            dir.join(format!("{stem}.stdout")),
+            dir.join(format!("{stem}.stderr")),
+            dir.join(format!("{stem}.exit")),
+        );
+        if blessing {
+            bless(&p_out, &stdout, "");
+            bless(&p_err, &stderr, "");
+            bless(&p_exit, &format!("{code}\n"), "0\n");
+            continue;
+        }
+        let want_code = match read_or_empty(&p_exit).trim() {
+            "" => "0".to_string(),
+            c => c.to_string(),
+        };
+        let mut problems = Vec::new();
+        for (what, want, got) in [
+            ("stdout", read_or_empty(&p_out), stdout),
+            ("stderr", read_or_empty(&p_err), stderr),
+        ] {
+            if want != got {
+                problems.push(format!(
+                    "{what} differs\n--- expected\n{want}--- actual\n{got}"
+                ));
+            }
+        }
+        if code != want_code {
+            problems.push(format!("exit code: expected {want_code}, got {code}"));
+        }
+        if !problems.is_empty() {
+            failures.push(format!("== {name}\n{}", problems.join("\n")));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}

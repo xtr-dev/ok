@@ -52,9 +52,9 @@ static CORE: &[Builtin] = &[
     eager("range", range),
 ];
 
-/// Declare the builtins, `os` and `args` in the global scope.
-pub fn install(globals: &Rc<Scope>, script_args: Vec<String>) {
-    for table in [
+/// Every table of builtins.
+fn tables() -> [&'static [Builtin]; 8] {
+    [
         CORE,
         crate::list::BUILTINS,
         crate::formats::BUILTINS,
@@ -63,7 +63,120 @@ pub fn install(globals: &Rc<Scope>, script_args: Vec<String>) {
         crate::system::BUILTINS,
         crate::net::BUILTINS,
         crate::archive::BUILTINS,
-    ] {
+    ]
+}
+
+/// The names of all builtin functions.
+pub fn names() -> impl Iterator<Item = &'static str> {
+    tables().into_iter().flatten().map(|b| b.name)
+}
+
+/// The globals that are values, not functions (SPEC.md 12.2, 12.3).
+pub const GLOBAL_VALUES: &[&str] = &[
+    "os",
+    "env",
+    "cwd",
+    "invocation_dir",
+    "home",
+    "args",
+    "script_dir",
+];
+
+/// What a builtin accepts, for the static checks of `ok self check`
+/// (SPEC.md 17): how many positional arguments (counting the receiver of a
+/// method call and the input of a pipeline stage) and which named ones. It
+/// must agree with the argument checks inside each builtin; a test calls
+/// every builtin to make sure it does.
+pub struct BuiltinSig {
+    pub name: &'static str,
+    pub min: usize,
+    /// `usize::MAX` for no limit.
+    pub max: usize,
+    pub named: &'static [&'static str],
+}
+
+const fn sig(
+    name: &'static str,
+    min: usize,
+    max: usize,
+    named: &'static [&'static str],
+) -> BuiltinSig {
+    BuiltinSig {
+        name,
+        min,
+        max,
+        named,
+    }
+}
+
+const ANY: usize = usize::MAX;
+
+#[rustfmt::skip]
+pub static SIGNATURES: &[BuiltinSig] = &[
+    sig("print", 0, ANY, &[]), sig("eprint", 0, ANY, &[]), sig("str", 1, 1, &[]),
+    sig("int", 1, 1, &[]), sig("float", 1, 1, &[]), sig("type", 1, 1, &[]),
+    sig("len", 1, 1, &[]), sig("fail", 1, 1, &[]), sig("exit", 0, 1, &[]),
+    sig("path", 1, 1, &[]), sig("floor", 1, 1, &[]), sig("ceil", 1, 1, &[]),
+    sig("round", 1, 1, &[]), sig("fmt", 2, 2, &[]), sig("bytes", 1, 1, &[]),
+    sig("text", 1, 1, &[]), sig("range", 1, 3, &[]),
+    // Lists and records (list.rs).
+    sig("where", 2, 2, &[]), sig("map", 2, 2, &[]), sig("each", 2, 2, &[]),
+    sig("take", 2, 2, &[]), sig("skip", 2, 2, &[]), sig("uniq", 1, 2, &[]),
+    sig("flat", 1, 1, &[]), sig("enumerate", 1, 1, &[]), sig("count", 1, 2, &[]),
+    sig("sum", 1, 2, &[]), sig("min", 1, 2, &[]), sig("max", 1, 2, &[]),
+    sig("first", 1, 2, &[]), sig("last", 1, 2, &[]), sig("any", 2, 2, &[]),
+    sig("all", 2, 2, &[]), sig("join", 1, 2, &[]), sig("lines", 1, 1, &[]),
+    sig("sort", 1, 2, &["desc"]), sig("reverse", 1, 1, &[]), sig("group", 2, 2, &[]),
+    sig("keys", 1, 1, &[]), sig("values", 1, 1, &[]), sig("entries", 1, 1, &[]),
+    sig("from_entries", 1, 1, &[]), sig("get", 2, 3, &[]), sig("has", 2, 2, &[]),
+    // Files and paths (files.rs).
+    sig("copy", 2, 2, &[]), sig("move", 2, 2, &[]), sig("remove", 1, 1, &[]),
+    sig("mkdir", 1, 1, &[]), sig("exists", 1, 1, &[]), sig("is_file", 1, 1, &[]),
+    sig("is_dir", 1, 1, &[]), sig("glob", 1, 1, &["root", "hidden", "exclude"]),
+    sig("list_dir", 0, 1, &[]), sig("stat", 1, 1, &[]), sig("touch", 1, 1, &[]),
+    sig("tempdir", 0, 0, &[]), sig("tempfile", 0, 0, &["ext"]), sig("chmod", 2, 2, &[]),
+    sig("abs", 1, 1, &[]), sig("relative_to", 2, 2, &[]), sig("with_ext", 2, 2, &[]),
+    sig("parts", 1, 1, &[]), sig("is_abs", 1, 1, &[]),
+    // Data formats (formats.rs).
+    sig("read", 1, 2, &["delimiter", "header", "gzip"]),
+    sig("write", 2, 3, &["append", "compact", "delimiter", "header", "gzip"]),
+    sig("parse", 2, 2, &["delimiter", "header"]),
+    sig("to", 2, 2, &["compact", "delimiter", "header"]),
+    sig("stdin", 0, 1, &["delimiter", "header"]),
+    // Network and archives.
+    sig("fetch", 1, 1, &["method", "headers", "body", "json", "timeout", "to", "check", "bytes"]),
+    sig("zip", 2, 2, &[]), sig("unzip", 2, 2, &[]), sig("tar", 2, 2, &[]), sig("untar", 2, 2, &[]),
+    // Text (text.rs).
+    sig("trim", 1, 1, &[]), sig("trim_start", 1, 1, &[]), sig("trim_end", 1, 1, &[]),
+    sig("split", 1, 2, &["limit"]), sig("replace", 3, 3, &[]), sig("contains", 2, 2, &[]),
+    sig("starts_with", 2, 2, &[]), sig("ends_with", 2, 2, &[]), sig("upper", 1, 1, &[]),
+    sig("lower", 1, 1, &[]), sig("chars", 1, 1, &[]), sig("repeat", 2, 2, &[]),
+    sig("pad", 2, 2, &["fill", "align"]), sig("match", 2, 2, &[]), sig("matches", 2, 2, &[]),
+    sig("find", 2, 2, &[]), sig("sub", 3, 3, &[]),
+    // Environment and system (system.rs).
+    sig("which", 1, 1, &[]), sig("now", 0, 0, &[]), sig("time", 1, 1, &[]),
+    sig("format", 2, 2, &["utc"]), sig("sleep", 1, 1, &[]), sig("duration", 1, 1, &[]),
+    sig("prompt", 1, 1, &["default"]), sig("confirm", 1, 1, &["default"]),
+    sig("hash", 1, 2, &[]),
+];
+
+/// The methods of `env` (SPEC.md 12.3) and their positional arguments.
+pub const ENV_METHODS: &[(&str, usize, usize)] = &[
+    ("get", 1, 2),
+    ("has", 1, 1),
+    ("set", 2, 2),
+    ("remove", 1, 1),
+    ("all", 0, 0),
+];
+
+/// The signature of a builtin function.
+pub fn signature(name: &str) -> Option<&'static BuiltinSig> {
+    SIGNATURES.iter().find(|s| s.name == name)
+}
+
+/// Declare the builtins, `os` and `args` in the global scope.
+pub fn install(globals: &Rc<Scope>, script_args: Vec<String>) {
+    for table in tables() {
         for b in table {
             globals.declare(b.name, Value::Func(Rc::new(Func::Builtin(b))), false);
         }
@@ -393,5 +506,103 @@ fn text(_: &mut Interp, args: Args) -> R<Value> {
         },
         Value::Str(s) => Ok(Value::Str(s.clone())),
         other => type_err(&args, format!("`text` needs bytes, got {}", other.a_type())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The message of the error raised by running `src`, if any.
+    fn error_of(src: &str) -> Option<String> {
+        let mut interp = Interp::new(Vec::new());
+        let r = interp.run_source("<test>", src, std::env::temp_dir());
+        interp.cleanup();
+        match r {
+            Err(Flow::Err(e)) => Some(e.message),
+            _ => None,
+        }
+    }
+
+    /// A call of builtin `name` with `pos` null arguments and `named`
+    /// arguments. The method form `null.name(...)` is used when there is an
+    /// argument, so that keywords like `match` can be called too.
+    fn call(name: &str, pos: usize, named: &str) -> String {
+        let mut args: Vec<String> = vec!["null".to_string(); pos.saturating_sub(1)];
+        if !named.is_empty() {
+            args.push(named.to_string());
+        }
+        if pos == 0 {
+            format!("{name}({})", args.join(", "))
+        } else {
+            format!("null.{name}({})", args.join(", "))
+        }
+    }
+
+    #[test]
+    fn every_builtin_has_a_signature() {
+        for n in names() {
+            assert!(signature(n).is_some(), "no signature for `{n}`");
+        }
+        for s in SIGNATURES {
+            assert!(
+                names().any(|n| n == s.name),
+                "`{}` is not a builtin",
+                s.name
+            );
+        }
+    }
+
+    #[test]
+    fn signatures_agree_with_the_argument_checks() {
+        // These read the terminal or print; their valid calls are not run.
+        let interactive = ["prompt", "confirm", "stdin", "print", "eprint"];
+        for s in SIGNATURES {
+            let count_error = format!("`{}` takes ", s.name);
+            let named_error = format!("`{}` has no parameter", s.name);
+            if s.min > 0 {
+                let e = error_of(&call(s.name, s.min - 1, "")).unwrap_or_default();
+                assert!(
+                    e.starts_with(&count_error),
+                    "{}: too few gave {e:?}",
+                    s.name
+                );
+            }
+            if s.max != ANY {
+                let e = error_of(&call(s.name, s.max + 1, "")).unwrap_or_default();
+                assert!(
+                    e.starts_with(&count_error),
+                    "{}: too many gave {e:?}",
+                    s.name
+                );
+            }
+            let e = error_of(&call(s.name, s.min, "zzz_unknown: 1")).unwrap_or_default();
+            assert!(
+                e.starts_with(&named_error),
+                "{}: unknown named gave {e:?}",
+                s.name
+            );
+            if interactive.contains(&s.name) {
+                continue;
+            }
+            let most = if s.max == ANY { s.min + 2 } else { s.max };
+            for n in [s.min, most] {
+                let e = error_of(&call(s.name, n, "")).unwrap_or_default();
+                assert!(
+                    !e.starts_with(&count_error),
+                    "{}: {n} arguments gave {e:?}",
+                    s.name
+                );
+            }
+            for named in s.named {
+                let e =
+                    error_of(&call(s.name, s.min, &format!("{named}: null"))).unwrap_or_default();
+                assert!(
+                    !e.starts_with(&named_error),
+                    "{}: `{named}` gave {e:?}",
+                    s.name
+                );
+            }
+        }
     }
 }

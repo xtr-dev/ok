@@ -1,0 +1,36 @@
+error[name]: `tools` ("./lib/tools.ok") has no `shuot`
+ --> imports.ok:6:13
+  |
+6 | print(tools.shuot("hi"))
+  |             ^^^^^ not exported by the library
+  |
+  = help: did you mean `tools.shout`?
+error[name]: `tools` ("./lib/tools.ok") has no `_hidden`
+ --> imports.ok:7:13
+  |
+7 | print(tools._hidden())
+  |             ^^^^^^^ not exported by the library
+  |
+  = help: a library exports its top-level fn and let names that do not start with _
+error[arg]: `shout` takes 1 positional argument, got 2
+ --> imports.ok:8:7
+  |
+8 | print(tools.shout("a", "b"))
+  |       ^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `shout` is declared at lib/tools.ok:4:4
+error[arg]: `shout` takes 1 positional argument, got 2
+ --> imports.ok:9:14
+  |
+9 | print("hi" | tools.shout(1))
+  |              ^^^^^^^^^^^
+  |
+  = note: `shout` is declared at lib/tools.ok:4:4
+error[arg]: missing argument `text` for `shout`
+  --> imports.ok:10:7
+   |
+10 | print(shout())
+   |       ^^^^^^^
+   |
+   = note: `shout` is declared at lib/tools.ok:4:4
+ok: 1 file checked: 5 errors

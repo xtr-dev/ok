@@ -1,0 +1,8 @@
+error[io]: cannot import "./lib/nope.ok": no such file
+ --> import_missing.ok:3:8
+  |
+3 | import "./lib/nope.ok"
+  |        ^^^^^^^^^^^^^^^
+  |
+  = help: the path is relative to the directory of this file
+ok: 1 file checked: 1 error

@@ -347,6 +347,18 @@ fn to(interp: &mut Interp, mut args: Args) -> R<Value> {
     }
 }
 
+/// Whether a string looks like the name of a file `write` would write: no
+/// spaces or newlines, and an extension of a known format. `write` and the
+/// lint in `ok self check` use it to catch swapped arguments (SPEC.md 12.1).
+pub(crate) fn looks_like_file_name(s: &str) -> bool {
+    let known = [
+        "json", "jsonl", "ndjson", "csv", "tsv", "txt", "log", "md", "toml", "yaml", "yml", "env",
+        "gz",
+    ];
+    !s.contains(['\n', ' '])
+        && known.contains(&OkPath::parse(s).ext().to_ascii_lowercase().as_str())
+}
+
 fn write(interp: &mut Interp, mut args: Args) -> R<Value> {
     let opts = named(
         &mut args,
@@ -363,28 +375,23 @@ fn write(interp: &mut Interp, mut args: Args) -> R<Value> {
         }
         _ => path_arg(&args, 1, "write")?,
     };
-    if let Value::Str(s) = &args.pos[0] {
-        let known = [
-            "json", "jsonl", "ndjson", "csv", "tsv", "txt", "log", "md", "toml", "yaml", "yml",
-            "env", "gz",
-        ];
-        let looks_like_file = !s.contains(['\n', ' '])
-            && known.contains(&OkPath::parse(s).ext().to_ascii_lowercase().as_str());
-        if looks_like_file && p.ext().is_empty() {
-            // `write("out.txt", text)` with the arguments swapped would write
-            // a file named after the text; refuse the likely mistake.
-            return Err(OkError::at(
-                ErrKind::Arg,
-                span,
-                format!(
-                    "write(value, path) writes {} to a file named {}",
-                    Value::str(s.as_ref()).repr(),
-                    p.display()
-                ),
-            )
-            .with_help("the value comes first and the path second: write(text, \"out.txt\")")
-            .into());
-        }
+    if let Value::Str(s) = &args.pos[0]
+        && looks_like_file_name(s)
+        && p.ext().is_empty()
+    {
+        // `write("out.txt", text)` with the arguments swapped would write
+        // a file named after the text; refuse the likely mistake.
+        return Err(OkError::at(
+            ErrKind::Arg,
+            span,
+            format!(
+                "write(value, path) writes {} to a file named {}",
+                Value::str(s.as_ref()).repr(),
+                p.display()
+            ),
+        )
+        .with_help("the value comes first and the path second: write(text, \"out.txt\")")
+        .into());
     }
     let fmt = match format_arg(&args, 2)? {
         Some(f) => check_format(&f, &args, &[])?,
