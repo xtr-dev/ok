@@ -1,7 +1,8 @@
 # Decisions
 
-A dated log of design decisions that the project brief (`PROMPT.md`) left
-open. One paragraph each, with the reason. Newest entries go at the bottom of
+A dated log of design decisions that the project brief left open
+(the brief was `PROMPT.md`, removed before the first public release; it is
+in the git history). One paragraph each, with the reason. Newest entries go at the bottom of
 their date. When a decision is reversed, add a new entry that says so; do not
 edit the old one.
 
@@ -497,3 +498,8 @@ and, unlike CC0, does not exclude patent rights (Apache-2.0 grants them
 explicitly), which some companies and distributions require. The texts are
 `LICENSE-MIT` and `LICENSE-APACHE`; `PROMPT.md` still mentions CC0 as the
 original brief. Dependencies under CC0 stay allowed in `deny.toml`.
+
+**`PROMPT.md` is removed from the repository.** Bas removed the original
+brief before making the repository public: its setup notes were out of date
+(crate name, licence), and everything that still matters is in `SPEC.md`,
+`DECISIONS.md` and `CLAUDE.md`. It stays readable in the git history.

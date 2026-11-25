@@ -1,4 +1,4 @@
-//! Run the M0 examples (SPEC.md, PROMPT.md "Tests"): each case copies an
+//! Run the M0 examples (SPEC.md): each case copies an
 //! example to a temporary directory and runs it with **fake tools** on PATH
 //! (copies of `ok-fixture` named `git`, `docker`, `psql`, ...), so the results
 //! are the same on every OS and need no real tools. The expected output is in

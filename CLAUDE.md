@@ -8,7 +8,9 @@ how the repo is run. The language itself is defined in `SPEC.md`.
 
 `ok`: a portable scripting language and task runner, one static Rust binary.
 Project owner: Bas (decides what the language is). Maintainer: decides how the
-repo and code are built. The original brief is `PROMPT.md`.
+repo and code are built. The original brief was `PROMPT.md`;
+it was removed before the first public release (it is in the git history).
+Its rules are kept below, and the language it described is now `SPEC.md`.
 
 ## Current state
 
