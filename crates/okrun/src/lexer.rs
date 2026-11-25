@@ -1089,6 +1089,16 @@ impl<'a> Lexer<'a> {
                         }
                         e.with_help("`{` in a double-quoted string starts an interpolation; write \\{ for a literal brace, or use a single-quoted string like '{\"a\": 1}'")
                     })?;
+                    // A triple-quoted string ends at the first `"""`, so an
+                    // interpolation must close before it. Lexing on past the
+                    // end and then jumping back to the closing quotes would
+                    // lex the same text again at every nesting level, which
+                    // grows exponentially with nested `"""{"""{...` input.
+                    if triple && self.pos > limit {
+                        return Err(self
+                            .err(brace, brace + 1, "this interpolation runs past the end of the string")
+                            .with_help("a `\"\"\"` string ends at the first `\"\"\"`; close the `{` before it, or build the inner string in a `let` first"));
+                    }
                     if tokens.is_empty() {
                         return Err(self
                             .err(brace, self.pos, "empty interpolation `{}`")
@@ -1652,6 +1662,20 @@ pub fn fix_newlines(tokens: Vec<Token>) -> Vec<Token> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Found by the lexer fuzzer: nested `"""{` used to be lexed again at
+    /// every level (exponential time and memory). It must fail fast.
+    #[test]
+    fn nested_triple_strings_fail_fast() {
+        let start = std::time::Instant::now();
+        let src = "\"\"\"{".repeat(40);
+        assert!(lex(0, &src).is_err());
+        let fuzz = include_str!("../tests/lexer_regressions/nested_triple_strings.ok");
+        assert!(lex(0, fuzz).is_err());
+        assert!(start.elapsed() < std::time::Duration::from_secs(2));
+        // A triple-quoted string with an ordinary interpolation still works.
+        assert!(lex(0, "let a = \"\"\"x {1 + 2} y\"\"\"").is_ok());
+    }
 
     fn toks(src: &str) -> Vec<Tok> {
         lex(0, src)

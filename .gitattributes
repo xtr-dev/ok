@@ -6,3 +6,5 @@
 examples/**/*.csv -text
 tests/fixtures/** -text
 tests/cases/data/** -text
+# Fuzzer-found inputs keep their exact bytes (they contain CR).
+crates/okrun/tests/lexer_regressions/** -text

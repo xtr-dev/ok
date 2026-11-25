@@ -51,6 +51,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A script or task argument that starts with `-` and a letter is a short
   flag; pass such values after `--` (`-5` and `-` are still values).
 
+### Fixed
+
+- The lexer no longer takes exponential time and memory on nested
+  triple-quoted strings with interpolations (`"""{"""{...`, found by
+  fuzzing); an interpolation that runs past the end of its `"""` string is
+  now a clear syntax error.
+
 ## [0.1.0] - 2026-11-25
 
 ### Added

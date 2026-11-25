@@ -1,0 +1,7 @@
+error[syntax]: this interpolation runs past the end of the string
+ --> err_interp_past_string.ok:1:12
+  |
+1 | print("""a {"""b"""} c""")
+  |            ^
+  |
+  = help: a `"""` string ends at the first `"""`; close the `{` before it, or build the inner string in a `let` first

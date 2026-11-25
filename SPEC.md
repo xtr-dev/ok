@@ -242,7 +242,9 @@ including the line of the closing quotes, is removed from every line; if the
 closing quotes are on a line of their own, the newline before them is kept
 and the indentation before them is removed. Dedenting applies to the
 literal's source text; interpolated values are inserted afterwards
-unchanged.
+unchanged. A triple-quoted string ends at the first `"""` after its opening
+quotes, so an interpolation inside it must close before that point; one that
+runs past it is a syntax error. Build such an inner string in a `let` first.
 
 ```
 let msg = """
