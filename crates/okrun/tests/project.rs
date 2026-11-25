@@ -370,6 +370,106 @@ fn completions_list_tasks_namespaces_and_flags() {
 }
 
 #[test]
+fn completions_offer_choices() {
+    let p = Proj::new(
+        "complete-choices",
+        &[
+            (
+                "ok.ok",
+                "task deploy(env: \"staging\" | \"production\", --role: \"admin\" | \"user\" = \"user\", --note: string?, --force: bool) { }\n",
+            ),
+            (
+                "ok/db.ok",
+                "task seed(--size: \"small\" | \"large\" = \"small\") { }\n",
+            ),
+        ],
+    );
+    let complete = |words: &[&str]| {
+        let mut args = vec!["self", "complete", "--"];
+        args.extend_from_slice(words);
+        out(&p.run(&args))
+    };
+    // The first positional parameter has a choice type.
+    assert_eq!(
+        complete(&["deploy", ""]),
+        "--force\n--help\n--note\n--role\nproduction\nstaging\n"
+    );
+    assert_eq!(complete(&["deploy", "st"]), "staging\n");
+    // After a flag that takes a choice, only the choices.
+    assert_eq!(complete(&["deploy", "--role", ""]), "admin\nuser\n");
+    assert_eq!(
+        complete(&["deploy", "--role="]),
+        "--role=admin\n--role=user\n"
+    );
+    // After a flag that takes a free value, nothing.
+    assert_eq!(complete(&["deploy", "--note", ""]), "");
+    // A switch does not take the next word, so positional choices follow.
+    assert_eq!(complete(&["deploy", "--force", "pro"]), "production\n");
+    // Once the positional argument is given, no more choices.
+    assert_eq!(complete(&["deploy", "staging", "pro"]), "");
+    // Tasks in namespaces.
+    assert_eq!(complete(&["db", "seed", "--size", ""]), "large\nsmall\n");
+}
+
+#[test]
+fn tasks_take_short_flags() {
+    let p = Proj::new(
+        "short-flags",
+        &[(
+            "ok.ok",
+            "# Build it\ntask build(--release, -r: bool, --target, -t: \"x86\" | \"arm\" = \"x86\", --jobs: int = 1) {\n  print(\"release={release} target={target} jobs={jobs}\")\n}\n",
+        )],
+    );
+    assert_eq!(
+        out(&p.run_trusted(&["build", "-r", "-t", "arm"])),
+        "release=true target=arm jobs=1\n"
+    );
+    let help = out(&p.run_trusted(&["build", "-h"]));
+    assert!(help.contains("  -r, --release"), "{help}");
+    assert!(help.contains("      --jobs <int>"), "{help}");
+    // ok's own -C after the task name gets the "put it first" hint.
+    let o = p.run_trusted(&["build", "-C", "web"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(
+        err(&o).contains("ok's own options go before the name"),
+        "{}",
+        err(&o)
+    );
+    let complete = |words: &[&str]| {
+        let mut args = vec!["self", "complete", "--"];
+        args.extend_from_slice(words);
+        out(&p.run(&args))
+    };
+    assert_eq!(
+        complete(&["build", "-"])
+            .lines()
+            .filter(|l| !l.starts_with("--"))
+            .collect::<Vec<_>>(),
+        ["-h", "-r", "-t"]
+    );
+    assert_eq!(
+        complete(&["build", "--"]),
+        "--help\n--jobs\n--release\n--target\n"
+    );
+    assert_eq!(complete(&["build", "-t", ""]), "arm\nx86\n");
+}
+
+#[test]
+fn reserved_short_flags_fail_at_load_time() {
+    let p = Proj::new(
+        "short-reserved",
+        &[("ok.ok", "task build(--eval, -e: bool) { }\n")],
+    );
+    let o = p.run_trusted(&["build"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err(&o).contains("the short flag -e is reserved"),
+        "{}",
+        err(&o)
+    );
+}
+
+#[test]
 fn command_failures_in_tasks_exit_with_the_child_code() {
     let fixture = Path::new(env!("CARGO_BIN_EXE_ok"))
         .with_file_name(format!("ok-fixture{}", std::env::consts::EXE_SUFFIX));

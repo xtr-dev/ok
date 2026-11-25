@@ -1,0 +1,4 @@
+error: unknown flag -x
+  = help: to pass "-x" as a value, put it after --
+usage: ok err_cli_short_unknown.ok <input> [--out <path>] [--verbose] [--quiet] [--tag <value>] [--role <admin|user>] [--force]
+run with --help for details

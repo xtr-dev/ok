@@ -20,6 +20,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Arguments to dependencies: `needs [build(release: true)]`. The same task
   with the same arguments runs once per invocation; different arguments run
   it again.
+- `finally` for `try`: `try { ... } finally { ... }` and
+  `try { ... } catch e { ... } finally { ... }`. The `finally` block runs
+  however the `try` ends (value, error, `return`, `break`, `continue`,
+  `exit()`); `finally` is now a keyword.
+- List and record patterns in `match` arms: `[]`, `[first, ...rest]`,
+  `{status: 200, body}`, nested patterns and `|` inside them.
+- Choice types for parameters: `--role: "admin" | "user" = "user"`, with an
+  optional final `| null`. Values are checked on the command line (with a
+  did-you-mean hint) and on calls, shown in `--help`, and offered by shell
+  completions.
+- Short flags for script and task parameters: `--verbose, -v: bool`.
+  Switches group (`-vq`), values follow as the next argument (`-o out.json`),
+  and `--help` and completions show them. `-h`, `-C` and `-e` are reserved.
+- Compressed files: `read("x.json.gz")` decompresses and picks the format
+  from the inner extension, `write(v, "x.json.gz")` compresses (identical
+  bytes on every OS), line formats stream, `append: true` adds a gzip
+  member, and `gzip: true/false` overrides the name.
 
 ### Changed
 
@@ -30,6 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dependencies; `--jobs 1` keeps the previous one-at-a-time behaviour.
 - A dependency with a required parameter is allowed when its `needs` entry
   gives the argument.
+- The alternatives of a `match` arm (`p1 | p2`) must bind the same names.
+- A script or task argument that starts with `-` and a letter is a short
+  flag; pass such values after `--` (`-5` and `-` are still values).
 
 ## [0.1.0] - 2026-11-25
 

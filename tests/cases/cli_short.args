@@ -1,0 +1,11 @@
+-vq
+-o
+result.json
+-t
+a
+-t
+b
+-r
+admin
+--
+-x

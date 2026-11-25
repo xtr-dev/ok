@@ -1,0 +1,7 @@
+error[syntax]: `a` is bound twice in this pattern
+ --> err_match_twice.ok:2:7
+  |
+2 |   [a, a] => "same"
+  |       ^
+  |
+  = help: use a different name, or `_` to ignore the value

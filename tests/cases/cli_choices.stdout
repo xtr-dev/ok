@@ -1,0 +1,4 @@
+fast
+argument `mode` of `pick` must be one of "fast", "slow", got "quick"
+argument `mode` of `pick` must be one of "fast", "slow", got an int
+production admin null ["b", "a"]

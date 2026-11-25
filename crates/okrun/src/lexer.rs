@@ -26,6 +26,7 @@ pub enum Kw {
     Continue,
     Else,
     False,
+    Finally,
     Fn,
     For,
     If,
@@ -55,6 +56,7 @@ impl Kw {
             "continue" => Kw::Continue,
             "else" => Kw::Else,
             "false" => Kw::False,
+            "finally" => Kw::Finally,
             "fn" => Kw::Fn,
             "for" => Kw::For,
             "if" => Kw::If,
@@ -85,6 +87,7 @@ impl Kw {
             Kw::Continue => "continue",
             Kw::Else => "else",
             Kw::False => "false",
+            Kw::Finally => "finally",
             Kw::Fn => "fn",
             Kw::For => "for",
             Kw::If => "if",
@@ -1620,7 +1623,9 @@ pub fn fix_newlines(tokens: Vec<Token>) -> Vec<Token> {
             let next = tokens.get(i + 1);
             let next_continues = match next {
                 Some(nt) => match nt.tok {
-                    Tok::Pipe | Tok::Kw(Kw::Else) | Tok::Kw(Kw::Catch) => true,
+                    Tok::Pipe | Tok::Kw(Kw::Else) | Tok::Kw(Kw::Catch) | Tok::Kw(Kw::Finally) => {
+                        true
+                    }
                     Tok::Dot => matches!(
                         tokens.get(i + 2),
                         Some(Token {

@@ -1,0 +1,7 @@
+error[syntax]: expected `catch` or `finally` after the try block, found end of line
+ --> err_try_alone.ok:3:2
+  |
+3 | }
+  |  ^
+  |
+  = help: add `catch e { ... }` to handle the error, or `finally { ... }` for cleanup

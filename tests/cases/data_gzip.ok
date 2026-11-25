@@ -1,0 +1,41 @@
+# Reading and writing gzip-compressed files (SPEC.md 13.1.1).
+
+# Document formats: the format comes from the name without .gz.
+write({name: "ok", tags: ["a", "b"]}, "out/pkg.json.gz")
+print(read("out/pkg.json.gz"))
+write({title: "x", port: 80}, "out/cfg.TOML.GZ")
+print(read("out/cfg.TOML.GZ"))
+
+# The bytes on disk are compressed, and identical on every OS.
+let raw = read("out/pkg.json.gz", "bytes", gzip: false)
+print(text(raw)? ?? "not text", hash(path("out/pkg.json.gz")))
+# An explicit format still decompresses.
+print(text(read("out/pkg.json.gz", "bytes")).lines() | first)
+
+# Line formats stay lazy and stream through pipelines.
+write(range(1, 1001) | map(n => {n, even: n % 2 == 0}), "out/numbers.jsonl.gz")
+print(read("out/numbers.jsonl.gz") | where(.even) | count)
+print(read("out/numbers.jsonl.gz") | first)
+write(["alpha", "beta ERROR", "gamma ERROR"], "out/server.log.gz")
+print(read("out/server.log.gz") | lines | where(l => "ERROR" in l) | count)
+print(type(read("out/server.log.gz")), read("out/server.log.gz", "lines"))
+
+# CSV, and appending a second gzip member; the header is written once.
+write([{name: "ana", role: "admin"}], "out/users.csv.gz")
+write([{name: "bo", role: "user"}], "out/users.csv.gz", append: true)
+print(read("out/users.csv.gz"))
+print(text(read("out/users.csv.gz", "bytes")))
+
+# A .gz name with no inner extension is text.
+write("plain words\n", "out/notes.gz")
+print(read("out/notes.gz"))
+
+# gzip: true compresses a file whose name does not say so.
+write("hidden\n", "out/blob.dat", gzip: true)
+print(text(read("out/blob.dat", "bytes"))? ?? "compressed", read("out/blob.dat", gzip: true))
+
+# Data that is not gzip is an error when it is read.
+write("not gzip at all", "out/bad.json.gz", gzip: false)
+print(try { read("out/bad.json.gz") } catch e { "{e.kind}: {e.message}" })
+print(try { read("out/bad.json.gz") | lines | count } catch e { "{e.kind}: {e.message}" })
+print(try { read("out/pkg.json.gz", gzip: "yes") } catch e { e.message })

@@ -620,3 +620,120 @@ which is what a build matrix (`build(target: "linux")`, `build(target:
 `build` and `build(release: false)` are two instances. Filling them in
 would require evaluating parameter defaults, which may be any expression,
 before the task runs; "the arguments as written" is easy to predict.
+
+## 2026-11-26 (M10)
+
+**`finally` is a keyword, and `try` takes `catch`, `finally`, or both in
+that order.** A contextual word would have to be recognised after a closing
+brace on the next line, which makes a statement starting with a variable
+named `finally` change meaning; a keyword is unambiguous, and like every
+keyword it still works as a field name and record key (`r.finally`). The
+fixed order `catch` then `finally` matches how the blocks run.
+
+**`finally` always runs, including on `exit()`; an error in `finally`
+replaces the pending outcome.** Cleanup code (removing a lock file, stopping
+a container) is written in `finally` precisely so that it runs on every way
+out, and scripts often call `exit(code)` from helpers, so skipping
+`finally` on `exit` would leak exactly what it exists to clean up. Temporary
+files from `tempdir()`/`tempfile()` are removed at exit anyway (12.8), after
+`finally` blocks have run. When `finally` fails, its error is the one that
+continues, because it is the most recent problem and the one the reader of
+the `finally` block can act on; the error it replaced is kept as a note so
+nothing is lost silently. Ctrl-C still ends ok at once.
+
+**`return`, `break` and `continue` cannot leave a `finally` block.** In
+languages that allow it, a `return` in `finally` silently swallows the
+error being propagated, which is a classic source of hidden failures. A
+syntax error with a hint is clearer; inside a loop or function nested in
+the `finally` block they work as usual. The value of a `finally` block is
+discarded: the `try` expression yields the value of its `try` or `catch`
+block, so adding cleanup never changes a result.
+
+**`match` gets list and record patterns that test instead of fail.** They
+use the shapes of `let` destructuring (7.1) so a reader recognises them, but
+where `let` raises an error on a missing key or a wrong length, a pattern
+simply does not match and the next arm is tried. Record patterns allow extra
+keys, because records from JSON, `fetch` or `run` carry more fields than an
+arm cares about. `..._` ignores the rest of a list, reusing `_` as in other
+patterns instead of adding a bare `...`. Keys may be strings, as in record
+literals, so headers like `"content-type"` can be matched.
+
+**Every alternative of `|` must bind the same names, and a name is bound
+once per pattern.** Otherwise the arm's body could refer to a name that the
+matching alternative did not bind, which would only show up at run time.
+This also applies to top-level alternatives such as `"a" | x =>`, which
+were accepted before but could never be used safely; no example or test
+used them. Exhaustiveness is not checked: a `match` with no matching arm
+stays a run-time error that shows the value, as in 6.6.
+
+**Choice types are ordinary type annotations, allowed on every parameter.**
+`"admin" | "user"` is checked on calls of any `fn` like `int` or `path`, so
+a helper that receives the value from `main` can declare the same type and a
+typo in code fails at the call. ok has no annotations on `let`, so there is
+no `let x: "a" | "b"`; adding annotations to bindings would be a separate
+language change. Choices are plain string literals, case-sensitive and
+without duplicates. Optional choices are written with a final `| null`
+rather than `?`, because `"a" | "b"?` reads as if only `"b"` were optional.
+A string literal default outside the choices is a load-time error, since
+`--help` would otherwise advertise a default that fails.
+
+**Choices show as the value placeholder of a flag (`--role <admin|user>`),
+and as `[choices: ...]` for a positional argument.** The placeholder is
+where a reader looks for what to type; a positional argument keeps its name
+in the usage line because the name says what it is. A wrong value is an
+argument error (exit code 2) listing every choice, with a suggestion from a
+unique prefix (`prod` for `production`) or else from edit distance.
+Completion offers the choices after a choice flag, after `--flag=`, and for
+the next positional parameter.
+
+**Short flags are declared after the long name and a comma:
+`--verbose, -v: bool`.** This is the order and punctuation of the Options
+column in `--help` and of most tools' documentation (`-v, --verbose`, with
+the readable name first in a signature), so it reads as one parameter with
+two spellings. An annotation or a separate declaration would put the two
+names apart. A positional parameter cannot start with `-`, so the parser
+never confuses the short form with the next parameter. The short form is
+for the command line only; code still passes `verbose: true`.
+
+**Switches group (`-vq`); a short flag with a value stands alone
+(`-o out.json`).** Grouping switches is what users type out of habit. Values
+glued to the letter (`-oout.json`) or grouped behind switches (`-vo x`) are
+hard to read in a command line, so they are argument errors that show the
+right form instead of being guessed. Before `--`, any argument that starts
+with `-` and a letter is now a flag, as in other tools; `-5` and `-` stay
+values, and other values that start with a dash go after `--`. This changes
+scripts whose positional arguments started with `-` and a letter, which
+used to be accepted as values; the error says to use `--`.
+
+**`-h`, `-C` and `-e` cannot be declared as short flags.** `-h` prints help
+everywhere, and ok's own `-C` and `-e` are kept free so a short option has
+one meaning on any ok command line, and the "ok's own options go before the
+name" hint keeps working. ok's other options have no short form, so their
+long names may still be declared by tasks as before. A short form on a
+`bool` flag that defaults to `true` is rejected too, because it could only
+repeat the default. The usage line keeps the long names, which say what a
+flag does; `--help` lists the short forms, and completion offers them only
+after a single `-`, so the default candidate list stays readable.
+
+**Compression is chosen by the `.gz` name, the format by the name without
+it, and `gzip:` overrides the name.** `read("events.jsonl.gz")` should mean
+what it says without extra arguments, and the inner extension is the
+reader's natural cue for the format. An explicit format replaces only the
+format, so `read(p, "bytes")` on a `.gz` file gives the decompressed bytes,
+consistent with every other format; the compressed bytes as stored (for an
+upload, say) are `read(p, "bytes", gzip: false)`, and `gzip: true` covers
+names that do not end in `.gz`. Detection by content was rejected because
+the name already tells the reader, and a plain file that happens to start
+with the gzip magic bytes must not change meaning. Only gzip is supported:
+`flate2` is already a dependency for `tar`, and other formats (zstd, xz,
+bzip2) would need new ones; they are noted in IDEAS.md.
+
+**Compressed reading streams and accepts several gzip members; appending
+adds a member; output is byte-identical everywhere.** Line formats stay
+lazy because large logs are the main reason to keep files compressed.
+Reading all members (`MultiGzDecoder`) makes `append: true` and files joined
+with `cat` work. The gzip header is written with no name, time 0, OS byte
+255 ("unknown") and level 6, so the same value gives the same file on every
+OS, following "same output everywhere". Corrupt data is reported as
+"not valid gzip data" with the decoder's reason. `stdin()`, `parse` and
+`to` do not decompress: they have no file name to go by.

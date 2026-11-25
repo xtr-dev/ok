@@ -1,0 +1,7 @@
+error[syntax]: `return` cannot leave a finally block
+ --> err_finally_return.ok:5:5
+  |
+5 |     return 1
+  |     ^^^^^^
+  |
+  = help: a finally block runs to its end so that the pending value, error or return is kept; move the `return` after the try

@@ -1,0 +1,3 @@
+fn main(--config, -C: path = "ok.toml") {
+  print(config)
+}

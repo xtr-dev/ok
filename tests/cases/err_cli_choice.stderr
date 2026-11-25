@@ -1,0 +1,4 @@
+error: <env> expects one of "staging", "production", got "prod"
+  = help: did you mean "production"?
+usage: ok err_cli_choice.ok <env> [--role <admin|user>] [--region <eu|us>] [--tag <a|b>]
+run with --help for details

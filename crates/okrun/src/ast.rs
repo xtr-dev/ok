@@ -149,6 +149,8 @@ pub enum TypeAnn {
     Fn,
     List(Option<Box<TypeAnn>>),
     Optional(Box<TypeAnn>),
+    /// `"admin" | "user"`: a string equal to one of these (SPEC.md 5.11).
+    Choice(Vec<String>),
 }
 
 impl TypeAnn {
@@ -169,7 +171,24 @@ impl TypeAnn {
             TypeAnn::Fn => "fn".into(),
             TypeAnn::List(None) => "list".into(),
             TypeAnn::List(Some(t)) => format!("list[{}]", t.describe()),
+            TypeAnn::Optional(t) if matches!(**t, TypeAnn::Choice(_)) => {
+                format!("{} | null", t.describe())
+            }
             TypeAnn::Optional(t) => format!("{}?", t.describe()),
+            TypeAnn::Choice(cs) => cs
+                .iter()
+                .map(|c| format!("{c:?}"))
+                .collect::<Vec<_>>()
+                .join(" | "),
+        }
+    }
+
+    /// The choices of a choice type, also when it is optional.
+    pub fn choices(&self) -> Option<&[String]> {
+        match self {
+            TypeAnn::Choice(cs) => Some(cs),
+            TypeAnn::Optional(t) => t.choices(),
+            _ => None,
         }
     }
 }
@@ -181,6 +200,8 @@ pub struct Param {
     /// The name as written, without `--` (`dry-run`); used on the command line.
     pub cli_name: String,
     pub flag: bool,
+    /// The one-letter short form on the command line: `--verbose, -v`.
+    pub short: Option<char>,
     pub rest: bool,
     pub ty: Option<TypeAnn>,
     pub default: Option<Expr>,
@@ -316,11 +337,77 @@ pub enum Arg {
     Spread(Expr),
 }
 
+/// A pattern of a `match` arm (SPEC.md 6.6).
 #[derive(Debug, Clone)]
 pub enum MatchPat {
+    /// A literal, compared with `==`.
     Lit(Expr),
-    Wildcard,
+    /// `_`
+    Wildcard(Span),
+    /// A name: matches anything and binds it.
+    Bind(String, Span),
+    /// `[p1, p2]`, `[p1, ...rest]`, `[p1, ..._]`.
+    List {
+        items: Vec<MatchPat>,
+        rest: Option<ListRest>,
+        span: Span,
+    },
+    /// `{key: p, other}`: the keys must exist; extra keys are allowed.
+    Record {
+        fields: Vec<(String, MatchPat)>,
+        span: Span,
+    },
+    /// `p1 | p2` nested inside a list or record pattern.
+    Alt(Vec<MatchPat>, Span),
+}
+
+/// The `...` part of a list pattern.
+#[derive(Debug, Clone)]
+pub enum ListRest {
+    /// `..._`: any further elements, not bound.
+    Ignore,
+    /// `...name`: further elements bound to `name` as a list.
     Bind(String),
+}
+
+impl MatchPat {
+    pub fn span(&self) -> Span {
+        match self {
+            MatchPat::Lit(e) => e.span,
+            MatchPat::Wildcard(s)
+            | MatchPat::Bind(_, s)
+            | MatchPat::List { span: s, .. }
+            | MatchPat::Record { span: s, .. }
+            | MatchPat::Alt(_, s) => *s,
+        }
+    }
+
+    /// The names the pattern binds, in order, with their spans. For
+    /// alternatives, the names of the first one (all bind the same names).
+    pub fn names(&self, out: &mut Vec<(String, Span)>) {
+        match self {
+            MatchPat::Lit(_) | MatchPat::Wildcard(_) => {}
+            MatchPat::Bind(n, s) => out.push((n.clone(), *s)),
+            MatchPat::List { items, rest, span } => {
+                for p in items {
+                    p.names(out);
+                }
+                if let Some(ListRest::Bind(n)) = rest {
+                    out.push((n.clone(), *span));
+                }
+            }
+            MatchPat::Record { fields, .. } => {
+                for (_, p) in fields {
+                    p.names(out);
+                }
+            }
+            MatchPat::Alt(alts, _) => {
+                if let Some(first) = alts.first() {
+                    first.names(out);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -420,10 +507,13 @@ pub enum ExprKind {
         subject: Box<Expr>,
         arms: Vec<Arm>,
     },
+    /// `try { } catch e { } finally { }`; at least one of `handler` and
+    /// `finally` is present.
     Try {
         body: Block,
         binding: Option<String>,
-        handler: Block,
+        handler: Option<Block>,
+        finally: Option<Block>,
     },
     Lambda(Rc<FnDecl>),
     Pipe {

@@ -1,0 +1,75 @@
+# List and record patterns in match arms (SPEC.md 6.6).
+
+fn describe(xs) {
+  match xs {
+    [] => "empty"
+    [only] => "one: {only}"
+    [a, b] => "two: {a} and {b}"
+    [first, ...rest] => "starts with {first}, then {len(rest)} more"
+    _ => "not a list: {xs}"
+  }
+}
+print(describe([]))
+print(describe([1]))
+print(describe([1, 2]))
+print(describe([1, 2, 3, 4]))
+print(describe("text"))
+
+fn status(resp) {
+  match resp {
+    {status: 200, body} => "ok: {body}"
+    {status: 301 | 302, headers: {location}} => "moved to {location}"
+    {status} if status >= 500 => "server error {status}"
+    {status: _} => "other status"
+    {} => "a record without a status"
+    _ => "not a record"
+  }
+}
+print(status({status: 200, body: "hello", extra: true}))
+print(status({status: 302, headers: {location: "/new"}}))
+print(status({status: 301, headers: {}}))
+print(status({status: 503}))
+print(status({status: 404}))
+print(status({code: 1}))
+print(status([200]))
+
+# Nested patterns, literals inside lists, ignored rest, string and keyword keys.
+for v in [
+  [1, [2, 3]],
+  [1, [2]],
+  ["cmd", "build", "--release"],
+  {"content-type": "json", if: true},
+  {user: {name: "bas", roles: ["admin", "dev"]}},
+  {user: {name: "kim", roles: []}},
+] {
+  let label = match v {
+    [1, [x, y]] => "pair inside: {x} {y}"
+    ["cmd", name, ..._] => "command {name}"
+    {"content-type": ct, if: flag} => "content type {ct}, if {flag}"
+    {user: {name, roles: ["admin", ...others]}} => "{name} is admin, also {others}"
+    {user: {name}} => "{name} has no admin role"
+    other => "unmatched {other}"
+  }
+  print(label)
+}
+
+# Ints and floats compare numerically, as with ==.
+let numbers = match [1.0, 2] {
+  [1, 2.0] => "numbers match"
+  _ => "no"
+}
+print(numbers)
+
+# A failed alternative leaves no bindings behind.
+let alt = match [5, 2] {
+  [x, 1] | [x, 2] => "x is {x}"
+  _ => "no"
+}
+print(alt)
+
+# Names bound in a pattern are local to the arm.
+let first = "outer"
+let got = match [9] {
+  [first] => first
+}
+print(got, first)

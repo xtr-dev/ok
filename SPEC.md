@@ -165,7 +165,7 @@ A newline does **not** end a statement when:
 2. the last token on the line is a binary operator (`+ - * / % == != < <= > >=
    and or not in ?? | = += -= =>`), a `,`, `.`, `:`, or an opening `( [ {`, or
 3. the first token on the next non-blank line is `|`, `.` followed by an
-   identifier (a method chain), `else`, or `catch`.
+   identifier (a method chain), `else`, `catch`, or `finally`.
 
 Rule 3 allows the pipeline style used throughout this document:
 
@@ -186,8 +186,8 @@ digit      = "0".."9"
 Identifiers are ASCII. Keywords:
 
 ```
-and as break catch continue else false fn for if import in let match
-not null or requires return run task true try var while
+and as break catch continue else false finally fn for if import in let
+match not null or requires return run task true try var while
 ```
 
 Contextual words, keywords only in the position shown: `needs`, `sources`,
@@ -304,14 +304,16 @@ Violations are load-time errors with the offending span underlined.
 ```
 fn_decl     = "fn" ident "(" [ params ] ")" block
 params      = param { "," param } [ "," ]
-param       = [ "--" ] param_name [ ":" type ] [ "=" expr ]
+param       = ident [ ":" type ] [ "=" expr ]
+            | "--" flag_name [ "," short_flag ] [ ":" type ] [ "=" expr ]
             | "..." ident [ ":" type ]
-param_name  = ident | flag_name
 flag_name   = ident { "-" ident }                   (* only after "--" *)
-type        = base_type [ "?" ]
+short_flag  = "-" letter                  (* no space after "-"; 14.1 *)
+type        = base_type [ "?" ] | choice_type
 base_type   = "any" | "null" | "bool" | "int" | "float" | "string" | "bytes"
             | "path" | "duration" | "time" | "record" | "fn"
             | "list" [ "[" type "]" ]
+choice_type = STRING { "|" STRING } [ "|" "null" ]   (* plain strings, 5.11 *)
 
 task_decl   = "task" task_name [ "(" [ params ] ")" ] { modifier } block
 task_name   = ident { "-" ident }
@@ -326,6 +328,8 @@ task_ref    = task_name [ "." task_name ]
 
 A flag parameter `--dry-run` is bound in the body as `dry_run`: dashes
 become underscores. Two parameters that map to the same name are an error.
+A flag may declare a one-letter short form for the command line,
+`--verbose, -v: bool` (14.1); in code it is still passed by its long name.
 
 ### 4.3 Statements
 
@@ -402,7 +406,13 @@ match_expr  = "match" expr_nostruct "{" { NL } { arm ( NL | "," ) { NL } } "}"
 arm         = pat_alt [ "if" expr ] "=>" ( block | expr )
 pat_alt     = match_pat { "|" match_pat }
 match_pat   = literal | "-" number | "_" | ident
-try_expr    = "try" block "catch" [ ident ] block
+            | "[" [ list_mpat ] "]"
+            | "{" [ field_mpat { "," field_mpat } [ "," ] ] "}"
+list_mpat   = pat_alt { "," pat_alt } [ "," [ "..." ident ] ]
+            | "..." ident
+field_mpat  = ( ident | keyword | STRING ) [ ":" pat_alt ]
+try_expr    = "try" block ( "catch" [ ident ] block [ "finally" block ]
+                          | "finally" block )
 fn_expr     = "fn" "(" [ params ] ")" block
 arrow_fn    = ( ident | "(" [ ident { "," ident } ] ")" ) "=>" coalesce
 implicit_fn = "." ident ...                        (* 6.9 *)
@@ -596,6 +606,26 @@ Defaults are evaluated at each call in the function's scope, then checked
 against the annotation: `--out: path = "out.json"` gives a `path`. On the
 command line, annotations drive parsing (14.3).
 
+A **choice type** lists the strings a parameter accepts:
+
+```
+task deploy(env: "staging" | "production", --role: "admin" | "user" = "user") { ... }
+```
+
+A value satisfies `"a" | "b"` when it is a string equal to one of the
+choices (case-sensitive); anything else is the usual call-site error:
+
+```
+error: argument `role` of `grant` must be one of "admin", "user", got "root"
+```
+
+A final `| null` also accepts `null`, like `T?`:
+`--region: "eu" | "us" | null`. The choices are plain string literals (no interpolation), at least
+one, without duplicates. Choice types are allowed wherever a type annotation
+is, including `list["a" | "b"]`. A default that is a string literal must be
+one of the choices; otherwise it is a load-time error. ok has no type
+annotations outside parameters, so `let` takes none.
+
 ## 6. Expressions
 
 ### 6.1 Operators
@@ -653,9 +683,48 @@ let exe = match os.name {
 ```
 
 Arms are tried in order. A pattern is a literal (compared with `==`), `_`
-(matches anything), or an identifier (matches anything and binds it). A
-guard `if cond` must be a bool. If no arm matches, it is an error that shows
-the value. `match` yields the value of the chosen arm.
+(matches anything), an identifier (matches anything and binds it), or a list
+or record pattern. A guard `if cond` must be a bool. If no arm matches, it is
+an error that shows the value. `match` yields the value of the chosen arm.
+`match` does not require the arms to cover every value.
+
+List and record patterns look like the destructuring patterns of `let`
+(7.1), but they test instead of fail:
+
+```
+let summary = match fetch(url, check: false) {
+  {status: 200, body} => "ok: {len(body)} bytes"
+  {status: 301 | 302, headers: {location}} => "moved to {location}"
+  {status} if status >= 500 => "server error {status}"
+  _ => "other"
+}
+
+fn describe(xs) {
+  match xs {
+    [] => "empty"
+    [only] => "one: {only}"
+    [first, ..._] => "starts with {first}"
+  }
+}
+```
+
+- A **list pattern** `[p1, p2]` matches a list of exactly that length whose
+  elements match `p1`, `p2` in order. `[p1, ...rest]` matches a list of at
+  least that many elements and binds the remaining elements, as a list, to
+  `rest`; `..._` ignores them. `[]` matches only the empty list.
+- A **record pattern** `{key: p}` matches a record that has every listed key
+  with a value matching its pattern; other keys are allowed. `{key}` is
+  short for `{key: key}`: the key must exist, and its value is bound to
+  `key`. `{}` matches any record. Keys are written like record literal keys:
+  an identifier, a keyword, or a string (`{"content-type": ct}`).
+- A list pattern never matches a value that is not a list, and a record
+  pattern never matches a value that is not a record; neither is an error.
+- Patterns nest, and `|` alternatives may appear inside them
+  (`{status: 200 | 201}`).
+- A name may be bound only once in a pattern, and every alternative of a
+  `|` must bind the same names, so that the guard and the body can rely on
+  them. Both are syntax errors.
+- Names bound by a pattern are visible only in that arm's guard and body.
 
 ### 6.7 `try` / `catch`
 
@@ -671,6 +740,40 @@ let cfg = try {
 `try` yields the value of its block, or, if an error is raised inside, the
 value of the `catch` block with `e` bound to the error record (10.2). The
 binding name is optional. `fail(e)` re-raises a caught error unchanged.
+
+A `try` needs a `catch` block, a `finally` block, or both (in that order):
+
+```
+let tmp = tempdir()
+try {
+  run! tar -xzf {archive} -C {tmp}
+  build(tmp)
+} finally {
+  remove(tmp / "lock")
+}
+```
+
+The `finally` block runs after the `try` block, and after the `catch` block
+if one ran, however they end:
+
+- normally, with a value;
+- with an error, including one raised in `catch` (a `try` without `catch`
+  does not catch anything; the error continues after `finally`);
+- with `return`, `break` or `continue` passing through it;
+- with `exit(code)`.
+
+When the `finally` block completes normally, the pending outcome stands: the
+`try` expression yields the value of the `try` (or `catch`) block, and the
+value of `finally` is discarded, or the pending error, `return`, `break`,
+`continue` or `exit` continues outwards. When the `finally` block itself
+raises an error (or calls `exit`), that replaces the pending outcome; an
+error raised this way carries a note with the message of the error it
+replaced. `return`, `break` and `continue` that would leave a `finally`
+block are syntax errors, because they would silently discard the pending
+outcome; inside a loop or function within the `finally` block they are
+allowed as usual.
+
+Ctrl-C ends ok without running `finally` blocks (2.3, code 130).
 
 ### 6.8 Closures
 
@@ -1148,8 +1251,8 @@ directory (the project root in project mode).
 
 | Function | Returns | Notes |
 |---|---|---|
-| `read(p: path, format: string? = null)` | value | Format from the extension or `format` (13). |
-| `write(value, p: path, format: string? = null, --append: bool)` | `null` | Creates parent directories. Writes `\n` line endings. Streams lazy values. When the value is a short string that looks like a file name (`"out.txt"`) and the path has no extension, the arguments are almost certainly swapped, and `write` refuses with a hint. |
+| `read(p: path, format: string? = null, --gzip: bool? = null)` | value | Format from the extension or `format` (13); a `.gz` file is decompressed (13.1.1). |
+| `write(value, p: path, format: string? = null, --append: bool, --gzip: bool? = null)` | `null` | Creates parent directories. A `.gz` file is compressed (13.1.1). Writes `\n` line endings. Streams lazy values. When the value is a short string that looks like a file name (`"out.txt"`) and the path has no extension, the arguments are almost certainly swapped, and `write` refuses with a hint. |
 | `copy(src: path, dst: path)` | `null` | Files or directories (recursive). `dst` is the exact destination, never "into". Overwrites files. |
 | `move(src: path, dst: path)` | `null` | Rename; falls back to copy and remove across file systems. |
 | `remove(p: path)` | `bool` | File or directory tree. `false` if nothing existed. Refuses the file-system root, the home directory and the project root. |
@@ -1381,11 +1484,42 @@ an explicit `format` argument overrides it. `parse(text, format)` and
 `read(p, "bytes")`. `to(v, "json", compact: true)` and `write(..., compact:
 true)` write JSON on one line.
 
+#### 13.1.1 Compressed files
+
+A file whose name ends in `.gz` (in any letter case) is gzip-compressed:
+`read` decompresses it and `write` compresses it. The format comes from the
+name without `.gz`, by the table above:
+
+```
+let events = read("events.jsonl.gz")          # jsonl, lazy, decompressed as it is read
+write(report, "report.json.gz")               # json, compressed
+read("server.log.gz") | lines | where(l => "ERROR" in l) | count
+```
+
+- `data.gz` has no inner extension and is `text`. An explicit `format`
+  replaces only the format; the file is still decompressed, so
+  `read("blob.bin.gz", "bytes")` gives the decompressed bytes.
+- `gzip: true` or `gzip: false` overrides the name, for example
+  `read("x.gz", "bytes", gzip: false)` for the compressed bytes as stored,
+  or `write(v, "upload.dat", gzip: true)`.
+- Reading streams for the lazy formats (13.2): decompression happens as the
+  data is consumed, in bounded memory. A file of several gzip members one
+  after another (as produced by appending) is read as one stream.
+- `write(..., append: true)` to a compressed file adds a new gzip member,
+  which `read` joins with the existing data. For CSV and TSV the header is
+  written only when the file was empty, as for uncompressed files.
+- Data that is not valid gzip is an `io` error at the point of reading:
+  `cannot read x.json.gz: not valid gzip data (...)`.
+- Written files are identical on every OS: the gzip header carries no file
+  name and no time, and the compression level is fixed.
+
+`stdin()`, `parse` and `to` do not decompress.
+
 ### 13.2 Lazy values
 
-`read` of `jsonl`, `csv`, `tsv`, `lines` and `text`, `stdin()`, `range`, and
-the stdout of a piped command are lazy: the data is produced as it is
-consumed. A lazy value is indistinguishable from a normal one except for
+`read` of `jsonl`, `csv`, `tsv`, `lines` and `text` (also compressed,
+13.1.1), `stdin()`, `range`, and the stdout of a piped command are lazy:
+the data is produced as it is consumed. A lazy value is indistinguishable from a normal one except for
 when reading happens and when read or parse errors are raised (at the point
 of consumption, with the location of the consuming expression and the line
 number in the data).
@@ -1476,10 +1610,30 @@ fn main(
   `--name` (true); a bool flag whose default is `true` is turned off with
   `--no-name`. A `list[T]` flag repeats: `--tag a --tag b`.
 - `--` ends flag parsing; `-h` and `--help` print help only before it.
-- There are no short flags in v1.
 - Arguments are checked against the signature before any of the script's
   code runs.
 
+**Short flags.** A flag parameter may declare a short form, one ASCII letter
+written after the long name and a comma: `--verbose, -v: bool`,
+`--out, -o: path = "out.json"`. Short letters are case-sensitive.
+
+- A switch (`bool` flag) is `-v`. Switches combine: `-vq` is `-v -q`, and
+  `-vh` asks for help.
+- A flag that takes a value is `-o VALUE`, with the value as the next
+  argument; it does not combine with other letters, and `-oVALUE` or
+  `-o=VALUE` is an argument error that shows the right form. A `list[T]` flag
+  repeats: `-t a -t b`.
+- Before `--`, an argument that starts with `-` followed by an ASCII letter
+  is a short flag (or a group of switches). `-`, `-5` and `-1.5` are values.
+  A value that starts with `-` and a letter is passed after `--`, or as the
+  value of a flag (`--pattern -x`), which always takes the next argument.
+- These are load-time errors: a short form on a positional or rest
+  parameter, a short form that is not a single letter, the same letter
+  twice in one signature, a short form for a `bool` flag whose default is
+  `true` (such a switch is only turned off, with `--no-name`), and the
+  letters `h`, `C` and `e`, which are ok's own options (2.2): `-h` always
+  prints help, and `-C`/`-e` are kept free so a short option means the
+  same before and after the task name.
 ### 14.2 Help
 
 `--help` (and `-h`) prints:
@@ -1507,6 +1661,24 @@ shown as its value; any other default is shown as its source text
 (`[default: env.get("SRC", "/var/lib/app/data")]`), because printing help
 never runs code.
 
+When any parameter has a short form, the Options column shows it first and
+indents the other flags to line up with the long names:
+
+```
+Options:
+  -o, --out <path>   where to write the JSON [default: out.json]
+  -v, --verbose      print each row
+      --force        overwrite the output
+  -h, --help         print this help
+```
+
+The usage line always uses the long names, which say what they do.
+
+A flag with a choice type (5.11) shows its choices as the value placeholder,
+in the usage line and under Options: `--role <admin|user>`. A positional
+parameter with a choice type keeps its name in the usage line and adds
+`[choices: staging, production]` to its help under Arguments.
+
 ### 14.3 Parsing values
 
 | Type | Accepted text |
@@ -1519,6 +1691,7 @@ never runs code.
 | `duration` | literal syntax: `90s`, `1h30m` |
 | `T?` | as `T`; omitted means `null` |
 | `list[T]` | rest parameter or repeated flag |
+| `"a" \| "b"` | exactly one of the choices; anything else is an argument error that lists them and suggests the closest |
 
 ### 14.4 Argument errors
 
@@ -1530,6 +1703,22 @@ error: unknown flag --verbos
   = help: did you mean --verbose?
 usage: ok csv-to-json.ok <input> [--out <path>] [--verbose]
 ```
+
+A value outside a choice type names the choices and suggests the closest:
+
+```
+error: --role expects one of "admin", "user", got "admn"
+  = help: did you mean "admin"?
+```
+
+### 14.5 Completion
+
+`ok self complete` (17) offers, after a task name: the task's flags
+(`--name`), `--help`, the short forms (`-v`) when the word being completed
+starts with a single `-`, and, where a value is expected, the choices of a
+choice type: after a flag with a choice type (`--role <TAB>`, `-r <TAB>`,
+also written `--role=<TAB>`), and for the next positional parameter when it
+has a choice type. Completion never runs project code.
 
 ## 15. Project mode
 
@@ -1905,5 +2094,5 @@ wrappers are the only shell code in the project and stay short.
   ok v1 parses the `allow` modifier and rejects it: `error: task permissions
   (allow) are not implemented yet`.
 - Not in v1: a REPL beyond `ok -e`, a package manager, user-defined types,
-  async, sandboxing, short flags, content-hash up-to-date checks, nested
+  async, sandboxing, content-hash up-to-date checks, nested
   namespaces. Ideas are collected in `IDEAS.md`.

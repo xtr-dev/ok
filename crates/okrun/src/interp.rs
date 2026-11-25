@@ -1179,17 +1179,38 @@ impl Interp {
                 body,
                 binding,
                 handler,
-            } => match self.exec_block(body, scope) {
-                Err(Flow::Err(error)) => {
-                    let s = Scope::new(Some(scope.clone()));
-                    if let Some(name) = binding {
-                        let rec = self.error_record(&error);
-                        s.declare(name, rec, false);
+                finally,
+            } => {
+                let outcome = match (self.exec_block(body, scope), handler) {
+                    (Err(Flow::Err(error)), Some(handler)) => {
+                        let s = Scope::new(Some(scope.clone()));
+                        if let Some(name) = binding {
+                            let rec = self.error_record(&error);
+                            s.declare(name, rec, false);
+                        }
+                        self.exec_stmts(&handler.stmts, &s)
                     }
-                    self.exec_stmts(&handler.stmts, &s)
+                    (other, _) => other,
+                };
+                let Some(finally) = finally else {
+                    return outcome;
+                };
+                // The finally block runs however the try and catch blocks
+                // ended; its own value is discarded (SPEC.md 6.7).
+                match self.exec_block(finally, scope) {
+                    Ok(_) => outcome,
+                    Err(Flow::Err(mut e)) => {
+                        if let Err(Flow::Err(pending)) = &outcome {
+                            e.notes.push(format!(
+                                "this error in a finally block replaced the error: {}",
+                                pending.message
+                            ));
+                        }
+                        Err(Flow::Err(e))
+                    }
+                    Err(other) => Err(other),
                 }
-                other => other,
-            },
+            }
             ExprKind::Lambda(decl) => Ok(Value::Func(Rc::new(Func::User {
                 decl: decl.clone(),
                 env: scope.clone(),
@@ -1311,22 +1332,16 @@ impl Interp {
         span: Span,
     ) -> R<Value> {
         let v = self.eval(subject, scope)?;
+        let mut bound: Vec<(String, Value)> = Vec::new();
         for arm in arms {
             for pat in &arm.pats {
-                let s = Scope::new(Some(scope.clone()));
-                let hit = match pat {
-                    MatchPat::Wildcard => true,
-                    MatchPat::Bind(name) => {
-                        s.declare(name, v.clone(), false);
-                        true
-                    }
-                    MatchPat::Lit(lit) => {
-                        let lv = self.eval(lit, scope)?;
-                        equal(&lv, &v)
-                    }
-                };
-                if !hit {
+                bound.clear();
+                if !self.pattern_matches(pat, &v, scope, &mut bound)? {
                     continue;
+                }
+                let s = Scope::new(Some(scope.clone()));
+                for (name, value) in bound.drain(..) {
+                    s.declare(&name, value, false);
                 }
                 if let Some(g) = &arm.guard {
                     let gv = self.eval(g, &s)?;
@@ -1343,6 +1358,83 @@ impl Interp {
             format!("no match arm matches {}", v.repr()),
         )
         .map_err(|f| with_help(f, "add a `_ => ...` arm for all other values"))
+    }
+
+    /// Whether `v` matches `pat` (SPEC.md 6.6). Bindings are appended to
+    /// `bound`; when the result is `false`, `bound` is left as it was.
+    fn pattern_matches(
+        &mut self,
+        pat: &MatchPat,
+        v: &Value,
+        scope: &Rc<Scope>,
+        bound: &mut Vec<(String, Value)>,
+    ) -> R<bool> {
+        let mark = bound.len();
+        let hit = match pat {
+            MatchPat::Wildcard(_) => true,
+            MatchPat::Bind(name, _) => {
+                bound.push((name.clone(), v.clone()));
+                true
+            }
+            MatchPat::Lit(lit) => {
+                let lv = self.eval(lit, scope)?;
+                equal(&lv, v)
+            }
+            MatchPat::List { items, rest, .. } => match v {
+                Value::List(list) => {
+                    let len_ok = if rest.is_some() {
+                        list.len() >= items.len()
+                    } else {
+                        list.len() == items.len()
+                    };
+                    let mut ok = len_ok;
+                    if ok {
+                        for (p, item) in items.iter().zip(list.iter()) {
+                            if !self.pattern_matches(p, item, scope, bound)? {
+                                ok = false;
+                                break;
+                            }
+                        }
+                    }
+                    if ok && let Some(ListRest::Bind(name)) = rest {
+                        bound.push((name.clone(), Value::list(list[items.len()..].to_vec())));
+                    }
+                    ok
+                }
+                _ => false,
+            },
+            MatchPat::Record { fields, .. } => match v {
+                Value::Record(r) => {
+                    let mut ok = true;
+                    for (key, p) in fields {
+                        let matched = match r.get(key) {
+                            Some(field) => self.pattern_matches(p, field, scope, bound)?,
+                            None => false,
+                        };
+                        if !matched {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    ok
+                }
+                _ => false,
+            },
+            MatchPat::Alt(alts, _) => {
+                let mut ok = false;
+                for alt in alts {
+                    if self.pattern_matches(alt, v, scope, bound)? {
+                        ok = true;
+                        break;
+                    }
+                }
+                ok
+            }
+        };
+        if !hit {
+            bound.truncate(mark);
+        }
+        Ok(hit)
     }
 
     fn error_record(&mut self, e: &OkError) -> Value {
@@ -2024,6 +2116,13 @@ pub(crate) fn type_phrase(ty: &TypeAnn) -> String {
         TypeAnn::Optional(inner) => format!("{} or null", type_phrase(inner)),
         TypeAnn::List(Some(inner)) => format!("a list of {}", type_phrase(inner)),
         TypeAnn::Any => "any value".into(),
+        TypeAnn::Choice(cs) => format!(
+            "one of {}",
+            cs.iter()
+                .map(|c| format!("{c:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         other => crate::value::with_article(&other.describe()),
     }
 }
@@ -2059,6 +2158,13 @@ pub fn check_type(v: Value, ty: &TypeAnn) -> Result<Value, String> {
         }
         (TypeAnn::Optional(_), Value::Null) => true,
         (TypeAnn::Optional(inner), _) => return check_type(v, inner),
+        (TypeAnn::Choice(cs), Value::Str(s)) => {
+            if cs.iter().any(|c| **c == **s) {
+                true
+            } else {
+                return Err(v.repr());
+            }
+        }
         _ => false,
     };
     if ok { Ok(v) } else { Err(v.a_type()) }

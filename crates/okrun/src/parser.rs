@@ -135,6 +135,11 @@ struct Parser {
     nostruct: bool,
     loop_depth: usize,
     fn_depth: usize,
+    /// The `(loop_depth, fn_depth)` at the start of the innermost `finally`
+    /// block being parsed. A `break`/`continue` at exactly that loop depth,
+    /// or a `return` at that function depth, would leave the `finally` block
+    /// and discard the pending outcome, so it is rejected (SPEC.md 6.7).
+    finally_at: Option<(usize, usize)>,
 }
 
 type PResult<T> = Result<T, OkError>;
@@ -154,6 +159,7 @@ impl Parser {
             nostruct: false,
             loop_depth: 0,
             fn_depth: 0,
+            finally_at: None,
         }
     }
 
@@ -171,6 +177,7 @@ impl Parser {
         let mut p = Parser::new(self.file, tokens, self.ctx.clone(), self.depth);
         p.loop_depth = self.loop_depth;
         p.fn_depth = self.fn_depth;
+        p.finally_at = self.finally_at;
         p
     }
 
@@ -415,6 +422,12 @@ impl Parser {
                         ),
                     ));
                 }
+                if self.finally_at == Some((self.loop_depth, self.fn_depth)) {
+                    return Err(leaves_finally(
+                        t.span,
+                        if is_break { "break" } else { "continue" },
+                    ));
+                }
                 if is_break {
                     StmtKind::Break
                 } else {
@@ -426,6 +439,9 @@ impl Parser {
                 if self.fn_depth == 0 {
                     return Err(syntax(t.span, "`return` outside of a function")
                         .with_help("to stop a script early, use exit(code)"));
+                }
+                if self.finally_at.is_some_and(|(_, f)| f == self.fn_depth) {
+                    return Err(leaves_finally(t.span, "return"));
                 }
                 let value = if matches!(self.peek(), Tok::Newline | Tok::Eof | Tok::RBrace) {
                     None
@@ -687,7 +703,15 @@ impl Parser {
             let start = self.span();
             let mut flag = false;
             let mut rest = false;
+            let mut short = None;
             let cli_name;
+            if self.at(&Tok::Minus) && self.peek_at(1).tok != Tok::Minus {
+                return Err(syntax(
+                    self.span(),
+                    "a short flag must follow the long name of a flag",
+                )
+                .with_help("write it after the flag and a comma: --verbose, -v: bool"));
+            }
             if self.eat(&Tok::Ellipsis) {
                 rest = true;
                 let t = self.bump();
@@ -703,6 +727,13 @@ impl Parser {
                 self.bump();
                 flag = true;
                 cli_name = self.dashed_name("a flag name after `--`")?;
+                if self.at(&Tok::Comma)
+                    && self.peek_at(1).tok == Tok::Minus
+                    && self.peek_at(2).tok != Tok::Minus
+                {
+                    self.bump();
+                    short = Some(self.short_flag(&params)?);
+                }
             } else {
                 let t = self.bump();
                 match t.tok {
@@ -729,11 +760,24 @@ impl Parser {
                 }
                 let e = self.with_nostruct(false, |p| p.coalesce())?;
                 self.check_no_it(&e)?;
+                check_choice_default(ty.as_ref(), &e)?;
                 Some(e)
             } else {
                 None
             };
             let end_span = self.prev_span();
+            if short.is_some()
+                && matches!(ty, Some(TypeAnn::Bool))
+                && default
+                    .as_ref()
+                    .is_some_and(|d| matches!(d.kind, ExprKind::Bool(true)))
+            {
+                return Err(syntax(
+                    start.to(end_span),
+                    format!("`--{cli_name}` defaults to true, so a short flag could only repeat the default"),
+                )
+                .with_help(format!("the switch is turned off with --no-{cli_name}; remove the short form")));
+            }
             let name = cli_name.replace('-', "_");
             if let Some(prev) = params.iter().find(|p| p.name == name) {
                 return Err(syntax(
@@ -748,6 +792,7 @@ impl Parser {
                 name,
                 cli_name,
                 flag,
+                short,
                 rest,
                 ty,
                 default,
@@ -775,6 +820,39 @@ impl Parser {
             }
         }
         Ok(params)
+    }
+
+    /// The `-v` of `--verbose, -v` (SPEC.md 14.1); the `-` is the current
+    /// token. `params` are the parameters declared so far.
+    fn short_flag(&mut self, params: &[Param]) -> PResult<char> {
+        let dash = self.bump();
+        let t = self.bump();
+        let span = dash.span.to(t.span);
+        let letter = match &t.tok {
+            Tok::Ident(n) if !t.space_before && n.len() == 1 => n.chars().next(),
+            _ => None,
+        }
+        .filter(char::is_ascii_alphabetic);
+        let Some(c) = letter else {
+            return Err(syntax(span, "a short flag is a single letter")
+                .with_help("write it like -v, right after the dash"));
+        };
+        if matches!(c, 'h' | 'C' | 'e') {
+            let meaning = match c {
+                'h' => "-h always prints help",
+                'C' => "-C is ok's own option for the project directory",
+                _ => "-e is ok's own option for evaluating source text",
+            };
+            return Err(syntax(span, format!("the short flag -{c} is reserved"))
+                .with_help(format!("{meaning}; choose another letter")));
+        }
+        if let Some(prev) = params.iter().find(|p| p.short == Some(c)) {
+            return Err(syntax(
+                span,
+                format!("-{c} is already the short flag of --{}", prev.cli_name),
+            ));
+        }
+        Ok(c)
     }
 
     /// A name made of words joined by `-` with no spaces: `dry-run`,
@@ -809,7 +887,64 @@ impl Parser {
         Ok(name)
     }
 
+    /// `"a" | "b" | null` (SPEC.md 5.11); the first string is the current
+    /// token.
+    fn choice_type(&mut self) -> PResult<TypeAnn> {
+        let mut choices: Vec<String> = Vec::new();
+        let mut optional = false;
+        loop {
+            let t = self.bump();
+            match t.tok {
+                Tok::Str(parts) => {
+                    let text = match parts.as_slice() {
+                        [] => String::new(),
+                        [StrPart::Lit(s)] => s.clone(),
+                        _ => {
+                            return Err(syntax(t.span, "a choice cannot use interpolation")
+                                .with_help(
+                                    "choices are plain strings: --role: \"admin\" | \"user\"",
+                                ));
+                        }
+                    };
+                    if optional {
+                        return Err(syntax(t.span, "`null` must be the last choice"));
+                    }
+                    if choices.contains(&text) {
+                        return Err(syntax(t.span, format!("the choice {text:?} appears twice")));
+                    }
+                    choices.push(text);
+                }
+                Tok::Kw(Kw::Null) if !choices.is_empty() && !optional => optional = true,
+                other => {
+                    return Err(syntax(
+                        t.span,
+                        format!("expected a choice in quotes, found {}", other.describe()),
+                    ));
+                }
+            }
+            if !self.eat(&Tok::Pipe) {
+                break;
+            }
+        }
+        if self.at(&Tok::Question) {
+            return Err(self
+                .unexpected("`,`, `=` or `)` after the choices")
+                .with_help(
+                    "to also accept null, add it as the last choice: \"a\" | \"b\" | null",
+                ));
+        }
+        let ty = TypeAnn::Choice(choices);
+        Ok(if optional {
+            TypeAnn::Optional(Box::new(ty))
+        } else {
+            ty
+        })
+    }
+
     fn type_ann(&mut self) -> PResult<TypeAnn> {
+        if matches!(self.peek(), Tok::Str(_)) {
+            return self.choice_type();
+        }
         let t = self.bump();
         let base = match &t.tok {
             Tok::Kw(Kw::Fn) => TypeAnn::Fn,
@@ -1527,6 +1662,7 @@ impl Parser {
                 cli_name: name.clone(),
                 name,
                 flag: false,
+                short: None,
                 rest: false,
                 ty: None,
                 default: None,
@@ -1644,29 +1780,7 @@ impl Parser {
             Tok::LBrace if !self.nostruct => self.record(),
             Tok::Kw(Kw::If) => self.if_expr(),
             Tok::Kw(Kw::Match) => self.match_expr(),
-            Tok::Kw(Kw::Try) => {
-                self.bump();
-                let body = self.block()?;
-                self.skip_newlines();
-                self.expect(&Tok::Kw(Kw::Catch), "`catch` after the try block")?;
-                let binding = match self.peek().clone() {
-                    Tok::Ident(n) => {
-                        self.bump();
-                        Some(n)
-                    }
-                    _ => None,
-                };
-                let handler = self.block()?;
-                let s = span.to(handler.span);
-                Ok(Expr::new(
-                    ExprKind::Try {
-                        body,
-                        binding,
-                        handler,
-                    },
-                    s,
-                ))
-            }
+            Tok::Kw(Kw::Try) => self.try_expr(),
             Tok::Kw(Kw::Fn) if self.peek_at(1).tok == Tok::LParen => {
                 self.bump();
                 self.bump();
@@ -1859,6 +1973,48 @@ impl Parser {
         ))
     }
 
+    /// `try { } catch e { } finally { }` (SPEC.md 6.7).
+    fn try_expr(&mut self) -> PResult<Expr> {
+        let start = self.bump().span;
+        let body = self.block()?;
+        let mut end = body.span;
+        let (mut binding, mut handler, mut finally) = (None, None, None);
+        if self.eat(&Tok::Kw(Kw::Catch)) {
+            if let Tok::Ident(n) = self.peek().clone() {
+                self.bump();
+                binding = Some(n);
+            }
+            let h = self.block()?;
+            end = h.span;
+            handler = Some(h);
+        }
+        if self.eat(&Tok::Kw(Kw::Finally)) {
+            let saved = self.finally_at;
+            self.finally_at = Some((self.loop_depth, self.fn_depth));
+            let f = self.block();
+            self.finally_at = saved;
+            let f = f?;
+            end = f.span;
+            finally = Some(f);
+        }
+        if handler.is_none() && finally.is_none() {
+            return Err(self
+                .unexpected("`catch` or `finally` after the try block")
+                .with_help(
+                    "add `catch e { ... }` to handle the error, or `finally { ... }` for cleanup",
+                ));
+        }
+        Ok(Expr::new(
+            ExprKind::Try {
+                body,
+                binding,
+                handler,
+                finally,
+            },
+            start.to(end),
+        ))
+    }
+
     fn match_expr(&mut self) -> PResult<Expr> {
         let start = self.bump().span;
         let subject = self.with_nostruct(true, |p| p.expr())?;
@@ -1871,6 +2027,8 @@ impl Parser {
             while self.eat(&Tok::Pipe) {
                 pats.push(self.match_pat()?);
             }
+            check_alternatives(&pats)?;
+            check_unique_names(&pats[0])?;
             let guard = if self.eat(&Tok::Kw(Kw::If)) {
                 Some(self.with_nostruct(false, |p| p.expr())?)
             } else {
@@ -1908,6 +2066,137 @@ impl Parser {
         ))
     }
 
+    /// `p1 | p2 | ...` inside a list or record pattern.
+    fn match_alt(&mut self) -> PResult<MatchPat> {
+        let first = self.match_pat()?;
+        if !self.at(&Tok::Pipe) {
+            return Ok(first);
+        }
+        let mut alts = vec![first];
+        while self.eat(&Tok::Pipe) {
+            alts.push(self.match_pat()?);
+        }
+        check_alternatives(&alts)?;
+        let span = alts[0].span().to(alts[alts.len() - 1].span());
+        Ok(MatchPat::Alt(alts, span))
+    }
+
+    /// `[p1, p2, ...rest]` (SPEC.md 6.6); the `[` is the current token.
+    fn list_match_pat(&mut self) -> PResult<MatchPat> {
+        self.enter()?;
+        let open = self.bump().span;
+        let mut items = Vec::new();
+        let mut rest = None;
+        while !self.at(&Tok::RBracket) {
+            if self.eat(&Tok::Ellipsis) {
+                let n = self.bump();
+                rest = Some(match n.tok {
+                    Tok::Ident(name) if name == "_" => ListRest::Ignore,
+                    Tok::Ident(name) => ListRest::Bind(name),
+                    _ => {
+                        self.leave();
+                        return Err(syntax(n.span, "expected a name or `_` after `...`")
+                            .with_help("`[first, ...rest]` binds the other elements; `[first, ..._]` ignores them"));
+                    }
+                });
+                self.eat(&Tok::Comma);
+                if !self.at(&Tok::RBracket) {
+                    self.leave();
+                    return Err(syntax(
+                        self.span(),
+                        "`...rest` must be the last item of a list pattern",
+                    ));
+                }
+                break;
+            }
+            match self.match_alt() {
+                Ok(p) => items.push(p),
+                Err(e) => {
+                    self.leave();
+                    return Err(e);
+                }
+            }
+            if !self.eat(&Tok::Comma) {
+                break;
+            }
+        }
+        let close = self.expect(&Tok::RBracket, "`,` or `]`");
+        self.leave();
+        Ok(MatchPat::List {
+            items,
+            rest,
+            span: open.to(close?.span),
+        })
+    }
+
+    /// `{key: p, other}` (SPEC.md 6.6); the `{` is the current token.
+    fn record_match_pat(&mut self) -> PResult<MatchPat> {
+        self.enter()?;
+        let r = self.record_match_pat_inner();
+        self.leave();
+        r
+    }
+
+    fn record_match_pat_inner(&mut self) -> PResult<MatchPat> {
+        let open = self.bump().span;
+        self.skip_newlines();
+        let mut fields: Vec<(String, MatchPat)> = Vec::new();
+        while !self.at(&Tok::RBrace) {
+            let k = self.bump();
+            let (key, shorthand) = match k.tok {
+                Tok::Ident(name) if name == "_" => (name, Some(MatchPat::Wildcard(k.span))),
+                Tok::Ident(name) => {
+                    let bind = MatchPat::Bind(name.clone(), k.span);
+                    (name, Some(bind))
+                }
+                Tok::Kw(kw) => (kw.as_str().to_string(), None),
+                Tok::Str(parts) => match parts.as_slice() {
+                    [StrPart::Lit(s)] => (s.clone(), None),
+                    [] => (String::new(), None),
+                    _ => {
+                        return Err(syntax(
+                            k.span,
+                            "a record pattern key cannot use interpolation",
+                        ));
+                    }
+                },
+                other => {
+                    return Err(syntax(
+                        k.span,
+                        format!("expected a field name, found {}", other.describe()),
+                    ));
+                }
+            };
+            if fields.iter().any(|(f, _)| *f == key) {
+                return Err(syntax(
+                    k.span,
+                    format!("the key `{key}` appears twice in this pattern"),
+                ));
+            }
+            let pat = if self.eat(&Tok::Colon) {
+                self.skip_newlines();
+                self.match_alt()?
+            } else if let Some(p) = shorthand {
+                p
+            } else {
+                return Err(syntax(k.span, format!("the key `{key}` needs a pattern"))
+                    .with_help(format!("bind it to a name: {{{key:?}: value}}")));
+            };
+            fields.push((key, pat));
+            self.skip_newlines();
+            if !self.eat(&Tok::Comma) {
+                self.skip_newlines();
+                break;
+            }
+            self.skip_newlines();
+        }
+        let close = self.expect(&Tok::RBrace, "`,` or `}`")?;
+        Ok(MatchPat::Record {
+            fields,
+            span: open.to(close.span),
+        })
+    }
+
     fn match_pat(&mut self) -> PResult<MatchPat> {
         let t = self.peek_token().clone();
         let lit = |k| MatchPat::Lit(Expr::new(k, t.span));
@@ -1937,13 +2226,112 @@ impl Parser {
                 self.bump();
                 return Ok(MatchPat::Lit(Expr::new(kind, t.span.to(n.span))));
             }
-            Tok::Ident(ref n) if n == "_" => MatchPat::Wildcard,
-            Tok::Ident(ref n) => MatchPat::Bind(n.clone()),
-            _ => return Err(self.unexpected("a pattern (a literal, `_` or a name)")),
+            Tok::Ident(ref n) if n == "_" => MatchPat::Wildcard(t.span),
+            Tok::Ident(ref n) => MatchPat::Bind(n.clone(), t.span),
+            Tok::LBracket => return self.list_match_pat(),
+            Tok::LBrace => return self.record_match_pat(),
+            _ => {
+                return Err(self.unexpected(
+                    "a pattern (a literal, `_`, a name, or a [list] / {record} pattern)",
+                ));
+            }
         };
         self.bump();
         Ok(pat)
     }
+}
+
+/// A literal default of a choice-typed parameter must be one of the choices;
+/// catching it at load time keeps `--help` from advertising a bad default.
+fn check_choice_default(ty: Option<&TypeAnn>, default: &Expr) -> PResult<()> {
+    let Some(choices) = ty.and_then(TypeAnn::choices) else {
+        return Ok(());
+    };
+    let ExprKind::Str(pieces) = &default.kind else {
+        return Ok(());
+    };
+    let text = match pieces.as_slice() {
+        [] => String::new(),
+        [StrPiece::Lit(s)] => s.clone(),
+        _ => return Ok(()),
+    };
+    if choices.contains(&text) {
+        return Ok(());
+    }
+    let help =
+        suggest(&text, choices.iter().map(String::as_str)).map(|s| format!("did you mean {s:?}?"));
+    Err(syntax(
+        default.span,
+        format!(
+            "the default {text:?} is not one of the choices {}",
+            choices
+                .iter()
+                .map(|c| format!("{c:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    )
+    .maybe_help(help))
+}
+
+/// Every alternative of `p1 | p2` must bind the same names, so that the
+/// guard and body of the arm can use them whichever alternative matched.
+fn check_alternatives(alts: &[MatchPat]) -> PResult<()> {
+    let names_of = |p: &MatchPat| {
+        let mut v = Vec::new();
+        p.names(&mut v);
+        let mut names: Vec<String> = v.into_iter().map(|(n, _)| n).collect();
+        names.sort();
+        names
+    };
+    let first = names_of(&alts[0]);
+    for alt in &alts[1..] {
+        let these = names_of(alt);
+        if these != first {
+            let list = |ns: &[String]| {
+                if ns.is_empty() {
+                    "no names".to_string()
+                } else {
+                    ns.iter()
+                        .map(|n| format!("`{n}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                }
+            };
+            return Err(syntax(
+                alt.span(),
+                format!(
+                    "this alternative binds {}, but the first one binds {}",
+                    list(&these),
+                    list(&first)
+                ),
+            )
+            .with_help(
+                "every alternative of `|` must bind the same names; use separate arms instead",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A pattern may bind each name only once: `[x, x]` is an error.
+fn check_unique_names(p: &MatchPat) -> PResult<()> {
+    let mut names = Vec::new();
+    p.names(&mut names);
+    for (i, (n, s)) in names.iter().enumerate() {
+        if names[..i].iter().any(|(m, _)| m == n) {
+            return Err(syntax(*s, format!("`{n}` is bound twice in this pattern"))
+                .with_help("use a different name, or `_` to ignore the value"));
+        }
+    }
+    Ok(())
+}
+
+fn leaves_finally(span: Span, word: &str) -> OkError {
+    syntax(span, format!("`{word}` cannot leave a finally block"))
+        .with_help(format!(
+            "a finally block runs to its end so that the pending value, error or return is kept; move the `{word}` after the try"
+        ))
 }
 
 fn internal() -> OkError {
@@ -1961,6 +2349,7 @@ fn wrap_it(e: Expr) -> Expr {
         name: IT.into(),
         cli_name: IT.into(),
         flag: false,
+        short: None,
         rest: false,
         ty: None,
         default: None,
@@ -2258,6 +2647,87 @@ mod tests {
             "let x = match os.name {\n  \"windows\" => 1\n  \"linux\" | \"macos\" => 2\n  n if n == \"x\" => 3\n  _ => fail(\"no\")\n}",
         );
         ok("let c = try {\n read(p)\n} catch e {\n {}\n}");
+    }
+
+    #[test]
+    fn choice_types() {
+        ok(
+            "fn f(--role: \"admin\" | \"user\" = \"user\", x: list['a' | 'b'], y: \"a\" | null) { }",
+        );
+        ok("fn f(--role: \"admin\"\n  | \"user\") { }");
+        assert!(
+            fails("fn f(x: \"a\" | \"a\") { }")
+                .message
+                .contains("appears twice")
+        );
+        assert!(
+            fails("fn f(x: \"a\" | null | \"b\") { }")
+                .message
+                .contains("must be the last")
+        );
+        assert!(
+            fails("fn f(x: \"a\" | \"b\"?) { }")
+                .help
+                .unwrap()
+                .contains("| null")
+        );
+        assert!(
+            fails("fn f(x: \"a{y}\") { }")
+                .message
+                .contains("interpolation")
+        );
+        assert!(
+            fails("fn f(x: \"a\" | int) { }")
+                .message
+                .contains("a choice in quotes")
+        );
+        assert!(
+            fails("fn f(--m: \"a\" | \"b\" = \"c\") { }")
+                .message
+                .contains("not one of the choices")
+        );
+        ok("fn f(--m: \"a\" | \"b\" = env.get(\"M\")) { }");
+    }
+
+    #[test]
+    fn short_flags() {
+        let p = ok("fn main(--verbose, -v: bool, --out, -o: path = \"x\", --dry-run, -n) { }");
+        let StmtKind::Fn(f) = &p.stmts[0].kind else {
+            panic!("not a fn")
+        };
+        let shorts: Vec<_> = f.params.iter().map(|p| p.short).collect();
+        assert_eq!(shorts, [Some('v'), Some('o'), Some('n')]);
+        ok("task build(\n  --release, -r: bool,   # optimised\n  --V, -V: bool,\n) { }");
+        let msg = |src: &str| fails(src).message;
+        assert!(msg("fn f(x, -v) { }").contains("must follow the long name"));
+        assert!(msg("fn f(--verbose, -vv: bool) { }").contains("single letter"));
+        assert!(msg("fn f(--verbose, - v: bool) { }").contains("single letter"));
+        assert!(msg("fn f(--n, -1: int) { }").contains("single letter"));
+        assert!(msg("fn f(--help-me, -h: bool) { }").contains("-h is reserved"));
+        assert!(msg("fn f(--eval, -e: bool) { }").contains("-e is reserved"));
+        assert!(
+            msg("fn f(--a, -x: bool, --b, -x: bool) { }").contains("already the short flag of --a")
+        );
+        assert!(msg("fn f(--color, -c: bool = true) { }").contains("defaults to true"));
+    }
+
+    #[test]
+    fn try_finally_placement() {
+        ok("try { a() } finally { b() }");
+        ok("try { a() } catch { b() } finally { c() }");
+        ok("try { a() }\nfinally { b() }");
+        ok("for x in xs { try { a() } finally { for y in ys { break } } }");
+        ok("fn f() { try { a() } finally { let g = fn() { return 1 } } }");
+        let e = fails("for x in xs { try { a() } finally { break } }");
+        assert!(e.message.contains("`break` cannot leave a finally block"));
+        let e = fails("for x in xs { try { a() } finally { if x { continue } } }");
+        assert!(e.message.contains("`continue` cannot leave"));
+        let e = fails("fn f() { for x in xs { try { a() } finally { return 1 } } }");
+        assert!(e.message.contains("`return` cannot leave"));
+        let e = fails("try { a() }");
+        assert!(e.message.contains("`catch` or `finally`"));
+        // `finally` before `catch` is not allowed: the order is fixed.
+        fails("try { a() } finally { b() } catch { c() }");
     }
 
     #[test]
