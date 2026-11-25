@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ok: scripts that run everywhere</title>
+<meta name="description" content="ok is a portable scripting language and task runner in one static binary. It replaces bash scripts, Python/JS scripts that need a runtime, and Makefiles. The same script runs on Linux, macOS and Windows.">
+<meta property="og:title" content="ok: scripts that run everywhere">
+<meta property="og:description" content="A portable scripting language and task runner in one static binary.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2316a34a'/%3E%3Cpath d='M9 16.5l4.5 4.5L23 11.5' stroke='white' stroke-width='3.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #fbfbf9;
+  --surface: #ffffff;
+  --code-bg: #f3f4f1;
+  --text: #1c1f1c;
+  --muted: #5d635d;
+  --border: #e3e5e0;
+  --accent: #15803d;
+  --accent-soft: #e7f5ec;
+  --kw: #7c3aed;
+  --str: #b45309;
+  --com: #8a908a;
+  --fn: #0369a1;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111311;
+    --surface: #181b18;
+    --code-bg: #1d211d;
+    --text: #e8ebe7;
+    --muted: #9aa29a;
+    --border: #2b302b;
+    --accent: #4ade80;
+    --accent-soft: #16301f;
+    --kw: #c4b5fd;
+    --str: #fbbf24;
+    --com: #6f776f;
+    --fn: #7dd3fc;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.6 var(--sans);
+}
+a { color: var(--accent); text-underline-offset: 2px; }
+.wrap { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+
+header.top {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 0;
+}
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 20px; color: var(--text); text-decoration: none; }
+.logo svg { width: 28px; height: 28px; }
+nav a { color: var(--muted); text-decoration: none; margin-left: 20px; font-size: 15px; }
+nav a:hover { color: var(--text); }
+
+.hero { padding: 56px 0 32px; }
+.hero h1 { font-size: clamp(34px, 6vw, 54px); line-height: 1.1; margin: 0 0 18px; letter-spacing: -0.02em; }
+.hero h1 em { font-style: normal; color: var(--accent); }
+.hero p.lead { font-size: 19px; color: var(--muted); max-width: 640px; margin: 0 0 32px; }
+
+.install { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; max-width: 680px; }
+.tabs { display: flex; border-bottom: 1px solid var(--border); }
+.tabs button {
+  font: inherit; font-size: 14px; background: none; border: 0; color: var(--muted);
+  padding: 10px 16px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.cmd { display: none; align-items: center; gap: 12px; padding: 14px 16px; }
+.cmd.active { display: flex; }
+.cmd code { flex: 1; font: 14.5px var(--mono); overflow-x: auto; white-space: nowrap; }
+.cmd code::before { content: "$ "; color: var(--muted); }
+.cmd.ps code::before { content: "> "; }
+.copy {
+  font: 13px var(--sans); border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  border-radius: 6px; padding: 5px 10px; cursor: pointer; flex-shrink: 0;
+}
+.copy:hover { border-color: var(--accent); }
+.install-note { color: var(--muted); font-size: 14px; margin: 12px 2px 0; max-width: 680px; }
+
+section { padding: 48px 0; }
+section h2 { font-size: 28px; margin: 0 0 8px; letter-spacing: -0.01em; }
+section > .wrap > p.sub { color: var(--muted); margin: 0 0 28px; max-width: 640px; }
+
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
+figure { margin: 0; }
+figcaption { font-size: 13px; color: var(--muted); margin: 0 0 6px 2px; font-family: var(--mono); }
+pre {
+  margin: 0; background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px 18px; overflow-x: auto; font: 13.5px/1.6 var(--mono); height: calc(100% - 26px);
+}
+.k { color: var(--kw); }
+.s { color: var(--str); }
+.c { color: var(--com); }
+.f { color: var(--fn); }
+.o { color: var(--muted); }
+
+.features { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.feature { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+.feature h3 { margin: 0 0 6px; font-size: 17px; }
+.feature p { margin: 0; color: var(--muted); font-size: 15px; }
+
+.badge { display: inline-block; background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600; margin-bottom: 18px; text-decoration: none; }
+
+footer { border-top: 1px solid var(--border); padding: 28px 0 48px; color: var(--muted); font-size: 14px; }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <a class="logo" href="./">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#16a34a"/><path d="M9 16.5l4.5 4.5L23 11.5" stroke="white" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      ok
+    </a>
+    <nav>
+      <a href="https://github.com/xtr-dev/ok/blob/main/SPEC.md">Docs</a>
+      <a href="https://github.com/xtr-dev/ok/tree/main/examples">Examples</a>
+      <a href="https://github.com/xtr-dev/ok">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <a class="badge" href="https://github.com/xtr-dev/ok/releases/latest">v0.1.0 is out</a>
+    <h1>Scripts that run <em>everywhere</em>.</h1>
+    <p class="lead">ok is a scripting language and task runner in one static binary. It replaces hard-to-read bash, Python or JS scripts that need a runtime, and Makefiles. The same script runs on Linux, macOS and Windows.</p>
+
+    <div class="install">
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="unix">Linux &amp; macOS</button>
+        <button role="tab" aria-selected="false" data-tab="win">Windows</button>
+      </div>
+      <div class="cmd active" data-panel="unix">
+        <code>curl -fsSL https://xtr-dev.github.io/ok/install.sh | sh</code>
+        <button class="copy" type="button">Copy</button>
+      </div>
+      <div class="cmd ps" data-panel="win">
+        <code>irm https://xtr-dev.github.io/ok/install.ps1 | iex</code>
+        <button class="copy" type="button">Copy</button>
+      </div>
+    </div>
+    <p class="install-note">Downloads the binary for your machine from the <a href="https://github.com/xtr-dev/ok/releases/latest">latest release</a> and checks its SHA-256. Read the <a href="install.sh">install.sh</a> / <a href="install.ps1">install.ps1</a> source first, or download the binary yourself.</p>
+  </div>
+</div>
+
+<section>
+  <div class="wrap">
+    <h2>Readable scripts, with data built in</h2>
+    <p class="sub">JSON, CSV, YAML and TOML are values, not text to parse. Pipelines read like the task they do, and a script's <code>main</code> signature is its command line, <code>--help</code> included.</p>
+    <div class="split">
+      <figure>
+        <figcaption>active-users.ok</figcaption>
+<pre><span class="c"># Convert a CSV export to JSON, keeping only active users</span>
+<span class="k">fn</span> <span class="f">main</span>(input: path, --out: path = <span class="s">"active.json"</span>) {
+  <span class="f">read</span>(input)
+    <span class="o">|</span> <span class="f">where</span> .active == <span class="s">"true"</span>
+    <span class="o">|</span> <span class="f">sort</span> .name
+    <span class="o">|</span> <span class="f">write</span>(out)
+  <span class="k">let</span> n = <span class="f">read</span>(out) <span class="o">|</span> <span class="f">count</span>
+  <span class="f">print</span>(<span class="s">"wrote {n} users to {out}"</span>)
+}</pre>
+      </figure>
+      <figure>
+        <figcaption>terminal</figcaption>
+<pre><span class="o">$</span> ok active-users.ok users.csv
+wrote 2 users to active.json
+
+<span class="o">$</span> ok active-users.ok --help
+Convert a CSV export to JSON, keeping only active users
+
+Usage: ok active-users.ok &lt;input&gt; [--out &lt;path&gt;]
+
+Arguments:
+  &lt;input&gt;
+
+Options:
+  --out &lt;path&gt;  [default: active.json]
+  -h, --help    print this help</pre>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>A task runner that needs nothing installed</h2>
+    <p class="sub">Tasks live in <code>ok.ok</code>. <code>ok self init</code> adds small <code>./ok</code> and <code>ok.cmd</code> wrappers that fetch the pinned, checksum-verified ok on first use, so contributors and CI just run <code>./ok build</code>.</p>
+    <div class="split">
+      <figure>
+        <figcaption>ok.ok</figcaption>
+<pre><span class="k">let</span> image = <span class="s">"ghcr.io/example/api"</span>
+
+<span class="c"># Build the container image</span>
+<span class="k">task</span> image {
+  <span class="k">let</span> sha = (<span class="k">run</span> git rev-parse --short HEAD).out
+  <span class="k">run</span> docker build -t {image}:{sha} .
+}
+
+<span class="c"># Run the image locally</span>
+<span class="k">task</span> serve(--port: int = 8080) <span class="k">needs</span> [image] {
+  <span class="k">let</span> sha = (<span class="k">run</span> git rev-parse --short HEAD).out
+  <span class="k">run</span> docker run --rm -p {port}:8080 {image}:{sha}
+}</pre>
+      </figure>
+      <figure>
+        <figcaption>terminal</figcaption>
+<pre><span class="o">$</span> ok
+api (~/code/api)
+
+  image        Build the container image
+  serve        Run the image locally
+
+<span class="o">$</span> ok serve --port 3000
+<span class="c"># runs image first, then serve</span>
+
+<span class="o">$</span> ok --dry-run serve
+<span class="c"># prints the docker commands without running them</span></pre>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Why ok</h2>
+    <p class="sub">Everything a script needs is in one file you can drop on any machine.</p>
+    <div class="features">
+      <div class="feature"><h3>No shell, no quoting bugs</h3><p><code>run</code> starts programs directly. Each <code>{value}</code> is exactly one argument, whatever it contains.</p></div>
+      <div class="feature"><h3>Portable standard library</h3><p>Files, globs, paths, regex, time, hashing, HTTPS <code>fetch</code> and zip/tar, the same on every OS. No coreutils needed.</p></div>
+      <div class="feature"><h3>One static binary</h3><p>About 6 MB, no runtime, no dependencies. Linux, macOS and Windows on x86-64 and arm64.</p></div>
+      <div class="feature"><h3>Errors that help</h3><p>Every error points at the line, underlines the problem and, where it can, says how to fix it.</p></div>
+      <div class="feature"><h3>Safe by default</h3><p>A cloned project's tasks ask before they run, and ask again when the files change.</p></div>
+      <div class="feature"><h3>Free and open</h3><p>MIT or Apache-2.0. Read the <a href="https://github.com/xtr-dev/ok/blob/main/SPEC.md">spec</a>, try the <a href="https://github.com/xtr-dev/ok/tree/main/examples">examples</a>, each next to the script it replaces.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>ok, by <a href="https://github.com/xtr-dev">xtr-dev</a>. MIT OR Apache-2.0.</span>
+    <span><a href="https://github.com/xtr-dev/ok">Source</a> · <a href="https://github.com/xtr-dev/ok/releases">Releases</a> · <a href="https://github.com/xtr-dev/ok/blob/main/CHANGELOG.md">Changelog</a></span>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll('.tabs button').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      document.querySelectorAll('.tabs button').forEach(function (t) {
+        t.setAttribute('aria-selected', String(t === tab));
+      });
+      document.querySelectorAll('.cmd').forEach(function (p) {
+        p.classList.toggle('active', p.dataset.panel === tab.dataset.tab);
+      });
+    });
+  });
+  if (/Win/.test(navigator.platform || navigator.userAgent)) {
+    document.querySelector('[data-tab="win"]').click();
+  }
+  document.querySelectorAll('.copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = btn.parentElement.querySelector('code').textContent;
+      navigator.clipboard.writeText(text).then(function () {
+        btn.textContent = 'Copied';
+        setTimeout(function () { btn.textContent = 'Copy'; }, 1500);
+      });
+    });
+  });
+</script>
+</body>
+</html>

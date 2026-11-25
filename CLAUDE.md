@@ -80,6 +80,9 @@ examples/<name>/        real scripts rewritten in ok, original alongside
 tests/cases/            golden tests (from M1)
 fuzz/                   cargo-fuzz targets for lexer and parser (from M1)
 ok.ok                   the repo's own tasks (dogfooding)
+site/                   landing page and install.sh / install.ps1, published to
+                        https://xtr-dev.github.io/ok/ by pages.yml (after the
+                        install scripts pass on Linux, macOS and Windows)
 SPEC.md                 normative language spec
 DECISIONS.md            dated design decisions
 IDEAS.md                out-of-scope ideas

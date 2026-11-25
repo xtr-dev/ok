@@ -503,3 +503,11 @@ original brief. Dependencies under CC0 stay allowed in `deny.toml`.
 brief before making the repository public: its setup notes were out of date
 (crate name, licence), and everything that still matters is in `SPEC.md`,
 `DECISIONS.md` and `CLAUDE.md`. It stays readable in the git history.
+
+**A landing page and one-line install scripts on GitHub Pages.** `site/`
+holds a static page and `install.sh` / `install.ps1`, served from
+https://xtr-dev.github.io/ok/. Like the bootstrap wrappers, the install
+scripts are a place where shell is acceptable: they only download the
+latest release binary, check it against that release's `SHA256SUMS`, and
+put it on the PATH. The Pages workflow runs both scripts on Linux, macOS and
+Windows before publishing, so a broken script never goes live.

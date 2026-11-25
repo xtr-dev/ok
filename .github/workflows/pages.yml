@@ -1,0 +1,62 @@
+# Publishes site/ (the landing page and the install scripts) to GitHub Pages
+# at https://xtr-dev.github.io/ok/. The install scripts are first run on
+# Linux, macOS and Windows against the latest release, so a broken script is
+# never published.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  install:
+    name: install script (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: install.sh
+        if: runner.os != 'Windows'
+        run: |
+          OK_INSTALL_DIR="$RUNNER_TEMP/okbin" sh site/install.sh
+          "$RUNNER_TEMP/okbin/ok" -e 'print("hello from {os.name}")'
+      # Piping the file into iex is what `irm .../install.ps1 | iex` does.
+      - name: install.ps1
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $env:OK_INSTALL_DIR = "$env:RUNNER_TEMP\okbin"
+          Get-Content site/install.ps1 -Raw | Invoke-Expression
+          & "$env:RUNNER_TEMP\okbin\ok.exe" -e 'print("hello from {os.name}")'
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+  deploy:
+    name: deploy
+    needs: install
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

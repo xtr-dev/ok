@@ -42,6 +42,23 @@ first release is [v0.1.0](https://github.com/xtr-dev/ok/releases/tag/v0.1.0).
 
 ## Install
 
+Linux and macOS:
+
+```
+curl -fsSL https://xtr-dev.github.io/ok/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```
+irm https://xtr-dev.github.io/ok/install.ps1 | iex
+```
+
+The scripts download the binary for your machine from the latest release,
+check it against `SHA256SUMS`, and install it to `~/.local/bin` (Windows:
+`%LOCALAPPDATA%\ok\bin`, added to your PATH). `OK_VERSION` pins a version and
+`OK_INSTALL_DIR` changes the folder. To install by hand instead:
+
 Each release ships single static binaries for Linux (musl), macOS and
 Windows on x86-64 and arm64, plus `SHA256SUMS`, `THIRD_PARTY.md` and the
 licence files:
