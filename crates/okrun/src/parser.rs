@@ -1844,7 +1844,9 @@ impl Parser {
         if handler.is_none() && finally.is_none() {
             return Err(self
                 .unexpected("`catch` or `finally` after the try block")
-                .with_help("add `catch e { ... }` to handle the error, or `finally { ... }` for cleanup"));
+                .with_help(
+                    "add `catch e { ... }` to handle the error, or `finally { ... }` for cleanup",
+                ));
         }
         Ok(Expr::new(
             ExprKind::Try {
@@ -1869,6 +1871,8 @@ impl Parser {
             while self.eat(&Tok::Pipe) {
                 pats.push(self.match_pat()?);
             }
+            check_alternatives(&pats)?;
+            check_unique_names(&pats[0])?;
             let guard = if self.eat(&Tok::Kw(Kw::If)) {
                 Some(self.with_nostruct(false, |p| p.expr())?)
             } else {
@@ -1906,6 +1910,137 @@ impl Parser {
         ))
     }
 
+    /// `p1 | p2 | ...` inside a list or record pattern.
+    fn match_alt(&mut self) -> PResult<MatchPat> {
+        let first = self.match_pat()?;
+        if !self.at(&Tok::Pipe) {
+            return Ok(first);
+        }
+        let mut alts = vec![first];
+        while self.eat(&Tok::Pipe) {
+            alts.push(self.match_pat()?);
+        }
+        check_alternatives(&alts)?;
+        let span = alts[0].span().to(alts[alts.len() - 1].span());
+        Ok(MatchPat::Alt(alts, span))
+    }
+
+    /// `[p1, p2, ...rest]` (SPEC.md 6.6); the `[` is the current token.
+    fn list_match_pat(&mut self) -> PResult<MatchPat> {
+        self.enter()?;
+        let open = self.bump().span;
+        let mut items = Vec::new();
+        let mut rest = None;
+        while !self.at(&Tok::RBracket) {
+            if self.eat(&Tok::Ellipsis) {
+                let n = self.bump();
+                rest = Some(match n.tok {
+                    Tok::Ident(name) if name == "_" => ListRest::Ignore,
+                    Tok::Ident(name) => ListRest::Bind(name),
+                    _ => {
+                        self.leave();
+                        return Err(syntax(n.span, "expected a name or `_` after `...`")
+                            .with_help("`[first, ...rest]` binds the other elements; `[first, ..._]` ignores them"));
+                    }
+                });
+                self.eat(&Tok::Comma);
+                if !self.at(&Tok::RBracket) {
+                    self.leave();
+                    return Err(syntax(
+                        self.span(),
+                        "`...rest` must be the last item of a list pattern",
+                    ));
+                }
+                break;
+            }
+            match self.match_alt() {
+                Ok(p) => items.push(p),
+                Err(e) => {
+                    self.leave();
+                    return Err(e);
+                }
+            }
+            if !self.eat(&Tok::Comma) {
+                break;
+            }
+        }
+        let close = self.expect(&Tok::RBracket, "`,` or `]`");
+        self.leave();
+        Ok(MatchPat::List {
+            items,
+            rest,
+            span: open.to(close?.span),
+        })
+    }
+
+    /// `{key: p, other}` (SPEC.md 6.6); the `{` is the current token.
+    fn record_match_pat(&mut self) -> PResult<MatchPat> {
+        self.enter()?;
+        let r = self.record_match_pat_inner();
+        self.leave();
+        r
+    }
+
+    fn record_match_pat_inner(&mut self) -> PResult<MatchPat> {
+        let open = self.bump().span;
+        self.skip_newlines();
+        let mut fields: Vec<(String, MatchPat)> = Vec::new();
+        while !self.at(&Tok::RBrace) {
+            let k = self.bump();
+            let (key, shorthand) = match k.tok {
+                Tok::Ident(name) if name == "_" => (name, Some(MatchPat::Wildcard(k.span))),
+                Tok::Ident(name) => {
+                    let bind = MatchPat::Bind(name.clone(), k.span);
+                    (name, Some(bind))
+                }
+                Tok::Kw(kw) => (kw.as_str().to_string(), None),
+                Tok::Str(parts) => match parts.as_slice() {
+                    [StrPart::Lit(s)] => (s.clone(), None),
+                    [] => (String::new(), None),
+                    _ => {
+                        return Err(syntax(
+                            k.span,
+                            "a record pattern key cannot use interpolation",
+                        ));
+                    }
+                },
+                other => {
+                    return Err(syntax(
+                        k.span,
+                        format!("expected a field name, found {}", other.describe()),
+                    ));
+                }
+            };
+            if fields.iter().any(|(f, _)| *f == key) {
+                return Err(syntax(
+                    k.span,
+                    format!("the key `{key}` appears twice in this pattern"),
+                ));
+            }
+            let pat = if self.eat(&Tok::Colon) {
+                self.skip_newlines();
+                self.match_alt()?
+            } else if let Some(p) = shorthand {
+                p
+            } else {
+                return Err(syntax(k.span, format!("the key `{key}` needs a pattern"))
+                    .with_help(format!("bind it to a name: {{{key:?}: value}}")));
+            };
+            fields.push((key, pat));
+            self.skip_newlines();
+            if !self.eat(&Tok::Comma) {
+                self.skip_newlines();
+                break;
+            }
+            self.skip_newlines();
+        }
+        let close = self.expect(&Tok::RBrace, "`,` or `}`")?;
+        Ok(MatchPat::Record {
+            fields,
+            span: open.to(close.span),
+        })
+    }
+
     fn match_pat(&mut self) -> PResult<MatchPat> {
         let t = self.peek_token().clone();
         let lit = |k| MatchPat::Lit(Expr::new(k, t.span));
@@ -1935,13 +2070,72 @@ impl Parser {
                 self.bump();
                 return Ok(MatchPat::Lit(Expr::new(kind, t.span.to(n.span))));
             }
-            Tok::Ident(ref n) if n == "_" => MatchPat::Wildcard,
-            Tok::Ident(ref n) => MatchPat::Bind(n.clone()),
-            _ => return Err(self.unexpected("a pattern (a literal, `_` or a name)")),
+            Tok::Ident(ref n) if n == "_" => MatchPat::Wildcard(t.span),
+            Tok::Ident(ref n) => MatchPat::Bind(n.clone(), t.span),
+            Tok::LBracket => return self.list_match_pat(),
+            Tok::LBrace => return self.record_match_pat(),
+            _ => {
+                return Err(self.unexpected(
+                    "a pattern (a literal, `_`, a name, or a [list] / {record} pattern)",
+                ));
+            }
         };
         self.bump();
         Ok(pat)
     }
+}
+
+/// Every alternative of `p1 | p2` must bind the same names, so that the
+/// guard and body of the arm can use them whichever alternative matched.
+fn check_alternatives(alts: &[MatchPat]) -> PResult<()> {
+    let names_of = |p: &MatchPat| {
+        let mut v = Vec::new();
+        p.names(&mut v);
+        let mut names: Vec<String> = v.into_iter().map(|(n, _)| n).collect();
+        names.sort();
+        names
+    };
+    let first = names_of(&alts[0]);
+    for alt in &alts[1..] {
+        let these = names_of(alt);
+        if these != first {
+            let list = |ns: &[String]| {
+                if ns.is_empty() {
+                    "no names".to_string()
+                } else {
+                    ns.iter()
+                        .map(|n| format!("`{n}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                }
+            };
+            return Err(syntax(
+                alt.span(),
+                format!(
+                    "this alternative binds {}, but the first one binds {}",
+                    list(&these),
+                    list(&first)
+                ),
+            )
+            .with_help(
+                "every alternative of `|` must bind the same names; use separate arms instead",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A pattern may bind each name only once: `[x, x]` is an error.
+fn check_unique_names(p: &MatchPat) -> PResult<()> {
+    let mut names = Vec::new();
+    p.names(&mut names);
+    for (i, (n, s)) in names.iter().enumerate() {
+        if names[..i].iter().any(|(m, _)| m == n) {
+            return Err(syntax(*s, format!("`{n}` is bound twice in this pattern"))
+                .with_help("use a different name, or `_` to ignore the value"));
+        }
+    }
+    Ok(())
 }
 
 fn leaves_finally(span: Span, word: &str) -> OkError {

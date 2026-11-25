@@ -1,0 +1,5 @@
+let v = {status: 200}
+let x = match v {
+  {status: 200, body} | {status: 204} => "ok"
+  _ => "other"
+}

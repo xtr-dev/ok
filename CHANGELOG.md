@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `try { ... } catch e { ... } finally { ... }`. The `finally` block runs
   however the `try` ends (value, error, `return`, `break`, `continue`,
   `exit()`); `finally` is now a keyword.
+- List and record patterns in `match` arms: `[]`, `[first, ...rest]`,
+  `{status: 200, body}`, nested patterns and `|` inside them.
+
+### Changed
+
+- The alternatives of a `match` arm (`p1 | p2`) must bind the same names.
 
 ## [0.1.0] - 2026-11-25
 

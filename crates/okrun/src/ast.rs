@@ -302,11 +302,77 @@ pub enum Arg {
     Spread(Expr),
 }
 
+/// A pattern of a `match` arm (SPEC.md 6.6).
 #[derive(Debug, Clone)]
 pub enum MatchPat {
+    /// A literal, compared with `==`.
     Lit(Expr),
-    Wildcard,
+    /// `_`
+    Wildcard(Span),
+    /// A name: matches anything and binds it.
+    Bind(String, Span),
+    /// `[p1, p2]`, `[p1, ...rest]`, `[p1, ..._]`.
+    List {
+        items: Vec<MatchPat>,
+        rest: Option<ListRest>,
+        span: Span,
+    },
+    /// `{key: p, other}`: the keys must exist; extra keys are allowed.
+    Record {
+        fields: Vec<(String, MatchPat)>,
+        span: Span,
+    },
+    /// `p1 | p2` nested inside a list or record pattern.
+    Alt(Vec<MatchPat>, Span),
+}
+
+/// The `...` part of a list pattern.
+#[derive(Debug, Clone)]
+pub enum ListRest {
+    /// `..._`: any further elements, not bound.
+    Ignore,
+    /// `...name`: further elements bound to `name` as a list.
     Bind(String),
+}
+
+impl MatchPat {
+    pub fn span(&self) -> Span {
+        match self {
+            MatchPat::Lit(e) => e.span,
+            MatchPat::Wildcard(s)
+            | MatchPat::Bind(_, s)
+            | MatchPat::List { span: s, .. }
+            | MatchPat::Record { span: s, .. }
+            | MatchPat::Alt(_, s) => *s,
+        }
+    }
+
+    /// The names the pattern binds, in order, with their spans. For
+    /// alternatives, the names of the first one (all bind the same names).
+    pub fn names(&self, out: &mut Vec<(String, Span)>) {
+        match self {
+            MatchPat::Lit(_) | MatchPat::Wildcard(_) => {}
+            MatchPat::Bind(n, s) => out.push((n.clone(), *s)),
+            MatchPat::List { items, rest, span } => {
+                for p in items {
+                    p.names(out);
+                }
+                if let Some(ListRest::Bind(n)) = rest {
+                    out.push((n.clone(), *span));
+                }
+            }
+            MatchPat::Record { fields, .. } => {
+                for (_, p) in fields {
+                    p.names(out);
+                }
+            }
+            MatchPat::Alt(alts, _) => {
+                if let Some(first) = alts.first() {
+                    first.names(out);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

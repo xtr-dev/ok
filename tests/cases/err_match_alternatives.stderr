@@ -1,0 +1,7 @@
+error[syntax]: this alternative binds no names, but the first one binds `body`
+ --> err_match_alternatives.ok:3:25
+  |
+3 |   {status: 200, body} | {status: 204} => "ok"
+  |                         ^^^^^^^^^^^^^
+  |
+  = help: every alternative of `|` must bind the same names; use separate arms instead

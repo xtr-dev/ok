@@ -1329,22 +1329,16 @@ impl Interp {
         span: Span,
     ) -> R<Value> {
         let v = self.eval(subject, scope)?;
+        let mut bound: Vec<(String, Value)> = Vec::new();
         for arm in arms {
             for pat in &arm.pats {
-                let s = Scope::new(Some(scope.clone()));
-                let hit = match pat {
-                    MatchPat::Wildcard => true,
-                    MatchPat::Bind(name) => {
-                        s.declare(name, v.clone(), false);
-                        true
-                    }
-                    MatchPat::Lit(lit) => {
-                        let lv = self.eval(lit, scope)?;
-                        equal(&lv, &v)
-                    }
-                };
-                if !hit {
+                bound.clear();
+                if !self.pattern_matches(pat, &v, scope, &mut bound)? {
                     continue;
+                }
+                let s = Scope::new(Some(scope.clone()));
+                for (name, value) in bound.drain(..) {
+                    s.declare(&name, value, false);
                 }
                 if let Some(g) = &arm.guard {
                     let gv = self.eval(g, &s)?;
@@ -1361,6 +1355,83 @@ impl Interp {
             format!("no match arm matches {}", v.repr()),
         )
         .map_err(|f| with_help(f, "add a `_ => ...` arm for all other values"))
+    }
+
+    /// Whether `v` matches `pat` (SPEC.md 6.6). Bindings are appended to
+    /// `bound`; when the result is `false`, `bound` is left as it was.
+    fn pattern_matches(
+        &mut self,
+        pat: &MatchPat,
+        v: &Value,
+        scope: &Rc<Scope>,
+        bound: &mut Vec<(String, Value)>,
+    ) -> R<bool> {
+        let mark = bound.len();
+        let hit = match pat {
+            MatchPat::Wildcard(_) => true,
+            MatchPat::Bind(name, _) => {
+                bound.push((name.clone(), v.clone()));
+                true
+            }
+            MatchPat::Lit(lit) => {
+                let lv = self.eval(lit, scope)?;
+                equal(&lv, v)
+            }
+            MatchPat::List { items, rest, .. } => match v {
+                Value::List(list) => {
+                    let len_ok = if rest.is_some() {
+                        list.len() >= items.len()
+                    } else {
+                        list.len() == items.len()
+                    };
+                    let mut ok = len_ok;
+                    if ok {
+                        for (p, item) in items.iter().zip(list.iter()) {
+                            if !self.pattern_matches(p, item, scope, bound)? {
+                                ok = false;
+                                break;
+                            }
+                        }
+                    }
+                    if ok && let Some(ListRest::Bind(name)) = rest {
+                        bound.push((name.clone(), Value::list(list[items.len()..].to_vec())));
+                    }
+                    ok
+                }
+                _ => false,
+            },
+            MatchPat::Record { fields, .. } => match v {
+                Value::Record(r) => {
+                    let mut ok = true;
+                    for (key, p) in fields {
+                        let matched = match r.get(key) {
+                            Some(field) => self.pattern_matches(p, field, scope, bound)?,
+                            None => false,
+                        };
+                        if !matched {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    ok
+                }
+                _ => false,
+            },
+            MatchPat::Alt(alts, _) => {
+                let mut ok = false;
+                for alt in alts {
+                    if self.pattern_matches(alt, v, scope, bound)? {
+                        ok = true;
+                        break;
+                    }
+                }
+                ok
+            }
+        };
+        if !hit {
+            bound.truncate(mark);
+        }
+        Ok(hit)
     }
 
     fn error_record(&mut self, e: &OkError) -> Value {

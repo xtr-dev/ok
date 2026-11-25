@@ -539,3 +539,20 @@ syntax error with a hint is clearer; inside a loop or function nested in
 the `finally` block they work as usual. The value of a `finally` block is
 discarded: the `try` expression yields the value of its `try` or `catch`
 block, so adding cleanup never changes a result.
+
+**`match` gets list and record patterns that test instead of fail.** They
+use the shapes of `let` destructuring (7.1) so a reader recognises them, but
+where `let` raises an error on a missing key or a wrong length, a pattern
+simply does not match and the next arm is tried. Record patterns allow extra
+keys, because records from JSON, `fetch` or `run` carry more fields than an
+arm cares about. `..._` ignores the rest of a list, reusing `_` as in other
+patterns instead of adding a bare `...`. Keys may be strings, as in record
+literals, so headers like `"content-type"` can be matched.
+
+**Every alternative of `|` must bind the same names, and a name is bound
+once per pattern.** Otherwise the arm's body could refer to a name that the
+matching alternative did not bind, which would only show up at run time.
+This also applies to top-level alternatives such as `"a" | x =>`, which
+were accepted before but could never be used safely; no example or test
+used them. Exhaustiveness is not checked: a `match` with no matching arm
+stays a run-time error that shows the value, as in 6.6.

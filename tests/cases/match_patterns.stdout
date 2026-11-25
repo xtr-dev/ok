@@ -1,0 +1,21 @@
+empty
+one: 1
+two: 1 and 2
+starts with 1, then 3 more
+not a list: text
+ok: hello
+moved to /new
+other status
+server error 503
+other status
+a record without a status
+not a record
+pair inside: 2 3
+unmatched [1, [2]]
+command build
+content type json, if true
+bas is admin, also ["dev"]
+kim has no admin role
+numbers match
+x is 5
+9 outer

@@ -401,6 +401,11 @@ match_expr  = "match" expr_nostruct "{" { NL } { arm ( NL | "," ) { NL } } "}"
 arm         = pat_alt [ "if" expr ] "=>" ( block | expr )
 pat_alt     = match_pat { "|" match_pat }
 match_pat   = literal | "-" number | "_" | ident
+            | "[" [ list_mpat ] "]"
+            | "{" [ field_mpat { "," field_mpat } [ "," ] ] "}"
+list_mpat   = pat_alt { "," pat_alt } [ "," [ "..." ident ] ]
+            | "..." ident
+field_mpat  = ( ident | keyword | STRING ) [ ":" pat_alt ]
 try_expr    = "try" block ( "catch" [ ident ] block [ "finally" block ]
                           | "finally" block )
 fn_expr     = "fn" "(" [ params ] ")" block
@@ -653,9 +658,48 @@ let exe = match os.name {
 ```
 
 Arms are tried in order. A pattern is a literal (compared with `==`), `_`
-(matches anything), or an identifier (matches anything and binds it). A
-guard `if cond` must be a bool. If no arm matches, it is an error that shows
-the value. `match` yields the value of the chosen arm.
+(matches anything), an identifier (matches anything and binds it), or a list
+or record pattern. A guard `if cond` must be a bool. If no arm matches, it is
+an error that shows the value. `match` yields the value of the chosen arm.
+`match` does not require the arms to cover every value.
+
+List and record patterns look like the destructuring patterns of `let`
+(7.1), but they test instead of fail:
+
+```
+let summary = match fetch(url, check: false) {
+  {status: 200, body} => "ok: {len(body)} bytes"
+  {status: 301 | 302, headers: {location}} => "moved to {location}"
+  {status} if status >= 500 => "server error {status}"
+  _ => "other"
+}
+
+fn describe(xs) {
+  match xs {
+    [] => "empty"
+    [only] => "one: {only}"
+    [first, ..._] => "starts with {first}"
+  }
+}
+```
+
+- A **list pattern** `[p1, p2]` matches a list of exactly that length whose
+  elements match `p1`, `p2` in order. `[p1, ...rest]` matches a list of at
+  least that many elements and binds the remaining elements, as a list, to
+  `rest`; `..._` ignores them. `[]` matches only the empty list.
+- A **record pattern** `{key: p}` matches a record that has every listed key
+  with a value matching its pattern; other keys are allowed. `{key}` is
+  short for `{key: key}`: the key must exist, and its value is bound to
+  `key`. `{}` matches any record. Keys are written like record literal keys:
+  an identifier, a keyword, or a string (`{"content-type": ct}`).
+- A list pattern never matches a value that is not a list, and a record
+  pattern never matches a value that is not a record; neither is an error.
+- Patterns nest, and `|` alternatives may appear inside them
+  (`{status: 200 | 201}`).
+- A name may be bound only once in a pattern, and every alternative of a
+  `|` must bind the same names, so that the guard and the body can rely on
+  them. Both are syntax errors.
+- Names bound by a pattern are visible only in that arm's guard and body.
 
 ### 6.7 `try` / `catch`
 
