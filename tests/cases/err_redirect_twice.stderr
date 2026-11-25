@@ -1,0 +1,7 @@
+error[syntax]: stderr is redirected twice
+ --> err_redirect_twice.ok:1:37
+  |
+1 | run ok-fixture echo hi 2> out/a.log 2>&1
+  |                                     ^^^^
+  |
+  = help: give each of stdin, stdout and stderr at most one redirect

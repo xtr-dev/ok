@@ -7,12 +7,13 @@ in the code. Each needs a spec change and review before it is built.
 - Choice types for parameters (`--role: "admin" | "user"`), shown in `--help`
   and completions.
 - Content-hash mode for `sources`/`outputs` up-to-date checks.
-- Running independent `needs` dependencies in parallel.
 - Nested namespaces (`ok/db/seed.ok`) and reaching a mounted sub-project's
   namespaces.
-- Passing arguments to dependencies: `needs [build(release: true)]`.
-- Stderr redirection operators (`2>`, `2>&1`) in command mode.
 - `finally` for `try`.
+- Questions (`prompt`, `confirm()`) from tasks that run in parallel, asked
+  one at a time through the parent ok instead of failing.
+- `--keep-going` for parallel dependencies: start the remaining independent
+  tasks after a failure and report all failures at the end.
 - Reading compressed data directly: `read("x.json.gz")`.
 - Record and list patterns in `match` arms.
 - A permission system for tasks (`task x allow [net, env "KEY"]`); the syntax

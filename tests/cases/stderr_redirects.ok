@@ -1,0 +1,22 @@
+# stderr redirection: 2>, 2>> and 2>&1 (SPEC.md 9.2, 9.5).
+let dir = tempdir()
+run ok-fixture mixed 2> {dir / "err.txt"}
+run ok-fixture stderr appended 2>> {dir / "err.txt"}
+print(read(dir / "err.txt") | lines)
+let r = run ok-fixture mixed 2>&1
+print(r.out | lines, "[{r.err}]")
+let q = run ok-fixture mixed 2> {dir / "quiet.txt"}
+print(q.out | lines, "[{q.err}]")
+# The order of `>` and `2>&1` does not matter.
+run ok-fixture mixed 2>&1 > {dir / "all.txt"}
+print(read(dir / "all.txt") | lines)
+print(run ok-fixture mixed 2>&1 | lines | count)
+run ok-fixture mixed 2>&1
+let failed = try {
+  let x = run ok-fixture mixed 7 2>&1
+  x
+} catch e { e }
+print(failed.code, failed.stderr)
+# A `2` with a space after it is an ordinary argument.
+run ok-fixture args 2 > {dir / "two.txt"}
+print(read(dir / "two.txt"))

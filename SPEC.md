@@ -99,6 +99,7 @@ name belongs to the task or script.
 | `--trust` | Run project tasks without a trust prompt, for this invocation only (same as `OK_TRUST=1`). |
 | `--force` | Run tasks even when their `sources`/`outputs` say they are up to date. |
 | `--env NAME` | Additionally load `.env.NAME` (section 15.7). |
+| `-j N`, `--jobs N` | Run at most `N` (at least 1) task dependencies at the same time (15.5). The default is the number of CPUs ok may use; `-j1` runs them one at a time. Also written `-jN` and `--jobs=N`. |
 | `--color WHEN` | `auto` (default), `always` or `never`. `NO_COLOR` set to a non-empty value means `never`. |
 | `-h`, `--help` | Print usage. After a task or script name, `--help` prints that task's or script's help instead. |
 | `--version` | Same as `ok self version`. |
@@ -834,7 +835,8 @@ word        = segment { segment }                (* no whitespace between segmen
             | "{..." expr "}"                    (* spread; must be the whole word *)
 segment     = bare | dq_string | sq_string | "{" expr "}"
 bare        = bare_char { bare_char }
-redirect    = ( ">" | ">>" | "<" ) target
+redirect    = ( ">" | ">>" | "<" | "2>" | "2>>" ) target
+            | "2>&1"
 target      = word
 terminator  = NL | EOF | "|" | ")" | "}" | comment
 ```
@@ -870,6 +872,14 @@ Rules:
     line.
 12. `$(` and backticks are errors suggesting `{run ...}` interpolation or a
     `let`.
+13. `2>`, `2>>` and `2>&1` are stderr redirects only where a word would
+    start with an unquoted `2` directly followed by `>`. `2 > x` passes the
+    argument `2` and redirects stdout; `x2>y` passes `x2`. `2>&1` is written
+    without spaces and is followed by a blank or the end of the command;
+    `2>&` followed by anything other than `1` is an error.
+14. Each of stdin, stdout and stderr takes at most one redirect: `> a > b`
+    and `2> err.log 2>&1` are errors. A redirect target starting with `&`
+    (`>&2`, `2> &1`) is an error; quote it to name such a file.
 
 Conversion of interpolated values to arguments:
 
@@ -927,6 +937,8 @@ stands**, never by what the command does:
 | anywhere else (`let r = run ...`, argument, interpolation, `return`) | captured | captured | result record |
 | left of `\|` (piped) | streamed into the pipeline | terminal, live | lazy text of stdout |
 | with `> target` / `>> target` | written / appended to the file | by position | as above |
+| with `2> target` / `2>> target` | by position | written / appended to the file | as above; a captured `err` is `""` |
+| with `2>&1` | by position | merged into stdout | as above; a captured `err` is `""` |
 
 The **result record** has fields `out` (string), `err` (string), `code`
 (int), `ok` (bool, `code == 0`), `cmd` (list of strings) and `duration`. In
@@ -950,8 +962,22 @@ ok closes the pipe and terminates the command; its exit status is then
 ignored.
 
 A redirect target is one command-mode word: `> build.log`, `> "my file.txt"`,
-`> {out_dir / "dump.sql"}`. Its value must be a string or path. Combining
-`>` with piping stdout is an error.
+`> {out_dir / "dump.sql"}`. Its value must be a string or path; it is
+converted to the native form (`\` on Windows), like a whole-word path
+argument. Combining `>` with piping stdout is an error. The directory of a
+`>`, `>>`, `2>` or `2>>` target is created if it is missing.
+
+`2>&1` sends stderr to wherever stdout goes, whatever the order of the
+redirects (unlike a shell, `2>&1 > f` and `> f 2>&1` mean the same): to the
+terminal (ok's own stdout) when live, into the captured `out` when captured
+(interleaved as the command wrote it, through one pipe), into the pipeline
+when piped (`run make 2>&1 | where .contains("warning")`), and into the file
+of `>`/`>>`. With `quiet`, merged output is captured and discarded like any
+other output.
+
+The function form `run(...)` has no redirects and no stderr options; a
+command that needs them is written in command mode, where `{...argv}`
+spreads a computed argument list (9.2).
 
 ### 9.6 Options
 
@@ -986,8 +1012,12 @@ word (`run echo with care` passes `with` and `care`).
 
 `run` raises a `command` error when the command exits nonzero, cannot be
 started, or times out. The error carries the command line, the exit code and
-the last 20 lines of stderr when stderr was captured. Uncaught, ok exits with
-the child's exit code (2.3).
+the last 20 lines of stderr when stderr was captured. With `2>&1` and
+captured output, it carries the last 20 lines of the merged output instead,
+shown as `output (last N lines)` and also given as the error record's
+`stderr`. When stderr went to a file (`2>`, `2>>`, or `2>&1` together with
+`>`), the error names the file: `stderr was written to build.log`.
+Uncaught, ok exits with the child's exit code (2.3).
 
 `run!` never raises for a nonzero exit; the result record carries the code.
 It still raises when the program cannot be found or started.
@@ -1001,7 +1031,11 @@ the working directory if it is not the default:
 ```
 + cargo build --release --target x86_64-unknown-linux-musl
 + (in frontend) npm ci
++ make test < input.txt > build.log 2>&1
 ```
+
+Redirects are shown after the arguments in the order stdin, stdout,
+stderr, with targets in display form (`/`).
 
 ### 9.9 Dry run
 
@@ -1571,7 +1605,8 @@ ok build --help
 The first argument names a root task or a namespace; for a namespace, the
 second names the task in it. A namespace given without a task prints that
 namespace's listing. An unknown name exits with code 2 and suggests close
-matches. A task's `--help` also lists the tasks it runs first and its
+matches. A task's `--help` also lists the tasks it runs first (with their
+arguments as written, `Runs first: gen, build(release: true)`) and its
 confirmation question.
 
 Relative `path` arguments of a task are made absolute against
@@ -1579,17 +1614,112 @@ Relative `path` arguments of a task are made absolute against
 
 ### 15.5 Dependencies (`needs`)
 
-`needs [a, b, db.migrate]` runs the listed tasks before the task's body, in
-the listed order, depth first. Each task runs at most once per invocation.
-An unqualified name is looked up in the declaring file's namespace first,
-then in the root. `ns.task` names a task in a namespace. Dependencies run
-with their default arguments; needing a task that has a required parameter is
-a load-time error. Cycles are detected at load time and reported with the
-cycle:
+```
+task build(--release: bool, --target: string = "native") { ... }
+
+task dist needs [gen, build(release: true), build(release: true, target: "wasm32")] {
+  ...
+}
+```
+
+**Entries.** Each entry of `needs [...]` names a task, optionally followed
+directly (no space) by arguments in parentheses. An unqualified name is
+looked up in the declaring file's namespace first, then in the root;
+`ns.task` names a task in a namespace.
+
+**Arguments** bind to the dependency's parameters by name, like named
+arguments of a call (6.3), with one difference: positional parameters are
+also given by name (`greet(name: "bas")`), and a positional parameter before
+a given one that is not given takes its default. Unnamed arguments, a
+parameter given twice, and the rest parameter are errors. Each value is a
+constant expression (15.2), evaluated in the scope of the file that declares
+the entry, so planning an invocation never runs project code. At load time,
+an unknown task or parameter (with a suggestion), a non-constant value, a
+missing required parameter (7.2; `needs [deploy]` when `deploy` has one) and
+dependency cycles are errors with a span:
 
 ```
-error: task dependency cycle: build -> gen -> build
+error[arg]: task `c` has no parameter `relase`
+ --> ok.ok:2:17
+  |
+2 | task d needs [c(relase: true)] { }
+  |                 ^^^^^^
+  |
+  = help: did you mean `release`?
 ```
+
+Cycles are detected between tasks, whatever the arguments, and reported with
+the cycle: `error: task dependency cycle: build -> gen -> build`. After
+trust and confirmations and before any task runs, every argument of the
+invocation is evaluated and checked against its parameter's type; a mismatch
+is a `type` error pointing at the value.
+
+**Instances.** A dependency is a task together with the arguments its entry
+gives. Two entries anywhere in an invocation that name the same task with
+equal arguments (same names, values equal by `==`, in any order) are the
+same **instance**, which runs at most once. Different arguments make
+different instances, which all run: `needs [build, build(release: true)]`
+runs `build` twice. Defaults are not filled in for this comparison, so
+`build` and `build(release: false)` are two instances even when `false` is
+the default. The invoked task itself runs last, once, with its command-line
+arguments.
+
+**Order.** An instance starts only after every instance it needs has
+finished, and a task's body runs after all of its dependencies have
+finished. Instances that do not depend on each other, directly or
+indirectly, may run at the same time, at most `--jobs N` at once (2.2). With
+`--jobs 1`, and always with `--dry-run` (so the printed plan has a stable
+order), instances run one at a time, depth first in listed order.
+
+**Where instances run.** Whether an instance may overlap with another one is
+decided from the dependency graph, not from timing. An instance that is
+ordered against every other instance of the invocation (each step of a chain
+`a -> b -> c`, or a single dependency) can never overlap, and runs in ok's
+own process exactly like a task run one at a time. Every other instance runs
+in a **worker**: a separate process of the same ok binary, started in the
+directory ok was started in, which runs only that task. A worker:
+
+- shows its output with a prefix: each line it writes to stdout or stderr
+  appears on ok's stdout or stderr as `LABEL | line`, where `LABEL` is the
+  task (`gen`, `db.migrate`, `build(release: true)`, with values shown as in
+  lists) padded to the longest label among the workers of the invocation.
+  Lines are never split or mixed; the order of lines from different workers
+  is unspecified. A last line without a newline gets one. Commands in a
+  worker write to a pipe, not a terminal, so some tools turn off colors.
+- has no terminal for input: its stdin, which its commands inherit, is
+  empty. `prompt()` returns its default or fails, and `confirm()` answers
+  yes with `--yes` and otherwise fails (12.8); the error notes that the task
+  runs in parallel and that `--jobs 1` runs dependencies one at a time. The
+  `confirm "text"` modifiers of all tasks are still asked by ok before
+  anything runs (15.7).
+- gets ok's `--trace`, `--yes`, `--env` and `--color` settings and every
+  environment change made so far (env files, earlier tasks).
+- refuses to run when the project files no longer have the content that was
+  trusted (16) for the invocation.
+- ends with `exit(code)` like a separate run: `exit(0)` counts as success,
+  any other code as a failure of that task.
+
+Up-to-date checks (15.6) of workers' tasks are made by ok before starting
+them; a skipped one prints `LABEL: up to date`. ok's own global option that
+starts a worker is internal and not part of this interface.
+
+**Failure.** When an instance fails, ok starts no further instance, waits
+for the running workers to finish (it does not interrupt them, so their
+commands are never cut off halfway), and then fails:
+
+```
+broken | error[fail]: it broke
+broken |  --> ok.ok:2:3
+...
+slow   | slow finished
+error: task `broken` failed with exit code 1
+  = its output is above, each line starting with `broken |`
+```
+
+The failing task's own error is part of its prefixed output. Other workers
+that failed in the meantime are listed as `also failed: ...`. ok exits with
+the exit code of the first failed worker. An instance that fails in ok's own
+process fails the invocation as before.
 
 ### 15.6 Up-to-date checks (`sources`, `outputs`)
 

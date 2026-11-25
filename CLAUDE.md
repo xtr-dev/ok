@@ -122,6 +122,7 @@ from `lazy::cursor`.
 | `archive.rs` | `zip`/`unzip`/`tar`/`untar` with zip-slip checks |
 | `sig.rs` | command-line parsing and `--help` from a signature (scripts and tasks) |
 | `project.rs` | project loading, namespaces, mounts, `needs`, running tasks, listing, completions |
+| `jobs.rs` | dependency plan (task instances with arguments), sequential and parallel runs, `--task-worker` processes |
 | `trust.rs` | fingerprints, trust store, prompt, diff, `ok trust`/`untrust` |
 | `fmt.rs` | `ok self fmt` (whitespace-only layout) |
 | `tools.rs` | `ok self check`, `fmt`, `init` and the bootstrap wrapper templates |

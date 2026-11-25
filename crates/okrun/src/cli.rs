@@ -32,6 +32,7 @@ Options (before the script or task name):
   --trust         run project tasks without a trust prompt
   --force         run tasks even when they are up to date
   --env NAME      also load .env.NAME
+  -j, --jobs N    run at most N dependencies at the same time (1: one by one)
   --color WHEN    auto, always or never
   -h, --help      print this help
   --version       print the version
@@ -51,6 +52,10 @@ struct Opts {
     force: bool,
     env: Option<String>,
     color: Option<String>,
+    jobs: Option<usize>,
+    /// The hidden `--task-worker` value: run one dependency for a parent
+    /// ok (SPEC.md 15.5).
+    worker: Option<String>,
 }
 
 const OPTION_NAMES: &[&str] = &[
@@ -63,6 +68,7 @@ const OPTION_NAMES: &[&str] = &[
     "--force",
     "--env",
     "--color",
+    "--jobs",
     "--help",
     "--version",
 ];
@@ -116,7 +122,16 @@ fn run(args: Vec<String>) -> i32 {
             "--yes" => opts.yes = true,
             "--trust" => opts.trust = true,
             "--force" => opts.force = true,
-            "-C" | "-e" | "--env" | "--color" => {
+            _ if flag.starts_with("-j")
+                && flag.len() > 2
+                && flag[2..].bytes().all(|b| b.is_ascii_digit()) =>
+            {
+                match parse_jobs(&flag[2..]) {
+                    Ok(n) => opts.jobs = Some(n),
+                    Err(code) => return code,
+                }
+            }
+            "-C" | "-e" | "--env" | "--color" | "-j" | "--jobs" | crate::jobs::WORKER_OPTION => {
                 let Some(v) = value(&mut i) else {
                     return usage_error(&format!("option {flag} needs a value"), None);
                 };
@@ -124,6 +139,11 @@ fn run(args: Vec<String>) -> i32 {
                     "-C" => opts.dir = Some(v),
                     "-e" => opts.eval = Some(v),
                     "--env" => opts.env = Some(v),
+                    "-j" | "--jobs" => match parse_jobs(&v) {
+                        Ok(n) => opts.jobs = Some(n),
+                        Err(code) => return code,
+                    },
+                    crate::jobs::WORKER_OPTION => opts.worker = Some(v),
                     _ => {
                         if !matches!(v.as_str(), "auto" | "always" | "never") {
                             return usage_error(
@@ -165,6 +185,17 @@ fn run(args: Vec<String>) -> i32 {
             ),
             None,
         );
+    }
+    if let Some(spec) = &opts.worker {
+        let Some(root) = crate::project::discover(&start) else {
+            return usage_error("no ok.ok found for the task worker", None);
+        };
+        let mut interp = new_interp(Vec::new(), &opts);
+        let task_opts = task_opts(&opts, color);
+        let result = interp
+            .load_project(&root)
+            .and_then(|p| interp.run_worker(&p, spec, &task_opts));
+        return finish(&mut interp, result, color, false);
     }
     let Some(name) = rest.first().cloned() else {
         // `ok` alone: the task listing inside a project, usage outside.
@@ -219,16 +250,38 @@ fn run(args: Vec<String>) -> i32 {
         );
     };
     let mut interp = new_interp(Vec::new(), &opts);
-    let task_opts = crate::project::TaskOpts {
-        force: opts.force,
-        env: opts.env.clone(),
-        trust: opts.trust,
-        all: false,
-    };
+    let task_opts = task_opts(&opts, color);
     let result = interp
         .load_project(&root)
         .and_then(|p| interp.run_task(&p, &rest, &task_opts));
     finish(&mut interp, result, color, false)
+}
+
+fn task_opts(opts: &Opts, color: Color) -> crate::project::TaskOpts {
+    crate::project::TaskOpts {
+        force: opts.force,
+        env: opts.env.clone(),
+        trust: opts.trust,
+        all: false,
+        jobs: opts.jobs.unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+        }),
+        color: color == Color::Always,
+    }
+}
+
+/// The value of `--jobs`: a whole number of at least 1; an error returns
+/// the usage exit code.
+fn parse_jobs(v: &str) -> Result<usize, i32> {
+    match v.parse::<usize>() {
+        Ok(n) if n >= 1 => Ok(n),
+        _ => Err(usage_error(
+            &format!("--jobs needs a number of at least 1, got {v}"),
+            Some("--jobs 1 runs dependencies one at a time".into()),
+        )),
+    }
 }
 
 fn self_command(args: &[String], opts: &Opts, start: &Path, color: Color) -> i32 {
@@ -326,6 +379,7 @@ fn new_interp(args: Vec<String>, opts: &Opts) -> Interp {
         trace: opts.trace,
         dry_run: opts.dry_run,
         yes: opts.yes,
+        parallel: false,
     };
     interp
 }

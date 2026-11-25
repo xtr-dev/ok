@@ -373,7 +373,8 @@ impl Interp {
             .collect();
         for ti in 0..tasks.len() {
             let mut needs = Vec::new();
-            for (name, span) in tasks[ti].decl.needs.clone() {
+            for need in tasks[ti].decl.needs.clone() {
+                let (name, span) = (need.name.clone(), need.name_span);
                 let found = match name.split_once('.') {
                     Some((ns, n)) => tasks
                         .iter()
@@ -404,26 +405,7 @@ impl Interp {
                     .maybe_help(help)
                     .into());
                 };
-                let required = tasks[dep].decl.params.iter().any(|p| {
-                    p.default.is_none()
-                        && !p.rest
-                        && !(p.flag
-                            && matches!(
-                                p.ty,
-                                Some(TypeAnn::Bool)
-                                    | Some(TypeAnn::Optional(_))
-                                    | Some(TypeAnn::List(_))
-                            ))
-                });
-                if required {
-                    return Err(OkError::at(
-                        ErrKind::Arg,
-                        span,
-                        format!("task `{name}` needs arguments, so it cannot be a dependency"),
-                    )
-                    .with_help("give its parameters defaults, or share the code through a fn")
-                    .into());
-                }
+                check_need_args(&need, &tasks[dep].decl)?;
                 needs.push(dep);
             }
             tasks[ti].needs = needs;
@@ -474,6 +456,74 @@ impl Interp {
     }
 }
 
+/// Whether a task parameter must be given (SPEC.md 7.2).
+fn is_required(p: &crate::ast::Param) -> bool {
+    p.default.is_none()
+        && !p.rest
+        && !matches!(p.ty, Some(TypeAnn::Optional(_)))
+        && !(p.flag && matches!(p.ty, Some(TypeAnn::Bool) | Some(TypeAnn::List(_))))
+}
+
+/// Check the arguments of one `needs` entry against the parameters of the
+/// task it names (SPEC.md 15.5). Their values are checked when the
+/// invocation is planned, because constants are only evaluated then.
+fn check_need_args(need: &crate::ast::Need, dep: &TaskDecl) -> R<()> {
+    for (arg, span, _) in &need.args {
+        match dep.params.iter().find(|p| p.name == *arg) {
+            Some(p) if p.rest => {
+                return Err(OkError::at(
+                    ErrKind::Arg,
+                    *span,
+                    format!(
+                        "`{arg}` collects the extra arguments of task `{}` and cannot be given in needs",
+                        need.name
+                    ),
+                )
+                .into());
+            }
+            Some(_) => {}
+            None => {
+                let names: Vec<&str> = dep
+                    .params
+                    .iter()
+                    .filter(|p| !p.rest)
+                    .map(|p| p.name.as_str())
+                    .collect();
+                let help = suggest(arg, names.iter().copied())
+                    .map(|s| format!("did you mean `{s}`?"))
+                    .or_else(|| {
+                        Some(if names.is_empty() {
+                            format!("task `{}` takes no arguments", need.name)
+                        } else {
+                            format!("its parameters are {}", names.join(", "))
+                        })
+                    });
+                return Err(OkError::at(
+                    ErrKind::Arg,
+                    *span,
+                    format!("task `{}` has no parameter `{arg}`", need.name),
+                )
+                .maybe_help(help)
+                .into());
+            }
+        }
+    }
+    if let Some(p) = dep
+        .params
+        .iter()
+        .find(|p| is_required(p) && !need.args.iter().any(|(a, _, _)| *a == p.name))
+    {
+        return Err(OkError::at(
+            ErrKind::Arg,
+            need.span,
+            format!("task `{}` needs the argument `{}`", need.name, p.name),
+        )
+        .with_help(format!("give it here: {}({}: ...)", need.name, p.name))
+        .into());
+    }
+    Ok(())
+}
+
 fn detect_cycles(tasks: &[Task]) -> R<()> {
     // 0 = unvisited, 1 = on the stack, 2 = done.
     fn visit(
@@ -522,6 +572,11 @@ fn detect_cycles(tasks: &[Task]) -> R<()> {
 #[derive(Default, Clone)]
 pub struct TaskOpts {
     pub force: bool,
+    /// How many dependencies may run at the same time (`--jobs`); 1 runs
+    /// them one after another in this process.
+    pub jobs: usize,
+    /// Whether worker processes render errors in color.
+    pub color: bool,
     pub env: Option<String>,
     pub trust: bool,
     pub all: bool,
@@ -627,6 +682,7 @@ impl Project {
                             "--trust",
                             "--force",
                             "--env",
+                            "--jobs",
                             "--color",
                             "--help",
                             "--version",
@@ -736,10 +792,23 @@ impl Interp {
             sig::Outcome::Help(_) => {
                 let mut text = sig::help(&target, &self.sources);
                 if !task.needs.is_empty() {
+                    // Each entry as written, so `build(release: true)` shows
+                    // its arguments.
+                    let file = self.sources.file(task.decl.name_span.file);
                     let names: Vec<String> = task
+                        .decl
                         .needs
                         .iter()
-                        .map(|&d| project.tasks[d].qualified())
+                        .zip(&task.needs)
+                        .map(|(n, &d)| {
+                            let written = &file.text[n.span.start as usize..n.span.end as usize];
+                            match written.find('(') {
+                                Some(i) => {
+                                    format!("{}{}", project.tasks[d].qualified(), &written[i..])
+                                }
+                                None => project.tasks[d].qualified(),
+                            }
+                        })
                         .collect();
                     text.push_str(&format!("\nRuns first: {}\n", names.join(", ")));
                 }
@@ -752,7 +821,9 @@ impl Interp {
             sig::Outcome::Run(p) => p,
         };
 
-        // The order of execution: dependencies first, each at most once.
+        // Every task the invocation may run, dependencies first; used for
+        // the confirmations, which only depend on the tasks, not on the
+        // arguments given to them.
         let mut order = Vec::new();
         let mut seen = HashSet::new();
         fn plan(i: usize, p: &Project, seen: &mut HashSet<usize>, order: &mut Vec<usize>) {
@@ -786,6 +857,33 @@ impl Interp {
             }
         }
 
+        let scopes = self.enter_project(project, opts)?;
+        let deps = self.plan_needs(project, &scopes, ti)?;
+        self.run_needs(project, &scopes, &deps, opts)?;
+        let span = task.decl.name_span;
+        let args = Args {
+            pos: parsed.pos,
+            named: parsed
+                .named
+                .into_iter()
+                .map(|(n, v)| (n, v, span))
+                .collect(),
+            span,
+        };
+        self.run_one(project, &scopes, ti, args, !opts.force)?;
+        let _ = std::env::set_current_dir(&project.root);
+        Ok(Value::Null)
+    }
+
+    /// Prepare the process for running tasks: env files, the working
+    /// directory, the `cwd` and `invocation_dir` globals, and the
+    /// declarations of every file (fns, constant lets, imports). Returns the
+    /// top-level scope of each file.
+    pub(crate) fn enter_project(
+        &mut self,
+        project: &Project,
+        opts: &TaskOpts,
+    ) -> R<HashMap<usize, Rc<Scope>>> {
         self.load_env_files(project, opts)?;
         self.project_root = Some(project.root.clone());
         std::env::set_current_dir(&project.root).map_err(|e| {
@@ -796,8 +894,6 @@ impl Interp {
             "invocation_dir",
             Value::path(OkPath::from_native(&self.invocation_dir.clone())),
         );
-
-        // Declarations of every file (fns, constant lets, imports).
         let mut scopes: HashMap<usize, Rc<Scope>> = HashMap::new();
         for (fi, f) in project.files.iter().enumerate() {
             let dir = f.path.parent().map(Path::to_path_buf).unwrap_or_default();
@@ -805,44 +901,37 @@ impl Interp {
             self.exec_file(&f.prog, &scope, &dir, f.id)?;
             scopes.insert(fi, scope);
         }
+        Ok(scopes)
+    }
 
-        let mut target_args = Some(parsed);
-        for &i in &order {
-            let t = &project.tasks[i];
-            let run_dir = &project.files[t.file].run_dir;
-            std::env::set_current_dir(run_dir).map_err(|e| {
-                OkError::new(
-                    ErrKind::Io,
-                    format!(
-                        "cannot enter {}: {e}",
-                        OkPath::from_native(run_dir).display()
-                    ),
-                )
-            })?;
-            self.set_global("cwd", Value::path(OkPath::from_native(run_dir)));
-            let is_target = i == ti;
-            if !opts.force && self.up_to_date(t, &scopes[&t.file], run_dir)? {
-                eprintln!("{}: up to date", t.qualified());
-                continue;
-            }
-            let span = t.decl.name_span;
-            let given = if is_target { target_args.take() } else { None };
-            let args = match given {
-                Some(p) => Args {
-                    pos: p.pos,
-                    named: p.named.into_iter().map(|(n, v)| (n, v, span)).collect(),
-                    span,
-                },
-                None => Args {
-                    pos: Vec::new(),
-                    named: Vec::new(),
-                    span,
-                },
-            };
-            self.call_user(&t.func, &scopes[&t.file], args)?;
+    /// Run one task in this process: enter its directory, skip it when it
+    /// is up to date (if `check`), else call its body with `args`.
+    pub(crate) fn run_one(
+        &mut self,
+        project: &Project,
+        scopes: &HashMap<usize, Rc<Scope>>,
+        ti: usize,
+        args: Args,
+        check: bool,
+    ) -> R<()> {
+        let t = &project.tasks[ti];
+        let run_dir = &project.files[t.file].run_dir;
+        std::env::set_current_dir(run_dir).map_err(|e| {
+            OkError::new(
+                ErrKind::Io,
+                format!(
+                    "cannot enter {}: {e}",
+                    OkPath::from_native(run_dir).display()
+                ),
+            )
+        })?;
+        self.set_global("cwd", Value::path(OkPath::from_native(run_dir)));
+        if check && self.up_to_date(t, &scopes[&t.file], run_dir)? {
+            eprintln!("{}: up to date", t.qualified());
+            return Ok(());
         }
-        let _ = std::env::set_current_dir(&project.root);
-        Ok(Value::Null)
+        self.call_user(&t.func, &scopes[&t.file], args)?;
+        Ok(())
     }
 
     /// `env file` declarations and `--env NAME` (SPEC.md 15.7). Variables
@@ -908,7 +997,7 @@ impl Interp {
     }
 
     /// Whether a task with `outputs` can be skipped (SPEC.md 15.6).
-    fn up_to_date(&mut self, t: &Task, scope: &Rc<Scope>, dir: &Path) -> R<bool> {
+    pub(crate) fn up_to_date(&mut self, t: &Task, scope: &Rc<Scope>, dir: &Path) -> R<bool> {
         let Some(outputs) = &t.decl.outputs else {
             return Ok(false);
         };

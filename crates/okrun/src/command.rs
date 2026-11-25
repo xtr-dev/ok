@@ -46,13 +46,66 @@ struct Options {
     quiet: bool,
 }
 
+/// Where a command's stderr goes when it is redirected (SPEC.md 9.5).
+#[derive(Clone, Debug, PartialEq)]
+enum StderrTo {
+    /// `2> path` (false) or `2>> path` (true).
+    File(PathBuf, bool),
+    /// `2>&1`: the same place as stdout.
+    Stdout,
+}
+
+/// The redirects of one command.
+#[derive(Default)]
+struct Redirects {
+    stdout_to: Option<(PathBuf, bool)>,
+    stdin_from: Option<PathBuf>,
+    stderr_to: Option<StderrTo>,
+}
+
+impl Redirects {
+    /// The redirects as written, for `--trace` and `--dry-run`:
+    /// ` < in > out 2> err`.
+    fn note(&self) -> String {
+        let show = |p: &PathBuf| OkPath::from_native(p).display();
+        let mut s = String::new();
+        if let Some(p) = &self.stdin_from {
+            s.push_str(&format!(" < {}", show(p)));
+        }
+        match &self.stdout_to {
+            Some((p, false)) => s.push_str(&format!(" > {}", show(p))),
+            Some((p, true)) => s.push_str(&format!(" >> {}", show(p))),
+            None => {}
+        }
+        match &self.stderr_to {
+            Some(StderrTo::File(p, false)) => s.push_str(&format!(" 2> {}", show(p))),
+            Some(StderrTo::File(p, true)) => s.push_str(&format!(" 2>> {}", show(p))),
+            Some(StderrTo::Stdout) => s.push_str(" 2>&1"),
+            None => {}
+        }
+        s
+    }
+
+    /// The file stderr ends up in, if any: `2> file`, or `2>&1` with `> file`.
+    fn stderr_file(&self) -> Option<&PathBuf> {
+        match &self.stderr_to {
+            Some(StderrTo::File(p, _)) => Some(p),
+            Some(StderrTo::Stdout) => self.stdout_to.as_ref().map(|(p, _)| p),
+            None => None,
+        }
+    }
+
+    fn merged(&self) -> bool {
+        self.stderr_to == Some(StderrTo::Stdout)
+    }
+}
+
 /// A command ready to start.
 struct Prepared {
     argv: Vec<String>,
     program: PathBuf,
     opts: Options,
-    stdout_to: Option<(PathBuf, bool)>,
-    stdin_from: Option<PathBuf>,
+    redirects: Redirects,
     bang: bool,
     span: Span,
 }
@@ -188,23 +241,29 @@ impl Interp {
             }
             None => Options::default(),
         };
-        let mut stdout_to = None;
-        let mut stdin_from = None;
+        let mut r = Redirects::default();
         for (kind, w) in &cmd.redirects {
+            if *kind == RedirectKind::ErrToOut {
+                r.stderr_to = Some(StderrTo::Stdout);
+                continue;
+            }
             let target = self.redirect_target(w, scope)?;
             match kind {
-                RedirectKind::Out => stdout_to = Some((target, false)),
-                RedirectKind::Append => stdout_to = Some((target, true)),
-                RedirectKind::In => stdin_from = Some(target),
+                RedirectKind::Out => r.stdout_to = Some((target, false)),
+                RedirectKind::Append => r.stdout_to = Some((target, true)),
+                RedirectKind::In => r.stdin_from = Some(target),
+                RedirectKind::ErrOut => r.stderr_to = Some(StderrTo::File(target, false)),
+                RedirectKind::ErrAppend => r.stderr_to = Some(StderrTo::File(target, true)),
+                RedirectKind::ErrToOut => {}
             }
         }
         if stdin.is_some() {
-            if opts.stdin.is_some() || stdin_from.is_some() {
+            if opts.stdin.is_some() || r.stdin_from.is_some() {
                 return Err(cmd_err(span, "this command gets stdin twice: from the pipeline and from `<` or the stdin option").into());
             }
             opts.stdin = stdin;
         }
-        self.start(argv, opts, stdout_to, stdin_from, cmd.bang, span, mode)
+        self.start(argv, opts, r, cmd.bang, span, mode)
     }
 
     /// Evaluate the function form `run("prog", arg, ..., cwd: ...)`.
@@ -283,7 +342,7 @@ impl Interp {
             }
             opts.stdin = stdin;
         }
-        self.start(argv, opts, None, None, bang, span, mode)
+        self.start(argv, opts, Redirects::default(), bang, span, mode)
     }
 
     fn options_from(&mut self, v: &Value, span: Span) -> R<Options> {
@@ -365,18 +424,16 @@ impl Interp {
         Ok(o)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn start(
         &mut self,
         argv: Vec<String>,
         opts: Options,
-        stdout_to: Option<(PathBuf, bool)>,
-        stdin_from: Option<PathBuf>,
+        redirects: Redirects,
         bang: bool,
         span: Span,
         mode: Mode,
     ) -> R<Value> {
-        if mode == Mode::Piped && stdout_to.is_some() {
+        if mode == Mode::Piped && redirects.stdout_to.is_some() {
             return Err(cmd_err(
                 span,
                 "stdout cannot be redirected with `>` and piped with `|` at the same time",
@@ -389,12 +446,7 @@ impl Interp {
             .as_ref()
             .map(|c| format!("(in {}) ", OkPath::from_native(c).display()))
             .unwrap_or_default();
-        let redirect_note = match (&stdout_to, &stdin_from) {
-            (Some((p, false)), _) => format!(" > {}", OkPath::from_native(p).display()),
-            (Some((p, true)), _) => format!(" >> {}", OkPath::from_native(p).display()),
-            (None, Some(p)) => format!(" < {}", OkPath::from_native(p).display()),
-            _ => String::new(),
-        };
+        let redirect_note = redirects.note();
         if self.run_opts.dry_run {
             eprintln!("~ {cwd_note}{line}{redirect_note}");
             return Ok(match mode {
@@ -446,8 +498,7 @@ impl Interp {
             argv,
             program,
             opts,
-            stdout_to,
-            stdin_from,
+            redirects,
             bang,
             span,
         };
@@ -479,7 +530,7 @@ impl Interp {
 
     /// Set up stdin; returns bytes that a writer thread must feed in.
     fn stdin_setup(&mut self, c: &mut Proc, p: &mut Prepared) -> R<Option<Vec<u8>>> {
-        if let Some(path) = &p.stdin_from {
+        if let Some(path) = &p.redirects.stdin_from {
             let f = std::fs::File::open(path).map_err(|e| {
                 cmd_err(
                     p.span,
@@ -513,7 +564,7 @@ impl Interp {
                 // A piped command upstream: connect its stdout directly.
                 let mut src = lazy::text_cursor(self, Value::Lazy(l), p.span)?;
                 if let Some(out) = src.take_child_stdout() {
-                    c.stdin(Stdio::from(out));
+                    c.stdin(out);
                     self.upstream.push(src);
                     return Ok(None);
                 }
@@ -560,33 +611,74 @@ impl Interp {
     }
 
     fn stdout_file(&self, p: &Prepared) -> R<Option<std::fs::File>> {
-        let Some((path, append)) = &p.stdout_to else {
-            return Ok(None);
-        };
+        match &p.redirects.stdout_to {
+            Some((path, append)) => open_target(path, *append, p.span).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// Connect stderr for `2>`, `2>>` and `2>&1`. `stdout_file` is the file
+    /// opened for `>`; `merged_pipe` is the write end of the pipe stdout
+    /// was connected to, when ok reads stdout itself. Returns false when
+    /// stderr is not redirected and the caller decides.
+    fn stderr_setup(
+        &self,
+        c: &mut Proc,
+        p: &Prepared,
+        stdout_file: Option<&std::fs::File>,
+        merged_pipe: Option<&std::io::PipeWriter>,
+    ) -> R<bool> {
+        let io = |e: std::io::Error| cmd_err(p.span, format!("cannot redirect stderr: {e}"));
+        match &p.redirects.stderr_to {
+            None => Ok(false),
+            Some(StderrTo::File(path, append)) => {
+                c.stderr(open_target(path, *append, p.span)?);
+                Ok(true)
+            }
+            Some(StderrTo::Stdout) => {
+                if let Some(f) = stdout_file {
+                    c.stderr(f.try_clone().map_err(io)?);
+                } else if let Some(w) = merged_pipe {
+                    c.stderr(w.try_clone().map_err(io)?);
+                } else {
+                    c.stderr(Stdio::from(std::io::stdout()));
+                }
+                Ok(true)
+            }
+        }
+    }
+}
+
+/// Open the file of a `>`, `>>`, `2>` or `2>>` redirect, creating its
+/// directory.
+fn open_target(path: &Path, append: bool, span: Span) -> R<std::fs::File> {
+    {
         if let Some(parent) = path.parent()
             && !parent.as_os_str().is_empty()
         {
             let _ = std::fs::create_dir_all(parent);
         }
-        let f = std::fs::OpenOptions::new()
+        std::fs::OpenOptions::new()
             .write(true)
             .create(true)
-            .append(*append)
-            .truncate(!*append)
+            .append(append)
+            .truncate(!append)
             .open(path)
             .map_err(|e| {
                 cmd_err(
-                    p.span,
+                    span,
                     format!(
                         "cannot write {}: {}",
                         OkPath::from_native(path).display(),
                         io_reason(&e)
                     ),
                 )
-            })?;
-        Ok(Some(f))
+                .into()
+            })
     }
+}
 
+impl Interp {
     fn spawn(&self, c: &mut Proc, p: &Prepared) -> R<Child> {
         c.spawn().map_err(|e| {
             let mut err = cmd_err(
@@ -602,11 +694,14 @@ impl Interp {
     fn spawn_live(&mut self, mut p: Prepared) -> R<Value> {
         let mut c = self.base_command(&p)?;
         let feed = self.stdin_setup(&mut c, &mut p)?;
-        if let Some(f) = self.stdout_file(&p)? {
+        let out_file = self.stdout_file(&p)?;
+        self.stderr_setup(&mut c, &p, out_file.as_ref(), None)?;
+        if let Some(f) = out_file {
             c.stdout(f);
         }
         let started = Instant::now();
         let mut child = self.spawn(&mut c, &p)?;
+        drop(c);
         let feeder = feed_stdin(&mut child, feed);
         let status = wait_with_timeout(&mut child, p.opts.timeout);
         if let Some(t) = feeder {
@@ -629,22 +724,49 @@ impl Interp {
     fn spawn_captured(&mut self, mut p: Prepared, mode: Mode) -> R<Value> {
         let mut c = self.base_command(&p)?;
         let feed = self.stdin_setup(&mut c, &mut p)?;
-        match self.stdout_file(&p)? {
-            Some(f) => {
+        let out_file = self.stdout_file(&p)?;
+        // With `2>&1` and no `>`, stdout and stderr share one pipe so the
+        // captured `out` keeps their interleaving.
+        let merged_pipe = if p.redirects.merged() && out_file.is_none() {
+            Some(new_pipe(p.span)?)
+        } else {
+            None
+        };
+        let err_redirected = self.stderr_setup(
+            &mut c,
+            &p,
+            out_file.as_ref(),
+            merged_pipe.as_ref().map(|m| &m.1),
+        )?;
+        if !err_redirected {
+            c.stderr(Stdio::piped());
+        }
+        let mut merged_reader = None;
+        match (out_file, merged_pipe) {
+            (Some(f), _) => {
                 c.stdout(f);
             }
-            None => {
+            (None, Some((reader, writer))) => {
+                c.stdout(writer);
+                merged_reader = Some(reader);
+            }
+            (None, None) => {
                 c.stdout(Stdio::piped());
             }
         }
-        c.stderr(Stdio::piped());
         let started = Instant::now();
         let mut child = self.spawn(&mut c, &p)?;
+        // The command keeps copies of the pipe's write end; dropping it
+        // lets the reader see the end of the output once the child exits.
+        drop(c);
         let feeder = feed_stdin(&mut child, feed);
-        let out_reader = child
-            .stdout
-            .take()
-            .map(|s| std::thread::spawn(move || read_all(s)));
+        let out_reader = match merged_reader {
+            Some(r) => Some(std::thread::spawn(move || read_all(r))),
+            None => child
+                .stdout
+                .take()
+                .map(|s| std::thread::spawn(move || read_all(s))),
+        };
         let err_reader = child
             .stderr
             .take()
@@ -668,7 +790,14 @@ impl Interp {
         };
         let code = exit_code(&status);
         if code != 0 && !p.bang {
-            return Err(failure(&p, code, Some(&err)).into());
+            let tail = if p.redirects.merged() {
+                Some(Tail::Output(&out))
+            } else if err_redirected {
+                None
+            } else {
+                Some(Tail::Stderr(&err))
+            };
+            return Err(failure(&p, code, tail).into());
         }
         if p.opts.quiet && mode == Mode::Live {
             return Ok(result_record(&p.argv, code, None, None, elapsed, false));
@@ -708,14 +837,37 @@ impl Interp {
     fn spawn_piped(&mut self, mut p: Prepared) -> R<Value> {
         let mut c = self.base_command(&p)?;
         let feed = self.stdin_setup(&mut c, &mut p)?;
-        c.stdout(Stdio::piped());
-        if p.opts.quiet {
+        // With `2>&1`, stdout and stderr share one pipe that becomes the
+        // pipeline's input.
+        let merged_pipe = if p.redirects.merged() {
+            Some(new_pipe(p.span)?)
+        } else {
+            None
+        };
+        let err_redirected =
+            self.stderr_setup(&mut c, &p, None, merged_pipe.as_ref().map(|m| &m.1))?;
+        if p.opts.quiet && !err_redirected {
             c.stderr(Stdio::null());
         }
+        let merged_reader = match merged_pipe {
+            Some((reader, writer)) => {
+                c.stdout(writer);
+                Some(reader)
+            }
+            None => {
+                c.stdout(Stdio::piped());
+                None
+            }
+        };
         let mut child = self.spawn(&mut c, &p)?;
+        drop(c);
         let feeder = feed_stdin(&mut child, feed);
-        let stdout = child.stdout.take();
+        let stdout = match merged_reader {
+            Some(r) => Some(OutPipe::Merged(r)),
+            None => child.stdout.take().map(OutPipe::Child),
+        };
         let upstream = std::mem::take(&mut self.upstream);
+        let stderr_file = p.redirects.stderr_file().cloned();
         Ok(Lazy::text(Box::new(ProcessOutput {
             child: Some(child),
             reader: stdout.map(BufReader::new),
@@ -725,6 +877,7 @@ impl Interp {
             span: p.span,
             timeout: p.opts.timeout.map(|t| Instant::now() + t),
             upstream,
+            stderr_file,
         })))
     }
 
@@ -824,24 +977,72 @@ fn stderr_tail(err: &[u8]) -> String {
     lines[start..].join("\n")
 }
 
-fn failure(p: &Prepared, code: i32, err: Option<&[u8]>) -> OkError {
+/// What a failed command's error shows of its output (SPEC.md 9.7).
+enum Tail<'a> {
+    /// Captured stderr.
+    Stderr(&'a [u8]),
+    /// Captured stdout and stderr together (`2>&1`).
+    Output(&'a [u8]),
+}
+
+fn failure(p: &Prepared, code: i32, tail: Option<Tail>) -> OkError {
     let mut e = cmd_err(p.span, format!("command failed with exit code {code}"));
     e.exit_code = Some(code);
     e.command = Some(p.argv.clone());
     e.details
         .push(format!("command: {}", display_command(&p.argv)));
-    if let Some(err) = err {
-        let tail = stderr_tail(err);
+    let (bytes, label) = match tail {
+        Some(Tail::Stderr(b)) => (Some(b), "stderr"),
+        Some(Tail::Output(b)) => (Some(b), "output"),
+        None => (None, ""),
+    };
+    if let Some(bytes) = bytes {
+        let tail = stderr_tail(bytes);
         if !tail.is_empty() {
             let n = tail.lines().count();
             e.details.push(format!(
-                "stderr (last {n} line{}):\n{tail}",
+                "{label} (last {n} line{}):\n{tail}",
                 if n == 1 { "" } else { "s" }
             ));
             e.stderr = Some(tail);
         }
     }
+    if let Some(f) = p.redirects.stderr_file() {
+        e.details.push(format!(
+            "stderr was written to {}",
+            OkPath::from_native(f).display()
+        ));
+    }
     e
+}
+
+fn new_pipe(span: Span) -> R<(std::io::PipeReader, std::io::PipeWriter)> {
+    std::io::pipe().map_err(|e| cmd_err(span, format!("cannot create a pipe: {e}")).into())
+}
+
+/// The stdout of a piped command: the child's own pipe, or with `2>&1` a
+/// pipe that stdout and stderr share.
+enum OutPipe {
+    Child(ChildStdout),
+    Merged(std::io::PipeReader),
+}
+
+impl Read for OutPipe {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            OutPipe::Child(c) => c.read(buf),
+            OutPipe::Merged(m) => m.read(buf),
+        }
+    }
+}
+
+impl From<OutPipe> for Stdio {
+    fn from(p: OutPipe) -> Stdio {
+        match p {
+            OutPipe::Child(c) => Stdio::from(c),
+            OutPipe::Merged(m) => Stdio::from(m),
+        }
+    }
 }
 
 fn timeout_error(p: &Prepared) -> OkError {
@@ -968,13 +1169,15 @@ fn is_runnable(p: &Path) -> bool {
 /// The lazy stdout of a piped command.
 struct ProcessOutput {
     child: Option<Child>,
-    reader: Option<BufReader<ChildStdout>>,
+    reader: Option<BufReader<OutPipe>>,
     feeder: Option<std::thread::JoinHandle<()>>,
     argv: Vec<String>,
     bang: bool,
     span: Span,
     timeout: Option<Instant>,
     upstream: Vec<Box<dyn Source>>,
+    /// The file stderr was redirected to, named in a failure.
+    stderr_file: Option<PathBuf>,
 }
 
 impl ProcessOutput {
@@ -1001,8 +1204,10 @@ impl ProcessOutput {
             argv: self.argv.clone(),
             program: PathBuf::new(),
             opts: Options::default(),
-            stdout_to: None,
-            stdin_from: None,
+            redirects: Redirects {
+                stderr_to: self.stderr_file.clone().map(|f| StderrTo::File(f, false)),
+                ..Redirects::default()
+            },
             bang: self.bang,
             span: self.span,
         };
@@ -1047,8 +1252,8 @@ impl Source for ProcessOutput {
         }
     }
 
-    fn take_child_stdout(&mut self) -> Option<ChildStdout> {
-        self.reader.take().map(BufReader::into_inner)
+    fn take_child_stdout(&mut self) -> Option<Stdio> {
+        self.reader.take().map(|r| Stdio::from(r.into_inner()))
     }
 
     fn finish(&mut self) -> R<()> {

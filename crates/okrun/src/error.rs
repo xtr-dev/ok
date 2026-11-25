@@ -160,6 +160,11 @@ impl OkError {
         self
     }
 
+    pub fn maybe_note(mut self, note: Option<String>) -> OkError {
+        self.notes.extend(note);
+        self
+    }
+
     pub fn maybe_help(mut self, help: Option<String>) -> OkError {
         if help.is_some() {
             self.help = help;

@@ -22,6 +22,7 @@ pub mod fmt;
 pub mod format;
 pub mod formats;
 pub mod interp;
+pub mod jobs;
 pub mod lazy;
 pub mod lexer;
 pub mod list;

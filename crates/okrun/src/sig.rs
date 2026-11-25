@@ -24,6 +24,7 @@ const GLOBAL_OPTIONS: &[&str] = &[
     "--trust",
     "--force",
     "--env",
+    "--jobs",
     "--color",
     "-C",
     "-e",

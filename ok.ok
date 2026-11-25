@@ -49,7 +49,7 @@ task third-party {
   run cargo about generate about.hbs > THIRD_PARTY.md
 }
 
-# Everything CI checks, in order
+# Everything CI checks (lint, test and deny run in parallel)
 task ci needs [lint, test, deny] {
   print("all checks passed")
 }
