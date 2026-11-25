@@ -737,3 +737,117 @@ with `cat` work. The gzip header is written with no name, time 0, OS byte
 OS, following "same output everywhere". Corrupt data is reported as
 "not valid gzip data" with the decoder's reason. `stdin()`, `parse` and
 `to` do not decompress: they have no file name to go by.
+
+## 2026-11-26 (M8)
+
+**`ok self check` reports unknown names and wrong arguments, with no false
+positives.** This replaces the M5 decision to check structure only. The
+checker models the interpreter's scopes exactly (hoisted functions,
+imports, `let`/`var` in order, parameters with defaults that see the
+parameters before them, loop and match bindings, `catch` names) and reports
+a problem only when the code fails every time it runs. A check that is
+sometimes wrong would be ignored, so every place where the answer depends
+on run-time values is left alone (17.1). Each finding in the unit tests is
+also run through the interpreter to prove it really fails.
+
+**Code that runs later sees whole scopes; code that runs in place sees
+only earlier bindings.** Function, closure and task bodies may be called
+after every binding of their enclosing scopes exists, so treating names
+declared further down as unknown there would be false positives; code that
+runs where it stands cannot see a `let` below it, so `print(x)` before `let
+x` is reported, with a help line that says so instead of a misleading
+did-you-mean. The price is that a closure called before a binding it uses
+is not caught.
+
+**Errors inside `try` bodies and `?` chains are not reported.** Both turn
+errors into values, and tests and scripts use them to probe on purpose
+(`int(s)?`, `try { risky() } catch ...`); reporting them would flag working
+code.
+
+**Method calls are checked unless the receiver may hold a function in that
+field.** `x.f()` calls a record's function field `f` before the function
+`f` (6.4), and records can be passed anywhere, so the checker collects
+every key that may hold a function in the file and its imports (record
+literal keys with non-literal values, assigned fields, the exports of
+namespace imports) and skips calls of those names; a computed key or
+`from_entries` disables the check for non-literal receivers. Method names
+of `env` are skipped too, since `let e = env` would make them valid. This
+keeps the common `s.trim()` and `xs.where(...)` checked while records of
+callbacks stay legal.
+
+**Builtin signatures are a table next to the builtins, verified by calling
+every builtin.** Rewriting the 99 builtins to declare their parameters
+would touch every module for no behaviour change; instead `builtins.rs`
+lists each builtin's positional range and named arguments, and a test
+calls every builtin with too few, too many, the allowed and an unknown
+named argument and checks the builtin's own error messages, so the table
+cannot drift from the code.
+
+**An import the checker cannot read disables the name checks of that
+file.** A missing library is a sure load error and is reported; a library
+that does not parse is reported when that file is checked. Either way the
+library could have defined any name, and guessing would produce false
+positives.
+
+**Lints are warnings; warnings do not fail the check unless `--strict`.**
+A lint flags code that runs but is very likely wrong; failing CI on a
+heuristic would push people to stop running the check. `--strict` makes
+warnings fail for teams that want that, mirroring `-D warnings` in Rust.
+Errors exit with 1, like other load errors (2.3).
+
+**The swapped-`write` lint needs a literal path first and no path-like
+second argument.** `write("out.json", data)` is the mistake; the runtime
+check only sees it when the value is a short string. Statically a string
+or `path(...)` literal that looks like a file name in first place is
+enough, unless the second argument also looks like one (`write("a.txt",
+"b.txt")` is ambiguous), so a lint never fires on `write(text, out_path)`.
+It uses the same file-name test as `write` (`formats::looks_like_file_name`).
+
+**The formatter lays out tokens, guided by the syntax tree, and checks its
+own output.** A pretty-printer that rebuilds text from the tree would have
+to carry every comment, literal spelling (`0x1F`, `1_000`, raw strings) and
+closure form through the tree; the lexer already keeps comments with
+positions and every token's text. So the formatter re-emits the source
+tokens with normalised whitespace, uses the tree to tell records from
+blocks, call arguments from groups, pipeline `|` from match alternatives
+and binary from prefix `-`, and before returning parses its output and
+compares the tree (positions removed) and the comments with the original.
+If they differ it refuses, so a formatter bug can never change a program;
+tests run it over every `.ok` file of the repository, also at widths of 60,
+30 and 10 to exercise line breaking everywhere. It now requires a file that
+parses, where the old one only needed it to lex.
+
+**The author's line breaks are kept; lines are only ever split.** Joining
+lines would undo deliberate layouts (one-line `if` bodies, aligned
+parameter lists) and make the result depend on the width in both
+directions; splitting only long lines keeps diffs small and the existing
+examples canonical.
+
+**Lines are at most 100 columns of code; pipelines break first, then the
+largest bracket group.** 100 is the width the examples already respect (one
+line in `largest-files.ok` was reformatted). A pipeline broken before each
+`|` is the style the examples use; for other lines the largest group gives
+the biggest gain in one step, and the new lines are checked again. Lines
+with an end-of-line comment are never broken, because a parameter's help
+text is the comment at the end of its line and moving it would change
+`--help`. A group holding one long string is not split, since that only
+moves the string.
+
+**Indentation counts bracket lines, not brackets.** Two brackets opened on
+one line (`print(match x {`) used to indent the following lines twice;
+indenting relative to the line that opened the innermost bracket gives one
+level, and the closing line returns to that line's level.
+
+**Where whitespace has meaning, the formatter keeps it.** A space before
+`(` or `[` turns a call into a juxtaposed argument, around `.` it decides
+between a field and an implicit closure, and `-` without spaces may be part
+of `--dry-run` or a task name; there the formatter only collapses several
+spaces to one. Everywhere else spacing follows the style of the examples:
+spaces around binary operators and after `,` and `:`, none inside records
+and brackets, spaces inside one-line blocks.
+
+**End-of-line comments keep their column.** Aligned comment blocks (the
+parameter help in the examples) stay aligned when the code before them is
+reindented; when the code grows into the comment, two spaces separate them.
+Own-line comments take the indentation of the code below them, which puts
+a comment above a `| stage` line at the stage's level.

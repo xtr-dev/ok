@@ -16,9 +16,11 @@ in the code. Each needs a spec change and review before it is built.
 - A permission system for tasks (`task x allow [net, env "KEY"]`); the syntax
   is reserved.
 - A REPL beyond `ok -e`.
-- A lint in `ok self check` for `write(value, path)` called with the arguments
-  swapped.
-- Static detection of undefined names and wrong argument counts in
-  `ok self check`.
-- A syntax-tree based formatter (line breaking, spacing inside lines).
+- More static checks in `ok self check`: argument types against annotations
+  and builtins, assigning to a `let`, declaring a name twice, unknown record
+  fields of literals, `needs` checked for a single file outside its project.
+- Following calls in `ok self check`: a closure called before a binding it
+  uses is not caught today.
+- `ok self fmt` joining short multi-line groups back onto one line, and
+  aligning runs of end-of-line comments.
 - A man page (`ok.1`), printed by `ok self man` and attached to releases.
