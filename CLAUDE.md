@@ -16,11 +16,12 @@ Its rules are kept below, and the language it described is now `SPEC.md`.
 
 - All milestones M0 to M7 are implemented; `v0.1.0` is tagged locally (not
   pushed). Bas publishes the repository, the tag/release and the crate.
-- GitHub: private repo `xtr-dev/ok`. Never make it public and never publish
-  to crates.io; Bas does both. CI runs on every push to `main` and every
+- GitHub: public repo `xtr-dev/ok` (made public by Bas on 2026-11-25). Never
+  publish releases or to crates.io; Bas does both. CI runs on every push to `main` and every
   pull request (Linux, macOS, Windows).
-- Not verified: the release workflow (runs only when started by hand) and
-  the Windows wrappers (`ok.cmd`, `ok.ps1`).
+- The release workflow (started by hand) builds the six binaries, runs
+  `tests/smoke/smoke.ok` and the bootstrap wrappers on each target's own OS
+  (job `smoke`), and only then creates the draft release.
 
 ## Commands
 

@@ -1,0 +1,52 @@
+# Smoke test for a release binary on its own OS (run by release.yml).
+# Exercises the parts that depend on the platform: commands, quoting, paths,
+# files, archives, hashing, TLS and exit codes.
+
+fn check(ok: bool, what: string) {
+  if not ok { fail("smoke test failed: {what}") }
+  print("ok   {what}")
+}
+
+fn main(--net: bool) {
+  print("ok {os.name} {os.arch}")
+  let work = tempdir()
+
+  # Commands: program lookup, one argument per interpolation, captured output.
+  let name = (run git -c "user.name=two words \"quoted\" & | <x>" config user.name).out
+  check(name == "two words \"quoted\" & | <x>", "argument quoting survives the OS")
+  check((run git --version).out.starts_with("git version"), "captured output")
+  let r = run! git -C {work} status
+  check(not r.ok and r.code != 0, "failing command gives a result with its code")
+
+  # Paths and files.
+  let nested = work / "a b" / "c.txt"
+  write("line 1\nline 2\n", nested)
+  check(read(nested) == "line 1\nline 2\n", "write and read text in a path with spaces")
+  check(glob("**/*.txt", root: work).len() == 1, "glob")
+  check(str(nested.relative_to(work)) == "a b/c.txt", "paths display with /")
+  let data = [{n: 1, s: "x"}, {n: 2, s: "ü"}]
+  write(data, work / "d.json")
+  write(data, work / "d.csv")
+  check(read(work / "d.json") == data, "json round trip")
+  check(read(work / "d.csv").len() == 2, "csv round trip")
+
+  # Archives and hashing.
+  zip(work / "a b", work / "x.zip")
+  unzip(work / "x.zip", work / "unzipped")
+  check(read(work / "unzipped" / "a b" / "c.txt") == "line 1\nline 2\n", "zip and unzip")
+  tar(work / "a b", work / "x.tar.gz")
+  untar(work / "x.tar.gz", work / "untarred")
+  check(exists(work / "untarred" / "a b" / "c.txt"), "tar.gz and untar")
+  check(hash(bytes("abc")) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "sha256")
+
+  # Environment passed to children.
+  env.set("GIT_AUTHOR_NAME", "Smoke Test")
+  env.set("GIT_AUTHOR_EMAIL", "smoke@example.com")
+  check((run git var GIT_AUTHOR_IDENT).out.starts_with("Smoke Test <smoke@example.com>"), "env.set reaches child processes")
+
+  if net {
+    let resp = fetch("https://github.com")
+    check(resp.status == 200, "https with the OS certificate store")
+  }
+  print("smoke test passed")
+}

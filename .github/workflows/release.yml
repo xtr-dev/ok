@@ -59,9 +59,73 @@ jobs:
           name: ok-${{ matrix.target }}
           path: dist/*
 
+  # Runs every built binary on a machine of its own OS and architecture:
+  # tests/smoke/smoke.ok (commands, quoting, paths, files, archives, TLS),
+  # then `ok self init` and the bootstrap wrappers, served from a local
+  # HTTP server instead of the GitHub release.
+  smoke:
+    name: smoke ${{ matrix.target }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl,  os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+          - { target: x86_64-apple-darwin,        os: macos-15-intel }
+          - { target: aarch64-apple-darwin,       os: macos-latest }
+          - { target: x86_64-pc-windows-msvc,     os: windows-latest }
+          - { target: aarch64-pc-windows-msvc,    os: windows-11-arm }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      TARGET: ${{ matrix.target }}
+      EXT: ${{ contains(matrix.target, 'windows') && '.exe' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd dist
+          if command -v sha256sum >/dev/null; then sha256sum ok-* > SHA256SUMS; else shasum -a 256 ok-* > SHA256SUMS; fi
+          cat SHA256SUMS
+      - name: Smoke script
+        run: |
+          chmod +x "dist/ok-$TARGET$EXT"
+          "dist/ok-$TARGET$EXT" --version
+          "dist/ok-$TARGET$EXT" tests/smoke/smoke.ok --net
+      - name: ok self init and the wrappers
+        env:
+          OK_DOWNLOAD_URL: http://127.0.0.1:8765
+          OK_TRUST: "1"
+          MSYS_NO_PATHCONV: "1"
+        run: |
+          py=$(command -v python3 || command -v python)
+          (cd dist && "$py" -m http.server 8765 --bind 127.0.0.1 >/dev/null 2>&1 &)
+          sleep 3
+          mkdir proj && cd proj
+          "../dist/ok-$TARGET$EXT" self init --checksums ../dist/SHA256SUMS
+          case "$TARGET" in
+            *windows*)
+              cmd /c "ok.cmd hello cmd" | tee out-cmd
+              grep -q "hello, cmd!" out-cmd
+              powershell -NoProfile -ExecutionPolicy Bypass -File ok.ps1 hello ps | tee out-ps
+              grep -q "hello, ps!" out-ps
+              ;;
+            *)
+              ./ok hello sh | tee out-sh
+              grep -q "hello, sh!" out-sh
+              ;;
+          esac
+
   release:
     name: draft release
-    needs: build
+    needs: [build, smoke]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
