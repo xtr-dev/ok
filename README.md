@@ -43,8 +43,8 @@ released: Bas publishes the repository and the first release.
 ## Install
 
 Each release ships single static binaries for Linux (musl), macOS and
-Windows on x86-64 and arm64, plus `SHA256SUMS`, `THIRD_PARTY.md` and
-`LICENSE`:
+Windows on x86-64 and arm64, plus `SHA256SUMS`, `THIRD_PARTY.md` and the
+licence files:
 
 ```
 ok-x86_64-unknown-linux-musl      ok-aarch64-unknown-linux-musl
@@ -81,10 +81,11 @@ cargo test --workspace
 ```
 
 The crate is named `okrun` because `ok` is taken on crates.io; the binary
-is `ok`. Other tools also install a binary called `ok`, so check `which ok`
-if something unexpected runs.
+is `ok`. Because the name is short, a shell alias or another tool you
+installed could also be called `ok`; `which ok` shows which one runs.
 
 ## Licence
 
-Public domain under [CC0 1.0](LICENSE). Third-party notices for the
+Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE),
+at your option. Third-party notices for the
 dependencies compiled into the binary are in [`THIRD_PARTY.md`](THIRD_PARTY.md).

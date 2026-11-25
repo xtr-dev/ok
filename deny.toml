@@ -1,6 +1,7 @@
 # cargo-deny configuration. Run with `cargo deny check`.
 # Policy: permissive licences only. Copyleft licences (GPL, LGPL, AGPL, MPL,
-# EPL, CDDL, ...) are rejected because ok is CC0 and ships as one static binary.
+# EPL, CDDL, ...) are rejected because ok is MIT OR Apache-2.0 and ships as
+# one static binary.
 
 [graph]
 all-features = true

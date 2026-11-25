@@ -50,5 +50,8 @@ under `Unreleased`.
 
 ## Licence
 
-ok is CC0 1.0. By contributing you agree to dedicate your contribution to the
-public domain under the same terms.
+ok is licensed under either of MIT (`LICENSE-MIT`) or Apache-2.0
+(`LICENSE-APACHE`), at your option. Unless you explicitly state otherwise,
+any contribution you intentionally submit for inclusion in ok, as defined in
+the Apache-2.0 licence, is dual licensed as above, without any additional
+terms or conditions.

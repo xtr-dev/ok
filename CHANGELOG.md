@@ -78,8 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   golden`), lexer/parser/path/format unit tests, a random-input no-panic test,
   and cargo-fuzz targets for the lexer and parser.
 
-- Repository setup: Cargo workspace (`okrun` package, `ok` binary), CC0
-  licence, cargo-deny licence policy, cargo-about third-party notices, CI for
+- Repository setup: Cargo workspace (`okrun` package, `ok` binary), MIT OR
+  Apache-2.0 licence, cargo-deny licence policy, cargo-about third-party notices, CI for
   format, clippy and tests on Linux, macOS and Windows, and a release workflow
   for six targets.
 - `SPEC.md`: the full language specification draft for v0.1.0.

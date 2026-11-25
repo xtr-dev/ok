@@ -217,7 +217,7 @@ answer.
 command failures keep the child's code, timeouts use 124 like `timeout(1)`.
 
 **Release artefacts are raw binaries plus `SHA256SUMS`.** The bootstrap
-wrappers then need no archive tool; `THIRD_PARTY.md` and `LICENSE` are
+wrappers then need no archive tool; `THIRD_PARTY.md` and the licence files are
 attached next to the binaries. The release workflow only creates a draft.
 
 ## 2026-11-24 (M0 review)
@@ -490,3 +490,10 @@ upkeep).
 **CI runs automatically again.** Bas switched the push and pull-request
 triggers back on, so every push to `main` is checked on Linux, macOS and
 Windows. The release workflow still runs only when started by hand.
+
+**The licence is MIT OR Apache-2.0 instead of CC0 1.0.** Bas chose it before
+the first release. It is the usual licence of Rust crates, is OSI-approved,
+and, unlike CC0, does not exclude patent rights (Apache-2.0 grants them
+explicitly), which some companies and distributions require. The texts are
+`LICENSE-MIT` and `LICENSE-APACHE`; `PROMPT.md` still mentions CC0 as the
+original brief. Dependencies under CC0 stay allowed in `deny.toml`.

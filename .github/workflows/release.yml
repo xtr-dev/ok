@@ -76,7 +76,7 @@ jobs:
       - name: Notices, licence and checksums
         run: |
           cargo about generate about.hbs > dist/THIRD_PARTY.md
-          cp LICENSE dist/LICENSE
+          cp LICENSE-MIT LICENSE-APACHE dist/
           cd dist
           # Every binary must stay under the 15 MB budget from the definition of done.
           for f in ok-*; do
