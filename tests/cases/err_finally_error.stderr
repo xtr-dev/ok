@@ -1,0 +1,7 @@
+error[fail]: cleanup failed
+ --> err_finally_error.ok:5:3
+  |
+5 |   fail("cleanup failed")
+  |   ^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error in a finally block replaced the error: the original failure

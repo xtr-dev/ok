@@ -1,0 +1,112 @@
+# try / catch / finally (SPEC.md 6.7).
+
+# The value of a try is the value of its block; finally's value is dropped.
+let a = try {
+  1
+} finally {
+  print("finally after a value")
+  99
+}
+print("a", a)
+
+# catch runs first, then finally; the value comes from catch.
+let b = try {
+  fail("boom")
+} catch e {
+  print("caught", e.message)
+  2
+} finally {
+  print("finally after catch")
+}
+print("b", b)
+
+# Without catch, the error continues after finally.
+let c = try {
+  try {
+    fail("inner")
+  } finally {
+    print("finally while an error is pending")
+  }
+} catch e {
+  "outer caught {e.message}"
+}
+print(c)
+
+# An error raised in catch still runs finally.
+let d = try {
+  try {
+    fail("first")
+  } catch e {
+    fail("from catch")
+  } finally {
+    print("finally after a failing catch")
+  }
+} catch e {
+  e.message
+}
+print(d)
+
+# An error in finally replaces the pending outcome.
+let e1 = try {
+  try {
+    fail("original")
+  } finally {
+    fail("cleanup failed")
+  }
+} catch e {
+  e.message
+}
+print(e1)
+
+# return, break and continue pass through finally.
+fn early() {
+  try {
+    return "returned"
+  } finally {
+    print("finally on return")
+  }
+  "not reached"
+}
+print(early())
+
+for x in [1, 2, 3] {
+  try {
+    if x == 1 { continue }
+    if x == 3 { break }
+    print("body", x)
+  } finally {
+    print("finally for", x)
+  }
+}
+
+# Loops and functions inside finally may use break and return as usual.
+try {
+  print("work")
+} finally {
+  for x in [1, 2] {
+    if x == 2 { break }
+    print("cleanup loop", x)
+  }
+  let f = fn() { return "inner return" }
+  print(f())
+}
+
+# finally on its own line after the closing brace.
+let g = try {
+  "same"
+}
+finally {
+  print("finally on the next line")
+}
+print(g)
+
+# finally is a keyword but still works as a field name.
+print({finally: 1}.finally)
+
+# exit() runs finally blocks on the way out.
+try {
+  exit(3)
+} finally {
+  print("finally on exit")
+}
+print("not reached")

@@ -1176,17 +1176,38 @@ impl Interp {
                 body,
                 binding,
                 handler,
-            } => match self.exec_block(body, scope) {
-                Err(Flow::Err(error)) => {
-                    let s = Scope::new(Some(scope.clone()));
-                    if let Some(name) = binding {
-                        let rec = self.error_record(&error);
-                        s.declare(name, rec, false);
+                finally,
+            } => {
+                let outcome = match (self.exec_block(body, scope), handler) {
+                    (Err(Flow::Err(error)), Some(handler)) => {
+                        let s = Scope::new(Some(scope.clone()));
+                        if let Some(name) = binding {
+                            let rec = self.error_record(&error);
+                            s.declare(name, rec, false);
+                        }
+                        self.exec_stmts(&handler.stmts, &s)
                     }
-                    self.exec_stmts(&handler.stmts, &s)
+                    (other, _) => other,
+                };
+                let Some(finally) = finally else {
+                    return outcome;
+                };
+                // The finally block runs however the try and catch blocks
+                // ended; its own value is discarded (SPEC.md 6.7).
+                match self.exec_block(finally, scope) {
+                    Ok(_) => outcome,
+                    Err(Flow::Err(mut e)) => {
+                        if let Err(Flow::Err(pending)) = &outcome {
+                            e.notes.push(format!(
+                                "this error in a finally block replaced the error: {}",
+                                pending.message
+                            ));
+                        }
+                        Err(Flow::Err(e))
+                    }
+                    Err(other) => Err(other),
                 }
-                other => other,
-            },
+            }
             ExprKind::Lambda(decl) => Ok(Value::Func(Rc::new(Func::User {
                 decl: decl.clone(),
                 env: scope.clone(),

@@ -1,0 +1,7 @@
+fn cleanup() {
+  try {
+    print("work")
+  } finally {
+    return 1
+  }
+}

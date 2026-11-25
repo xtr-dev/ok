@@ -164,7 +164,7 @@ A newline does **not** end a statement when:
 2. the last token on the line is a binary operator (`+ - * / % == != < <= > >=
    and or not in ?? | = += -= =>`), a `,`, `.`, `:`, or an opening `( [ {`, or
 3. the first token on the next non-blank line is `|`, `.` followed by an
-   identifier (a method chain), `else`, or `catch`.
+   identifier (a method chain), `else`, `catch`, or `finally`.
 
 Rule 3 allows the pipeline style used throughout this document:
 
@@ -185,8 +185,8 @@ digit      = "0".."9"
 Identifiers are ASCII. Keywords:
 
 ```
-and as break catch continue else false fn for if import in let match
-not null or requires return run task true try var while
+and as break catch continue else false finally fn for if import in let
+match not null or requires return run task true try var while
 ```
 
 Contextual words, keywords only in the position shown: `needs`, `sources`,
@@ -401,7 +401,8 @@ match_expr  = "match" expr_nostruct "{" { NL } { arm ( NL | "," ) { NL } } "}"
 arm         = pat_alt [ "if" expr ] "=>" ( block | expr )
 pat_alt     = match_pat { "|" match_pat }
 match_pat   = literal | "-" number | "_" | ident
-try_expr    = "try" block "catch" [ ident ] block
+try_expr    = "try" block ( "catch" [ ident ] block [ "finally" block ]
+                          | "finally" block )
 fn_expr     = "fn" "(" [ params ] ")" block
 arrow_fn    = ( ident | "(" [ ident { "," ident } ] ")" ) "=>" coalesce
 implicit_fn = "." ident ...                        (* 6.9 *)
@@ -670,6 +671,40 @@ let cfg = try {
 `try` yields the value of its block, or, if an error is raised inside, the
 value of the `catch` block with `e` bound to the error record (10.2). The
 binding name is optional. `fail(e)` re-raises a caught error unchanged.
+
+A `try` needs a `catch` block, a `finally` block, or both (in that order):
+
+```
+let tmp = tempdir()
+try {
+  run! tar -xzf {archive} -C {tmp}
+  build(tmp)
+} finally {
+  remove(tmp / "lock")
+}
+```
+
+The `finally` block runs after the `try` block, and after the `catch` block
+if one ran, however they end:
+
+- normally, with a value;
+- with an error, including one raised in `catch` (a `try` without `catch`
+  does not catch anything; the error continues after `finally`);
+- with `return`, `break` or `continue` passing through it;
+- with `exit(code)`.
+
+When the `finally` block completes normally, the pending outcome stands: the
+`try` expression yields the value of the `try` (or `catch`) block, and the
+value of `finally` is discarded, or the pending error, `return`, `break`,
+`continue` or `exit` continues outwards. When the `finally` block itself
+raises an error (or calls `exit`), that replaces the pending outcome; an
+error raised this way carries a note with the message of the error it
+replaced. `return`, `break` and `continue` that would leave a `finally`
+block are syntax errors, because they would silently discard the pending
+outcome; inside a loop or function within the `finally` block they are
+allowed as usual.
+
+Ctrl-C ends ok without running `finally` blocks (2.3, code 130).
 
 ### 6.8 Closures
 

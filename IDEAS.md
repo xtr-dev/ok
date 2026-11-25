@@ -12,7 +12,6 @@ in the code. Each needs a spec change and review before it is built.
   namespaces.
 - Passing arguments to dependencies: `needs [build(release: true)]`.
 - Stderr redirection operators (`2>`, `2>&1`) in command mode.
-- `finally` for `try`.
 - Reading compressed data directly: `read("x.json.gz")`.
 - Record and list patterns in `match` arms.
 - A permission system for tasks (`task x allow [net, env "KEY"]`); the syntax

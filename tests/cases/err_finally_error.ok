@@ -1,0 +1,6 @@
+# An error in finally replaces the pending one and notes it.
+try {
+  fail("the original failure")
+} finally {
+  fail("cleanup failed")
+}

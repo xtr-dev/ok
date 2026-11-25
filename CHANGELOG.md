@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `finally` for `try`: `try { ... } finally { ... }` and
+  `try { ... } catch e { ... } finally { ... }`. The `finally` block runs
+  however the `try` ends (value, error, `return`, `break`, `continue`,
+  `exit()`); `finally` is now a keyword.
+
 ## [0.1.0] - 2026-11-25
 
 ### Added

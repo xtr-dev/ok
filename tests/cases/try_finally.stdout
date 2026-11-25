@@ -1,0 +1,23 @@
+finally after a value
+a 1
+caught boom
+finally after catch
+b 2
+finally while an error is pending
+outer caught inner
+finally after a failing catch
+from catch
+cleanup failed
+finally on return
+returned
+finally for 1
+body 2
+finally for 2
+finally for 3
+work
+cleanup loop 1
+inner return
+finally on the next line
+same
+1
+finally on exit

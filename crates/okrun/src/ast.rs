@@ -406,10 +406,13 @@ pub enum ExprKind {
         subject: Box<Expr>,
         arms: Vec<Arm>,
     },
+    /// `try { } catch e { } finally { }`; at least one of `handler` and
+    /// `finally` is present.
     Try {
         body: Block,
         binding: Option<String>,
-        handler: Block,
+        handler: Option<Block>,
+        finally: Option<Block>,
     },
     Lambda(Rc<FnDecl>),
     Pipe {

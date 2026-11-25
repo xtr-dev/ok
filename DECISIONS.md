@@ -511,3 +511,31 @@ scripts are a place where shell is acceptable: they only download the
 latest release binary, check it against that release's `SHA256SUMS`, and
 put it on the PATH. The Pages workflow runs both scripts on Linux, macOS and
 Windows before publishing, so a broken script never goes live.
+
+## 2026-11-26 (M10)
+
+**`finally` is a keyword, and `try` takes `catch`, `finally`, or both in
+that order.** A contextual word would have to be recognised after a closing
+brace on the next line, which makes a statement starting with a variable
+named `finally` change meaning; a keyword is unambiguous, and like every
+keyword it still works as a field name and record key (`r.finally`). The
+fixed order `catch` then `finally` matches how the blocks run.
+
+**`finally` always runs, including on `exit()`; an error in `finally`
+replaces the pending outcome.** Cleanup code (removing a lock file, stopping
+a container) is written in `finally` precisely so that it runs on every way
+out, and scripts often call `exit(code)` from helpers, so skipping
+`finally` on `exit` would leak exactly what it exists to clean up. Temporary
+files from `tempdir()`/`tempfile()` are removed at exit anyway (12.8), after
+`finally` blocks have run. When `finally` fails, its error is the one that
+continues, because it is the most recent problem and the one the reader of
+the `finally` block can act on; the error it replaced is kept as a note so
+nothing is lost silently. Ctrl-C still ends ok at once.
+
+**`return`, `break` and `continue` cannot leave a `finally` block.** In
+languages that allow it, a `return` in `finally` silently swallows the
+error being propagated, which is a classic source of hidden failures. A
+syntax error with a hint is clearer; inside a loop or function nested in
+the `finally` block they work as usual. The value of a `finally` block is
+discarded: the `try` expression yields the value of its `try` or `catch`
+block, so adding cleanup never changes a result.

@@ -135,6 +135,11 @@ struct Parser {
     nostruct: bool,
     loop_depth: usize,
     fn_depth: usize,
+    /// The `(loop_depth, fn_depth)` at the start of the innermost `finally`
+    /// block being parsed. A `break`/`continue` at exactly that loop depth,
+    /// or a `return` at that function depth, would leave the `finally` block
+    /// and discard the pending outcome, so it is rejected (SPEC.md 6.7).
+    finally_at: Option<(usize, usize)>,
 }
 
 type PResult<T> = Result<T, OkError>;
@@ -154,6 +159,7 @@ impl Parser {
             nostruct: false,
             loop_depth: 0,
             fn_depth: 0,
+            finally_at: None,
         }
     }
 
@@ -171,6 +177,7 @@ impl Parser {
         let mut p = Parser::new(self.file, tokens, self.ctx.clone(), self.depth);
         p.loop_depth = self.loop_depth;
         p.fn_depth = self.fn_depth;
+        p.finally_at = self.finally_at;
         p
     }
 
@@ -415,6 +422,12 @@ impl Parser {
                         ),
                     ));
                 }
+                if self.finally_at == Some((self.loop_depth, self.fn_depth)) {
+                    return Err(leaves_finally(
+                        t.span,
+                        if is_break { "break" } else { "continue" },
+                    ));
+                }
                 if is_break {
                     StmtKind::Break
                 } else {
@@ -426,6 +439,9 @@ impl Parser {
                 if self.fn_depth == 0 {
                     return Err(syntax(t.span, "`return` outside of a function")
                         .with_help("to stop a script early, use exit(code)"));
+                }
+                if self.finally_at.is_some_and(|(_, f)| f == self.fn_depth) {
+                    return Err(leaves_finally(t.span, "return"));
                 }
                 let value = if matches!(self.peek(), Tok::Newline | Tok::Eof | Tok::RBrace) {
                     None
@@ -1608,29 +1624,7 @@ impl Parser {
             Tok::LBrace if !self.nostruct => self.record(),
             Tok::Kw(Kw::If) => self.if_expr(),
             Tok::Kw(Kw::Match) => self.match_expr(),
-            Tok::Kw(Kw::Try) => {
-                self.bump();
-                let body = self.block()?;
-                self.skip_newlines();
-                self.expect(&Tok::Kw(Kw::Catch), "`catch` after the try block")?;
-                let binding = match self.peek().clone() {
-                    Tok::Ident(n) => {
-                        self.bump();
-                        Some(n)
-                    }
-                    _ => None,
-                };
-                let handler = self.block()?;
-                let s = span.to(handler.span);
-                Ok(Expr::new(
-                    ExprKind::Try {
-                        body,
-                        binding,
-                        handler,
-                    },
-                    s,
-                ))
-            }
+            Tok::Kw(Kw::Try) => self.try_expr(),
             Tok::Kw(Kw::Fn) if self.peek_at(1).tok == Tok::LParen => {
                 self.bump();
                 self.bump();
@@ -1823,6 +1817,46 @@ impl Parser {
         ))
     }
 
+    /// `try { } catch e { } finally { }` (SPEC.md 6.7).
+    fn try_expr(&mut self) -> PResult<Expr> {
+        let start = self.bump().span;
+        let body = self.block()?;
+        let mut end = body.span;
+        let (mut binding, mut handler, mut finally) = (None, None, None);
+        if self.eat(&Tok::Kw(Kw::Catch)) {
+            if let Tok::Ident(n) = self.peek().clone() {
+                self.bump();
+                binding = Some(n);
+            }
+            let h = self.block()?;
+            end = h.span;
+            handler = Some(h);
+        }
+        if self.eat(&Tok::Kw(Kw::Finally)) {
+            let saved = self.finally_at;
+            self.finally_at = Some((self.loop_depth, self.fn_depth));
+            let f = self.block();
+            self.finally_at = saved;
+            let f = f?;
+            end = f.span;
+            finally = Some(f);
+        }
+        if handler.is_none() && finally.is_none() {
+            return Err(self
+                .unexpected("`catch` or `finally` after the try block")
+                .with_help("add `catch e { ... }` to handle the error, or `finally { ... }` for cleanup"));
+        }
+        Ok(Expr::new(
+            ExprKind::Try {
+                body,
+                binding,
+                handler,
+                finally,
+            },
+            start.to(end),
+        ))
+    }
+
     fn match_expr(&mut self) -> PResult<Expr> {
         let start = self.bump().span;
         let subject = self.with_nostruct(true, |p| p.expr())?;
@@ -1908,6 +1942,13 @@ impl Parser {
         self.bump();
         Ok(pat)
     }
+}
+
+fn leaves_finally(span: Span, word: &str) -> OkError {
+    syntax(span, format!("`{word}` cannot leave a finally block"))
+        .with_help(format!(
+            "a finally block runs to its end so that the pending value, error or return is kept; move the `{word}` after the try"
+        ))
 }
 
 fn internal() -> OkError {
@@ -2194,6 +2235,25 @@ mod tests {
             "let x = match os.name {\n  \"windows\" => 1\n  \"linux\" | \"macos\" => 2\n  n if n == \"x\" => 3\n  _ => fail(\"no\")\n}",
         );
         ok("let c = try {\n read(p)\n} catch e {\n {}\n}");
+    }
+
+    #[test]
+    fn try_finally_placement() {
+        ok("try { a() } finally { b() }");
+        ok("try { a() } catch { b() } finally { c() }");
+        ok("try { a() }\nfinally { b() }");
+        ok("for x in xs { try { a() } finally { for y in ys { break } } }");
+        ok("fn f() { try { a() } finally { let g = fn() { return 1 } } }");
+        let e = fails("for x in xs { try { a() } finally { break } }");
+        assert!(e.message.contains("`break` cannot leave a finally block"));
+        let e = fails("for x in xs { try { a() } finally { if x { continue } } }");
+        assert!(e.message.contains("`continue` cannot leave"));
+        let e = fails("fn f() { for x in xs { try { a() } finally { return 1 } } }");
+        assert!(e.message.contains("`return` cannot leave"));
+        let e = fails("try { a() }");
+        assert!(e.message.contains("`catch` or `finally`"));
+        // `finally` before `catch` is not allowed: the order is fixed.
+        fails("try { a() } finally { b() } catch { c() }");
     }
 
     #[test]
