@@ -119,3 +119,17 @@ fn shebang_scripts_run_directly() {
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(stdout(&out), "hello bas\n");
 }
+
+#[test]
+fn dry_run_shows_every_redirect() {
+    let out = ok(&[
+        "--dry-run",
+        "-e",
+        "run tool a < in.txt > out.txt 2>&1\nrun tool b >> log 2>> errors.log\nrun tool c 2> {path(\"logs/err.txt\")}",
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(
+        stderr(&out),
+        "~ tool a < in.txt > out.txt 2>&1\n~ tool b >> log 2>> errors.log\n~ tool c 2> logs/err.txt\n"
+    );
+}

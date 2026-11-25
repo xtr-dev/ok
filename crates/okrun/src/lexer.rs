@@ -147,6 +147,23 @@ pub enum RedirectKind {
     Append,
     /// `<`
     In,
+    /// `2>`
+    ErrOut,
+    /// `2>>`
+    ErrAppend,
+    /// `2>&1`: stderr goes wherever stdout goes. Has no target.
+    ErrToOut,
+}
+
+impl RedirectKind {
+    /// The stream a redirect applies to, for the "redirected twice" check.
+    fn stream(self) -> &'static str {
+        match self {
+            RedirectKind::Out | RedirectKind::Append => "stdout",
+            RedirectKind::In => "stdin",
+            RedirectKind::ErrOut | RedirectKind::ErrAppend | RedirectKind::ErrToOut => "stderr",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1226,6 +1243,46 @@ impl<'a> Lexer<'a> {
                     self.comment();
                     break;
                 }
+                // `2>`, `2>>` and `2>&1` (SPEC.md 9.2 rule 13): only an
+                // unquoted `2` at the start of a word, directly followed by
+                // `>`, is a stream number; `2 > x` passes the argument `2`.
+                b'2' if self.peek_at(1) == Some(b'>') => {
+                    let rest = &self.src[self.pos..];
+                    let kind = if rest.starts_with("2>&1") {
+                        self.pos += 4;
+                        RedirectKind::ErrToOut
+                    } else if rest.starts_with("2>&") {
+                        return Err(self
+                            .err(start, start + 3, "only `2>&1` can follow `2>&`")
+                            .with_help("2>&1 sends stderr to wherever stdout goes; 2> file writes it to a file"));
+                    } else if rest.starts_with("2>>") {
+                        self.pos += 3;
+                        RedirectKind::ErrAppend
+                    } else {
+                        self.pos += 2;
+                        RedirectKind::ErrOut
+                    };
+                    let target = if kind == RedirectKind::ErrToOut {
+                        if !matches!(
+                            self.peek(),
+                            None | Some(b' ' | b'\t' | b'\n' | b'\r' | b'|' | b')' | b'}' | b'#')
+                        ) {
+                            return Err(self.err(
+                                start,
+                                self.pos + 1,
+                                "`2>&1` must be followed by a space or the end of the command",
+                            ));
+                        }
+                        Word {
+                            parts: Vec::new(),
+                            span: self.span(start, self.pos),
+                        }
+                    } else {
+                        self.redirect_target(start)?
+                    };
+                    self.push_redirect(&mut redirects, kind, target, start)?;
+                    continue;
+                }
                 b'>' | b'<' => {
                     let kind = if c == b'<' {
                         self.pos += 1;
@@ -1237,18 +1294,8 @@ impl<'a> Lexer<'a> {
                         self.pos += 1;
                         RedirectKind::Out
                     };
-                    self.skip_blanks();
-                    if matches!(
-                        self.peek(),
-                        None | Some(b'\n' | b'\r' | b'|' | b')' | b'}' | b'>' | b'<' | b'#')
-                    ) {
-                        return Err(self
-                            .err(start, self.pos, "a redirect needs a target file")
-                            .with_help("for example: run make > build.log"));
-                    }
-                    let target = self.word(words.is_empty())?;
-                    let span = self.span(start, self.pos);
-                    redirects.push(Redirect { kind, target, span });
+                    let target = self.redirect_target(start)?;
+                    self.push_redirect(&mut redirects, kind, target, start)?;
                     continue;
                 }
                 _ => {}
@@ -1303,6 +1350,48 @@ impl<'a> Lexer<'a> {
             redirects,
             with,
         })
+    }
+
+    /// The target word of a redirect whose operator ends at `self.pos`.
+    fn redirect_target(&mut self, start: usize) -> Result<Word, OkError> {
+        self.skip_blanks();
+        if matches!(
+            self.peek(),
+            None | Some(b'\n' | b'\r' | b'|' | b')' | b'}' | b'>' | b'<' | b'#')
+        ) {
+            return Err(self
+                .err(start, self.pos, "a redirect needs a target file")
+                .with_help("for example: run make > build.log"));
+        }
+        if self.peek() == Some(b'&') {
+            // `>&2`, `2> &1` and similar shell forms would otherwise name a
+            // file called `&2`.
+            return Err(self
+                .err(start, self.pos + 1, "a redirect target cannot start with `&`")
+                .with_help("ok knows only 2>&1 (written without spaces); quote the name ('&2') to write to such a file"));
+        }
+        self.word(false)
+    }
+
+    /// Record a redirect, refusing a second one for the same stream.
+    fn push_redirect(
+        &self,
+        redirects: &mut Vec<Redirect>,
+        kind: RedirectKind,
+        target: Word,
+        start: usize,
+    ) -> Result<(), OkError> {
+        let span = self.span(start, self.pos);
+        if redirects.iter().any(|r| r.kind.stream() == kind.stream()) {
+            return Err(OkError::at(
+                ErrKind::Syntax,
+                span,
+                format!("{} is redirected twice", kind.stream()),
+            )
+            .with_help("give each of stdin, stdout and stderr at most one redirect"));
+        }
+        redirects.push(Redirect { kind, target, span });
+        Ok(())
     }
 
     /// `with` followed by blanks and `{` starts the options clause.
@@ -1736,6 +1825,39 @@ mod tests {
         let c = command("run a >> log.txt < in.txt");
         assert_eq!(c.redirects[0].kind, RedirectKind::Append);
         assert_eq!(c.redirects[1].kind, RedirectKind::In);
+    }
+
+    #[test]
+    fn command_stderr_redirects() {
+        let c = command("run make 2> err.log");
+        assert_eq!(c.words.len(), 1);
+        assert_eq!(c.redirects[0].kind, RedirectKind::ErrOut);
+        let c = command("run make > all.log 2>&1");
+        assert_eq!(c.redirects[1].kind, RedirectKind::ErrToOut);
+        assert!(c.redirects[1].target.parts.is_empty());
+        let c = command("run make 2>>err.log | lines");
+        assert_eq!(c.redirects[0].kind, RedirectKind::ErrAppend);
+        // A spaced `2` is an ordinary argument.
+        let c = command("run echo 2 > out.txt");
+        assert_eq!(c.words.len(), 2);
+        assert_eq!(c.redirects[0].kind, RedirectKind::Out);
+        let c = command("run echo x2>out.txt");
+        assert_eq!(c.words.len(), 2);
+        assert_eq!(c.redirects[0].kind, RedirectKind::Out);
+        assert!(err("run a 2>&2").message.contains("2>&1"));
+        assert!(err("run a 2>&1x").message.contains("followed by"));
+        assert!(err("run a >&2").message.contains("`&`"));
+        assert!(
+            err("run a 2> err 2>&1")
+                .message
+                .contains("stderr is redirected twice")
+        );
+        assert!(
+            err("run a > x >> y")
+                .message
+                .contains("stdout is redirected twice")
+        );
+        assert!(err("run a 2>&1 b").message.contains("before redirects"));
     }
 
     #[test]

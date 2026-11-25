@@ -834,7 +834,8 @@ word        = segment { segment }                (* no whitespace between segmen
             | "{..." expr "}"                    (* spread; must be the whole word *)
 segment     = bare | dq_string | sq_string | "{" expr "}"
 bare        = bare_char { bare_char }
-redirect    = ( ">" | ">>" | "<" ) target
+redirect    = ( ">" | ">>" | "<" | "2>" | "2>>" ) target
+            | "2>&1"
 target      = word
 terminator  = NL | EOF | "|" | ")" | "}" | comment
 ```
@@ -870,6 +871,14 @@ Rules:
     line.
 12. `$(` and backticks are errors suggesting `{run ...}` interpolation or a
     `let`.
+13. `2>`, `2>>` and `2>&1` are stderr redirects only where a word would
+    start with an unquoted `2` directly followed by `>`. `2 > x` passes the
+    argument `2` and redirects stdout; `x2>y` passes `x2`. `2>&1` is written
+    without spaces and is followed by a blank or the end of the command;
+    `2>&` followed by anything other than `1` is an error.
+14. Each of stdin, stdout and stderr takes at most one redirect: `> a > b`
+    and `2> err.log 2>&1` are errors. A redirect target starting with `&`
+    (`>&2`, `2> &1`) is an error; quote it to name such a file.
 
 Conversion of interpolated values to arguments:
 
@@ -927,6 +936,8 @@ stands**, never by what the command does:
 | anywhere else (`let r = run ...`, argument, interpolation, `return`) | captured | captured | result record |
 | left of `\|` (piped) | streamed into the pipeline | terminal, live | lazy text of stdout |
 | with `> target` / `>> target` | written / appended to the file | by position | as above |
+| with `2> target` / `2>> target` | by position | written / appended to the file | as above; a captured `err` is `""` |
+| with `2>&1` | by position | merged into stdout | as above; a captured `err` is `""` |
 
 The **result record** has fields `out` (string), `err` (string), `code`
 (int), `ok` (bool, `code == 0`), `cmd` (list of strings) and `duration`. In
@@ -950,8 +961,22 @@ ok closes the pipe and terminates the command; its exit status is then
 ignored.
 
 A redirect target is one command-mode word: `> build.log`, `> "my file.txt"`,
-`> {out_dir / "dump.sql"}`. Its value must be a string or path. Combining
-`>` with piping stdout is an error.
+`> {out_dir / "dump.sql"}`. Its value must be a string or path; it is
+converted to the native form (`\` on Windows), like a whole-word path
+argument. Combining `>` with piping stdout is an error. The directory of a
+`>`, `>>`, `2>` or `2>>` target is created if it is missing.
+
+`2>&1` sends stderr to wherever stdout goes, whatever the order of the
+redirects (unlike a shell, `2>&1 > f` and `> f 2>&1` mean the same): to the
+terminal (ok's own stdout) when live, into the captured `out` when captured
+(interleaved as the command wrote it, through one pipe), into the pipeline
+when piped (`run make 2>&1 | where .contains("warning")`), and into the file
+of `>`/`>>`. With `quiet`, merged output is captured and discarded like any
+other output.
+
+The function form `run(...)` has no redirects and no stderr options; a
+command that needs them is written in command mode, where `{...argv}`
+spreads a computed argument list (9.2).
 
 ### 9.6 Options
 
@@ -986,8 +1011,12 @@ word (`run echo with care` passes `with` and `care`).
 
 `run` raises a `command` error when the command exits nonzero, cannot be
 started, or times out. The error carries the command line, the exit code and
-the last 20 lines of stderr when stderr was captured. Uncaught, ok exits with
-the child's exit code (2.3).
+the last 20 lines of stderr when stderr was captured. With `2>&1` and
+captured output, it carries the last 20 lines of the merged output instead,
+shown as `output (last N lines)` and also given as the error record's
+`stderr`. When stderr went to a file (`2>`, `2>>`, or `2>&1` together with
+`>`), the error names the file: `stderr was written to build.log`.
+Uncaught, ok exits with the child's exit code (2.3).
 
 `run!` never raises for a nonzero exit; the result record carries the code.
 It still raises when the program cannot be found or started.
@@ -1001,7 +1030,11 @@ the working directory if it is not the default:
 ```
 + cargo build --release --target x86_64-unknown-linux-musl
 + (in frontend) npm ci
++ make test < input.txt > build.log 2>&1
 ```
+
+Redirects are shown after the arguments in the order stdin, stdout,
+stderr, with targets in display form (`/`).
 
 ### 9.9 Dry run
 

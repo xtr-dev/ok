@@ -11,7 +11,6 @@ in the code. Each needs a spec change and review before it is built.
 - Nested namespaces (`ok/db/seed.ok`) and reaching a mounted sub-project's
   namespaces.
 - Passing arguments to dependencies: `needs [build(release: true)]`.
-- Stderr redirection operators (`2>`, `2>&1`) in command mode.
 - `finally` for `try`.
 - Reading compressed data directly: `read("x.json.gz")`.
 - Record and list patterns in `match` arms.

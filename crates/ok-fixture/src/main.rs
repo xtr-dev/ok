@@ -7,6 +7,8 @@
 //!   args ARGS...        print each argument on its own line, as [arg]
 //!   stderr TEXT...      print the text to stderr
 //!   exit CODE [TEXT]    print TEXT to stderr, exit with CODE
+//!   mixed [CODE]        print "out 1", "err 1", "out 2" alternating between
+//!                       stdout and stderr (flushing each), exit with CODE
 //!   cat                 copy stdin to stdout
 //!   upper               copy stdin to stdout in upper case
 //!   lines N             print lines 1..=N
@@ -122,6 +124,14 @@ fn main() {
                 eprintln!("{}", rest[1..].join(" "));
             }
             rest.first().and_then(|c| c.parse().ok()).unwrap_or(1)
+        }
+        Some("mixed") => {
+            let _ = writeln!(out, "out 1");
+            let _ = out.flush();
+            eprintln!("err 1");
+            let _ = writeln!(out, "out 2");
+            let _ = out.flush();
+            rest.first().and_then(|c| c.parse().ok()).unwrap_or(0)
         }
         Some("cat") | Some("upper") => {
             let mut s = String::new();

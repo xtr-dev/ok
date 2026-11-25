@@ -33,7 +33,7 @@ pub trait Source {
 
     /// For the stdout of a piped command: hand over the raw pipe so the next
     /// command can read it directly (`run a | run b`).
-    fn take_child_stdout(&mut self) -> Option<std::process::ChildStdout> {
+    fn take_child_stdout(&mut self) -> Option<std::process::Stdio> {
         None
     }
 

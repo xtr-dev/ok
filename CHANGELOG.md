@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- stderr redirection in command mode: `2> file`, `2>> file` and `2>&1`
+  (stderr merged into stdout, captured, piped or written together with it).
+  `--trace` and `--dry-run` show every redirect.
+
+### Changed
+
+- Redirecting the same stream twice in one command (`> a > b`) is an error
+  instead of using the last target.
+
 ## [0.1.0] - 2026-11-25
 
 ### Added

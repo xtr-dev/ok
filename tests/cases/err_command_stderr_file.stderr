@@ -1,0 +1,7 @@
+error[command]: command failed with exit code 3
+ --> err_command_stderr_file.ok:1:1
+  |
+1 | run ok-fixture exit 3 it broke 2> out/stderr_file.log
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = command: ok-fixture exit 3 it broke
+  = stderr was written to out/stderr_file.log

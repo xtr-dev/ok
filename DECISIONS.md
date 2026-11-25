@@ -511,3 +511,35 @@ scripts are a place where shell is acceptable: they only download the
 latest release binary, check it against that release's `SHA256SUMS`, and
 put it on the PATH. The Pages workflow runs both scripts on Linux, macOS and
 Windows before publishing, so a broken script never goes live.
+
+## 2026-11-26 (M9)
+
+**stderr redirects are `2>`, `2>>` and `2>&1`, recognised only as a word
+start.** These are the forms people already type, so they read without
+explanation; the M0 decision to leave them out is reversed now that the
+owner approved them. Only an unquoted `2` directly followed by `>` at the
+start of a word is a stream number, so `run echo 2 > x` keeps passing the
+argument `2` and `x2>y` passes `x2`. Other shell descriptor forms (`>&2`,
+`1>`, `&>`, `3>`) stay errors or plain words rather than growing a
+descriptor syntax nobody asked for.
+
+**`2>&1` means "stderr goes where stdout goes", independent of order.** In a
+shell, `2>&1 > f` and `> f 2>&1` differ, which is a classic trap. ok treats
+redirects as a set of destinations, so both send everything to `f`. When ok
+reads stdout itself (captured or piped), stdout and stderr share one pipe,
+so the interleaving is the one the command produced.
+
+**A stream takes at most one redirect.** `> a > b` silently used the last
+target before; now it is an error with a span, like `2> e.log 2>&1`, because
+a second redirect of the same stream is always a mistake.
+
+**Failures of commands with redirected stderr still explain themselves.**
+With `2>&1` and captured output, the error shows the last 20 lines of the
+merged output (labelled `output`, and given as the error record's `stderr`);
+when stderr went to a file, the error names the file. A failure should never
+leave the reader without a place to look.
+
+**No stderr options in the function form.** `run(...)` has no `>` either;
+command mode with `{...argv}` expresses every function-form call, so a
+second spelling (`stderr: path`, `merge: true`) would add a way to say the
+same thing without making any script clearer.

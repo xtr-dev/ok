@@ -1,0 +1,10 @@
+error[command]: command failed with exit code 3
+ --> err_command_merged.ok:1:9
+  |
+1 | let r = run ok-fixture mixed 3 2>&1
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = command: ok-fixture mixed 3
+  = output (last 3 lines):
+      out 1
+      err 1
+      out 2

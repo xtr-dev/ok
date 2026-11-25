@@ -1,0 +1,1 @@
+run ok-fixture exit 3 it broke 2> out/stderr_file.log
