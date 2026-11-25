@@ -612,10 +612,14 @@ task deploy(env: "staging" | "production", --role: "admin" | "user" = "user") { 
 ```
 
 A value satisfies `"a" | "b"` when it is a string equal to one of the
-choices (case-sensitive); anything else is the usual call-site error
-(`argument `role` of `f` must be one of "admin", "user", got "root"`). A
-final `| null` also accepts `null`, like `T?`: `--region: "eu" | "us" |
-null`. The choices are plain string literals (no interpolation), at least
+choices (case-sensitive); anything else is the usual call-site error:
+
+```
+error: argument `role` of `grant` must be one of "admin", "user", got "root"
+```
+
+A final `| null` also accepts `null`, like `T?`:
+`--region: "eu" | "us" | null`. The choices are plain string literals (no interpolation), at least
 one, without duplicates. Choice types are allowed wherever a type annotation
 is, including `list["a" | "b"]`. A default that is a string literal must be
 one of the choices; otherwise it is a load-time error. ok has no type
@@ -1480,9 +1484,8 @@ read("server.log.gz") | lines | where(l => "ERROR" in l) | count
 ### 13.2 Lazy values
 
 `read` of `jsonl`, `csv`, `tsv`, `lines` and `text` (also compressed,
-13.1.1), `stdin()`, `range`, and
-the stdout of a piped command are lazy: the data is produced as it is
-consumed. A lazy value is indistinguishable from a normal one except for
+13.1.1), `stdin()`, `range`, and the stdout of a piped command are lazy:
+the data is produced as it is consumed. A lazy value is indistinguishable from a normal one except for
 when reading happens and when read or parse errors are raised (at the point
 of consumption, with the location of the consuming expression and the line
 number in the data).

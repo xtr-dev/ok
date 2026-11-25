@@ -54,16 +54,18 @@ for v in [
 }
 
 # Ints and floats compare numerically, as with ==.
-print(match [1.0, 2] {
+let numbers = match [1.0, 2] {
   [1, 2.0] => "numbers match"
   _ => "no"
-})
+}
+print(numbers)
 
 # A failed alternative leaves no bindings behind.
-print(match [5, 2] {
+let alt = match [5, 2] {
   [x, 1] | [x, 2] => "x is {x}"
   _ => "no"
-})
+}
+print(alt)
 
 # Names bound in a pattern are local to the arm.
 let first = "outer"
