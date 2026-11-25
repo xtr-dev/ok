@@ -556,3 +556,23 @@ This also applies to top-level alternatives such as `"a" | x =>`, which
 were accepted before but could never be used safely; no example or test
 used them. Exhaustiveness is not checked: a `match` with no matching arm
 stays a run-time error that shows the value, as in 6.6.
+
+**Choice types are ordinary type annotations, allowed on every parameter.**
+`"admin" | "user"` is checked on calls of any `fn` like `int` or `path`, so
+a helper that receives the value from `main` can declare the same type and a
+typo in code fails at the call. ok has no annotations on `let`, so there is
+no `let x: "a" | "b"`; adding annotations to bindings would be a separate
+language change. Choices are plain string literals, case-sensitive and
+without duplicates. Optional choices are written with a final `| null`
+rather than `?`, because `"a" | "b"?` reads as if only `"b"` were optional.
+A string literal default outside the choices is a load-time error, since
+`--help` would otherwise advertise a default that fails.
+
+**Choices show as the value placeholder of a flag (`--role <admin|user>`),
+and as `[choices: ...]` for a positional argument.** The placeholder is
+where a reader looks for what to type; a positional argument keeps its name
+in the usage line because the name says what it is. A wrong value is an
+argument error (exit code 2) listing every choice, with a suggestion from a
+unique prefix (`prod` for `production`) or else from edit distance.
+Completion offers the choices after a choice flag, after `--flag=`, and for
+the next positional parameter.

@@ -55,6 +55,7 @@ fn type_label(ty: Option<&TypeAnn>) -> String {
         Some(TypeAnn::Optional(t)) => type_label(Some(t)),
         Some(TypeAnn::List(Some(t))) => type_label(Some(t)),
         Some(TypeAnn::List(None)) => "value".into(),
+        Some(TypeAnn::Choice(cs)) => cs.join("|"),
         Some(t) => t.describe(),
     }
 }
@@ -188,6 +189,12 @@ pub fn help(t: &Target, sources: &SourceMap) -> String {
             } else {
                 format!("[{}]", p.cli_name)
             };
+            if let Some(cs) = p.ty.as_ref().and_then(TypeAnn::choices) {
+                if !desc.is_empty() {
+                    desc.push(' ');
+                }
+                let _ = write!(desc, "[choices: {}]", cs.join(", "));
+            }
             args.push((left, desc));
         }
     }
@@ -269,6 +276,29 @@ fn parse_value(
             "false" => Value::Bool(false),
             _ => return Err(bad("true or false")),
         },
+        Some(TypeAnn::Choice(cs)) => {
+            if !cs.iter().any(|c| c == text) {
+                let listed: Vec<String> = cs.iter().map(|c| format!("{c:?}")).collect();
+                // An abbreviation (`prod`) is too far from the full word for
+                // edit distance, so a unique prefix match is tried first.
+                let mut prefixed = cs
+                    .iter()
+                    .filter(|c| !text.is_empty() && c.starts_with(text));
+                let by_prefix = match (prefixed.next(), prefixed.next()) {
+                    (Some(c), None) => Some(c.clone()),
+                    _ => None,
+                };
+                let help = by_prefix
+                    .or_else(|| suggest(text, cs.iter().map(String::as_str)))
+                    .map(|s| format!("did you mean {s:?}?"));
+                return Err(arg_error(
+                    t,
+                    format!("{shown} expects one of {}, got {text:?}", listed.join(", ")),
+                    help,
+                ));
+            }
+            Value::str(text)
+        }
         Some(other) => {
             return Err(arg_error(
                 t,
@@ -421,4 +451,72 @@ pub fn parse(t: &Target, argv: &[String], base: &Path, anchor: bool) -> Result<O
     let mut pos = pos_values;
     pos.extend(rest_values);
     Ok(Outcome::Run(Parsed { pos, named }))
+}
+
+/// Completion candidates for the arguments after a task name (SPEC.md
+/// 14.5). `done` are the complete words after the task name and `current`
+/// is the word being typed. The caller filters by prefix.
+pub fn complete_args(params: &[Param], done: &[String], current: &str) -> Vec<String> {
+    let flags: Vec<&Param> = params.iter().filter(|p| p.flag).collect();
+    let find_flag = |word: &str| -> Option<&Param> {
+        let name = word.strip_prefix("--")?;
+        flags.iter().copied().find(|p| p.cli_name == name)
+    };
+    let choices_of = |p: &Param| -> Vec<String> {
+        p.ty.as_ref()
+            .and_then(TypeAnn::choices)
+            .map(|cs| cs.to_vec())
+            .unwrap_or_default()
+    };
+    // `--role=<TAB>`
+    if let Some((name, _)) = current.split_once('=')
+        && let Some(p) = find_flag(name)
+    {
+        return choices_of(p)
+            .into_iter()
+            .map(|c| format!("{name}={c}"))
+            .collect();
+    }
+    // Walk the finished words to learn whether a flag is waiting for its
+    // value and how many positional arguments are already given.
+    let mut awaiting: Option<&Param> = None;
+    let mut positional = 0;
+    let mut only_positional = false;
+    for w in done {
+        if awaiting.take().is_some() {
+            continue;
+        }
+        if only_positional {
+            positional += 1;
+        } else if w == "--" {
+            only_positional = true;
+        } else if w.starts_with("--") {
+            if !w.contains('=')
+                && let Some(p) = find_flag(w)
+                && !is_bool(p)
+            {
+                awaiting = Some(p);
+            }
+        } else {
+            positional += 1;
+        }
+    }
+    if let Some(p) = awaiting {
+        return choices_of(p);
+    }
+    let mut cands = Vec::new();
+    if !only_positional {
+        cands.extend(flags.iter().map(|p| format!("--{}", p.cli_name)));
+        cands.push("--help".into());
+    }
+    if !current.starts_with('-') || only_positional {
+        let mut pos = params.iter().filter(|p| !p.flag && !p.rest);
+        let next = pos
+            .nth(positional)
+            .or_else(|| params.iter().find(|p| p.rest));
+        if let Some(p) = next {
+            cands.extend(choices_of(p));
+        }
+    }
+    cands
 }

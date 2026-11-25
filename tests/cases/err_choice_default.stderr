@@ -1,0 +1,7 @@
+error[syntax]: the default "usr" is not one of the choices "admin", "user"
+ --> err_choice_default.ok:1:36
+  |
+1 | fn main(--role: "admin" | "user" = "usr") {
+  |                                    ^^^^^
+  |
+  = help: did you mean "user"?

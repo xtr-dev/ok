@@ -1,0 +1,3 @@
+fn main(--role: "admin" | "user" = "usr") {
+  print(role)
+}

@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `exit()`); `finally` is now a keyword.
 - List and record patterns in `match` arms: `[]`, `[first, ...rest]`,
   `{status: 200, body}`, nested patterns and `|` inside them.
+- Choice types for parameters: `--role: "admin" | "user" = "user"`, with an
+  optional final `| null`. Values are checked on the command line (with a
+  did-you-mean hint) and on calls, shown in `--help`, and offered by shell
+  completions.
 
 ### Changed
 

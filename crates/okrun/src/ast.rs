@@ -149,6 +149,8 @@ pub enum TypeAnn {
     Fn,
     List(Option<Box<TypeAnn>>),
     Optional(Box<TypeAnn>),
+    /// `"admin" | "user"`: a string equal to one of these (SPEC.md 5.11).
+    Choice(Vec<String>),
 }
 
 impl TypeAnn {
@@ -169,7 +171,24 @@ impl TypeAnn {
             TypeAnn::Fn => "fn".into(),
             TypeAnn::List(None) => "list".into(),
             TypeAnn::List(Some(t)) => format!("list[{}]", t.describe()),
+            TypeAnn::Optional(t) if matches!(**t, TypeAnn::Choice(_)) => {
+                format!("{} | null", t.describe())
+            }
             TypeAnn::Optional(t) => format!("{}?", t.describe()),
+            TypeAnn::Choice(cs) => cs
+                .iter()
+                .map(|c| format!("{c:?}"))
+                .collect::<Vec<_>>()
+                .join(" | "),
+        }
+    }
+
+    /// The choices of a choice type, also when it is optional.
+    pub fn choices(&self) -> Option<&[String]> {
+        match self {
+            TypeAnn::Choice(cs) => Some(cs),
+            TypeAnn::Optional(t) => t.choices(),
+            _ => None,
         }
     }
 }

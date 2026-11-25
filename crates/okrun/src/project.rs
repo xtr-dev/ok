@@ -654,10 +654,24 @@ impl Project {
                     self.find(None, first)
                 };
                 if let Some(ti) = task {
-                    for p in self.tasks[ti].decl.params.iter().filter(|p| p.flag) {
-                        cands.push(format!("--{}", p.cli_name));
-                    }
-                    cands.push("--help".into());
+                    // The words after the task name: skip up to and
+                    // including the namespace and task words.
+                    let name_words = if self.namespaces.contains(first) {
+                        2
+                    } else {
+                        1
+                    };
+                    let after = done
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, w)| !w.starts_with('-'))
+                        .nth(name_words - 1)
+                        .map_or(done.len(), |(i, _)| i + 1);
+                    cands.extend(crate::sig::complete_args(
+                        &self.tasks[ti].decl.params,
+                        &done[after..],
+                        current,
+                    ));
                 }
             }
         }

@@ -2113,6 +2113,13 @@ fn type_phrase(ty: &TypeAnn) -> String {
         TypeAnn::Optional(inner) => format!("{} or null", type_phrase(inner)),
         TypeAnn::List(Some(inner)) => format!("a list of {}", type_phrase(inner)),
         TypeAnn::Any => "any value".into(),
+        TypeAnn::Choice(cs) => format!(
+            "one of {}",
+            cs.iter()
+                .map(|c| format!("{c:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         other => crate::value::with_article(&other.describe()),
     }
 }
@@ -2148,6 +2155,13 @@ pub fn check_type(v: Value, ty: &TypeAnn) -> Result<Value, String> {
         }
         (TypeAnn::Optional(_), Value::Null) => true,
         (TypeAnn::Optional(inner), _) => return check_type(v, inner),
+        (TypeAnn::Choice(cs), Value::Str(s)) => {
+            if cs.iter().any(|c| **c == **s) {
+                true
+            } else {
+                return Err(v.repr());
+            }
+        }
         _ => false,
     };
     if ok { Ok(v) } else { Err(v.a_type()) }

@@ -745,6 +745,7 @@ impl Parser {
                 }
                 let e = self.with_nostruct(false, |p| p.coalesce())?;
                 self.check_no_it(&e)?;
+                check_choice_default(ty.as_ref(), &e)?;
                 Some(e)
             } else {
                 None
@@ -825,7 +826,64 @@ impl Parser {
         Ok(name)
     }
 
+    /// `"a" | "b" | null` (SPEC.md 5.11); the first string is the current
+    /// token.
+    fn choice_type(&mut self) -> PResult<TypeAnn> {
+        let mut choices: Vec<String> = Vec::new();
+        let mut optional = false;
+        loop {
+            let t = self.bump();
+            match t.tok {
+                Tok::Str(parts) => {
+                    let text = match parts.as_slice() {
+                        [] => String::new(),
+                        [StrPart::Lit(s)] => s.clone(),
+                        _ => {
+                            return Err(syntax(t.span, "a choice cannot use interpolation")
+                                .with_help(
+                                    "choices are plain strings: --role: \"admin\" | \"user\"",
+                                ));
+                        }
+                    };
+                    if optional {
+                        return Err(syntax(t.span, "`null` must be the last choice"));
+                    }
+                    if choices.contains(&text) {
+                        return Err(syntax(t.span, format!("the choice {text:?} appears twice")));
+                    }
+                    choices.push(text);
+                }
+                Tok::Kw(Kw::Null) if !choices.is_empty() && !optional => optional = true,
+                other => {
+                    return Err(syntax(
+                        t.span,
+                        format!("expected a choice in quotes, found {}", other.describe()),
+                    ));
+                }
+            }
+            if !self.eat(&Tok::Pipe) {
+                break;
+            }
+        }
+        if self.at(&Tok::Question) {
+            return Err(self
+                .unexpected("`,`, `=` or `)` after the choices")
+                .with_help(
+                    "to also accept null, add it as the last choice: \"a\" | \"b\" | null",
+                ));
+        }
+        let ty = TypeAnn::Choice(choices);
+        Ok(if optional {
+            TypeAnn::Optional(Box::new(ty))
+        } else {
+            ty
+        })
+    }
+
     fn type_ann(&mut self) -> PResult<TypeAnn> {
+        if matches!(self.peek(), Tok::Str(_)) {
+            return self.choice_type();
+        }
         let t = self.bump();
         let base = match &t.tok {
             Tok::Kw(Kw::Fn) => TypeAnn::Fn,
@@ -2085,6 +2143,39 @@ impl Parser {
     }
 }
 
+/// A literal default of a choice-typed parameter must be one of the choices;
+/// catching it at load time keeps `--help` from advertising a bad default.
+fn check_choice_default(ty: Option<&TypeAnn>, default: &Expr) -> PResult<()> {
+    let Some(choices) = ty.and_then(TypeAnn::choices) else {
+        return Ok(());
+    };
+    let ExprKind::Str(pieces) = &default.kind else {
+        return Ok(());
+    };
+    let text = match pieces.as_slice() {
+        [] => String::new(),
+        [StrPiece::Lit(s)] => s.clone(),
+        _ => return Ok(()),
+    };
+    if choices.contains(&text) {
+        return Ok(());
+    }
+    let help =
+        suggest(&text, choices.iter().map(String::as_str)).map(|s| format!("did you mean {s:?}?"));
+    Err(syntax(
+        default.span,
+        format!(
+            "the default {text:?} is not one of the choices {}",
+            choices
+                .iter()
+                .map(|c| format!("{c:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    )
+    .maybe_help(help))
+}
+
 /// Every alternative of `p1 | p2` must bind the same names, so that the
 /// guard and body of the arm can use them whichever alternative matched.
 fn check_alternatives(alts: &[MatchPat]) -> PResult<()> {
@@ -2429,6 +2520,46 @@ mod tests {
             "let x = match os.name {\n  \"windows\" => 1\n  \"linux\" | \"macos\" => 2\n  n if n == \"x\" => 3\n  _ => fail(\"no\")\n}",
         );
         ok("let c = try {\n read(p)\n} catch e {\n {}\n}");
+    }
+
+    #[test]
+    fn choice_types() {
+        ok(
+            "fn f(--role: \"admin\" | \"user\" = \"user\", x: list['a' | 'b'], y: \"a\" | null) { }",
+        );
+        ok("fn f(--role: \"admin\"\n  | \"user\") { }");
+        assert!(
+            fails("fn f(x: \"a\" | \"a\") { }")
+                .message
+                .contains("appears twice")
+        );
+        assert!(
+            fails("fn f(x: \"a\" | null | \"b\") { }")
+                .message
+                .contains("must be the last")
+        );
+        assert!(
+            fails("fn f(x: \"a\" | \"b\"?) { }")
+                .help
+                .unwrap()
+                .contains("| null")
+        );
+        assert!(
+            fails("fn f(x: \"a{y}\") { }")
+                .message
+                .contains("interpolation")
+        );
+        assert!(
+            fails("fn f(x: \"a\" | int) { }")
+                .message
+                .contains("a choice in quotes")
+        );
+        assert!(
+            fails("fn f(--m: \"a\" | \"b\" = \"c\") { }")
+                .message
+                .contains("not one of the choices")
+        );
+        ok("fn f(--m: \"a\" | \"b\" = env.get(\"M\")) { }");
     }
 
     #[test]

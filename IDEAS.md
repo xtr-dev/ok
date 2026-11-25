@@ -4,8 +4,6 @@ Things that are deliberately **not** in v1. They are collected here instead of
 in the code. Each needs a spec change and review before it is built.
 
 - Short flags for script and task parameters (`--verbose` as `-v`).
-- Choice types for parameters (`--role: "admin" | "user"`), shown in `--help`
-  and completions.
 - Content-hash mode for `sources`/`outputs` up-to-date checks.
 - Running independent `needs` dependencies in parallel.
 - Nested namespaces (`ok/db/seed.ok`) and reaching a mounted sub-project's

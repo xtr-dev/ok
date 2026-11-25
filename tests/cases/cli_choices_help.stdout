@@ -1,0 +1,12 @@
+Deploy somewhere.
+
+Usage: ok cli_choices_help.ok <env> [--role <admin|user>] [--region <eu|us>] [--tag <a|b>]
+
+Arguments:
+  <env>                where to deploy [choices: staging, production]
+
+Options:
+  --role <admin|user>  who deploys [default: user]
+  --region <eu|us>     an optional region
+  --tag <a|b>          tags from a fixed set (repeatable)
+  -h, --help           print this help

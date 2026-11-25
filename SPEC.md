@@ -307,10 +307,11 @@ param       = [ "--" ] param_name [ ":" type ] [ "=" expr ]
             | "..." ident [ ":" type ]
 param_name  = ident | flag_name
 flag_name   = ident { "-" ident }                   (* only after "--" *)
-type        = base_type [ "?" ]
+type        = base_type [ "?" ] | choice_type
 base_type   = "any" | "null" | "bool" | "int" | "float" | "string" | "bytes"
             | "path" | "duration" | "time" | "record" | "fn"
             | "list" [ "[" type "]" ]
+choice_type = STRING { "|" STRING } [ "|" "null" ]   (* plain strings, 5.11 *)
 
 task_decl   = "task" task_name [ "(" [ params ] ")" ] { modifier } block
 task_name   = ident { "-" ident }
@@ -600,6 +601,22 @@ Conversions applied while checking:
 Defaults are evaluated at each call in the function's scope, then checked
 against the annotation: `--out: path = "out.json"` gives a `path`. On the
 command line, annotations drive parsing (14.3).
+
+A **choice type** lists the strings a parameter accepts:
+
+```
+task deploy(env: "staging" | "production", --role: "admin" | "user" = "user") { ... }
+```
+
+A value satisfies `"a" | "b"` when it is a string equal to one of the
+choices (case-sensitive); anything else is the usual call-site error
+(`argument `role` of `f` must be one of "admin", "user", got "root"`). A
+final `| null` also accepts `null`, like `T?`: `--region: "eu" | "us" |
+null`. The choices are plain string literals (no interpolation), at least
+one, without duplicates. Choice types are allowed wherever a type annotation
+is, including `list["a" | "b"]`. A default that is a string literal must be
+one of the choices; otherwise it is a load-time error. ok has no type
+annotations outside parameters, so `let` takes none.
 
 ## 6. Expressions
 
@@ -1552,6 +1569,11 @@ shown as its value; any other default is shown as its source text
 (`[default: env.get("SRC", "/var/lib/app/data")]`), because printing help
 never runs code.
 
+A flag with a choice type (5.11) shows its choices as the value placeholder,
+in the usage line and under Options: `--role <admin|user>`. A positional
+parameter with a choice type keeps its name in the usage line and adds
+`[choices: staging, production]` to its help under Arguments.
+
 ### 14.3 Parsing values
 
 | Type | Accepted text |
@@ -1564,6 +1586,7 @@ never runs code.
 | `duration` | literal syntax: `90s`, `1h30m` |
 | `T?` | as `T`; omitted means `null` |
 | `list[T]` | rest parameter or repeated flag |
+| `"a" \| "b"` | exactly one of the choices; anything else is an argument error that lists them and suggests the closest |
 
 ### 14.4 Argument errors
 
@@ -1575,6 +1598,21 @@ error: unknown flag --verbos
   = help: did you mean --verbose?
 usage: ok csv-to-json.ok <input> [--out <path>] [--verbose]
 ```
+
+A value outside a choice type names the choices and suggests the closest:
+
+```
+error: --role expects one of "admin", "user", got "admn"
+  = help: did you mean "admin"?
+```
+
+### 14.5 Completion
+
+`ok self complete` (17) offers, after a task name: the task's flags
+(`--name`), `--help`, and, where a value is expected, the choices of a
+choice type: after a flag with a choice type (`--role <TAB>`, also written
+`--role=<TAB>`), and for the next positional parameter when it has a choice
+type. Completion never runs project code.
 
 ## 15. Project mode
 

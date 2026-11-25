@@ -1,0 +1,17 @@
+# Deploy somewhere.
+fn main(
+  env: "staging" | "production",       # where to deploy
+  --role: "admin" | "user" = "user",   # who deploys
+  --region: "eu" | "us" | null,        # an optional region
+  --tag: list["a" | "b"],              # tags from a fixed set
+) {
+  print(env, role, region, tag)
+}
+
+# Choice types also check ordinary calls (SPEC.md 5.11).
+fn pick(mode: "fast" | "slow") {
+  mode
+}
+print(pick("fast"))
+print(try { pick("quick") } catch e { e.message })
+print(try { pick(3) } catch e { e.message })
