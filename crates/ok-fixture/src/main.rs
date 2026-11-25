@@ -15,10 +15,90 @@
 //!   env NAME            print the variable, or <unset>
 //!   pwd                 print the working directory's last component
 //!   bytes               print bytes that are not valid UTF-8
+//!
+//! Fake-tool mode: a copy of this program named after another tool (`git`,
+//! `docker`, ...) prints `$ tool args` to stderr and answers from the rules
+//! in the JSON file named by `OK_FAKES`:
+//!
+//! ```json
+//! {"git": [{"args": ["rev-parse", "HEAD"], "stdout": "abc\n", "exit": 0}]}
+//! ```
+//!
+//! A rule matches when its `args` are a prefix of the actual arguments
+//! (no `args` matches everything). Fields: `stdout`, `stderr`, `exit`,
+//! `cat` (copy stdin to stdout) and `write` (files to create, relative to
+//! the working directory). Without a matching rule the tool succeeds
+//! silently.
 
 use std::io::{Read, Write};
 
+fn fake(tool: &str, args: &[String]) -> i32 {
+    let shown: Vec<String> = args
+        .iter()
+        .map(|a| {
+            if a.is_empty() || a.contains(' ') {
+                format!("{a:?}")
+            } else {
+                a.clone()
+            }
+        })
+        .collect();
+    eprintln!("$ {tool} {}", shown.join(" "));
+    let rules: serde_json::Value = std::env::var("OK_FAKES")
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or(serde_json::Value::Null);
+    let Some(list) = rules.get(tool).and_then(|r| r.as_array()) else {
+        return 0;
+    };
+    for rule in list {
+        let want: Vec<&str> = rule
+            .get("args")
+            .and_then(|a| a.as_array())
+            .map(|a| a.iter().filter_map(|x| x.as_str()).collect())
+            .unwrap_or_default();
+        if want.len() > args.len() || want.iter().zip(args).any(|(w, a)| w != a) {
+            continue;
+        }
+        let mut out = std::io::stdout().lock();
+        if rule.get("cat").and_then(|c| c.as_bool()) == Some(true) {
+            let mut s = Vec::new();
+            let _ = std::io::stdin().read_to_end(&mut s);
+            let _ = out.write_all(&s);
+        }
+        if let Some(files) = rule.get("write").and_then(|w| w.as_object()) {
+            for (path, content) in files {
+                let p = std::path::Path::new(path);
+                if let Some(parent) = p.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(p, content.as_str().unwrap_or(""));
+            }
+        }
+        if let Some(text) = rule.get("stdout").and_then(|x| x.as_str()) {
+            let _ = out.write_all(text.as_bytes());
+        }
+        let _ = out.flush();
+        if let Some(text) = rule.get("stderr").and_then(|x| x.as_str()) {
+            eprint!("{text}");
+        }
+        return rule.get("exit").and_then(|e| e.as_i64()).unwrap_or(0) as i32;
+    }
+    0
+}
+
 fn main() {
+    let tool = std::env::args().next().map(|a| {
+        let p = std::path::PathBuf::from(a);
+        p.file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    });
+    if let Some(tool) = tool.filter(|t| t != "ok-fixture") {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        std::process::exit(fake(&tool, &args));
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let rest = args.get(1..).unwrap_or(&[]).to_vec();
     let mut out = std::io::stdout().lock();

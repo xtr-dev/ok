@@ -1,0 +1,9 @@
+== app.log ==
+lines: 10
+ERROR       5
+WARN        2
+INFO        3
+
+top 2 errors:
+      3 db connection refused
+      1 payment provider timeout

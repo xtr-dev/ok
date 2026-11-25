@@ -1,0 +1,2 @@
+$ sqlx database reset -y --database-url postgres://localhost/app
+$ psql postgres://localhost/app -f db/seed.sql

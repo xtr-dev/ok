@@ -342,6 +342,13 @@ fn write(interp: &mut Interp, mut args: Args) -> R<Value> {
         None => format_for(&p),
     };
     let append = bool_named(&opts, "append", &args)?;
+    if !interp.mutation(&format!(
+        "write {}{}",
+        p.display(),
+        if append { " (append)" } else { "" }
+    )) {
+        return Ok(Value::Null);
+    }
     if append && !matches!(fmt, "text" | "lines" | "jsonl" | "csv" | "tsv" | "bytes") {
         return arg_err(
             &args,

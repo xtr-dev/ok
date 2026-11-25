@@ -7,14 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- A juxtaposed pipeline stage (`| take 5`) takes exactly one argument, so
-  `print(xs | count, ys | count)` passes two values to `print`.
-- `range` is lazy and no longer limited to ten million numbers.
+## [0.1.0] - 2026-11-25
 
 ### Added
 
+- M7 distribution: release workflow for six static targets with
+  `SHA256SUMS` and a size check, `ok self init` with the `./ok`, `ok.cmd` and
+  `ok.ps1` bootstrap wrappers (pinned version and checksums, user cache,
+  `OK_DOWNLOAD_URL`), and an install section in the README.
+- The examples run in the test suite with fake tools.
 - M5 project mode: discovery of `ok.ok` upwards (or `-C DIR`), namespaces
   from `ok/*.ok` (`_` files are helpers), mounted sub-projects
   (`import "web/ok.ok" as web`), the declaration-only rule, `needs` with

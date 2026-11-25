@@ -471,7 +471,7 @@ error: `if` needs a bool, got a list
 `==` and `!=` compare structurally; records are equal when they have the
 same keys with equal values, in any order. Values of different kinds are unequal,
 except that an `int` and a `float` compare numerically (`1 == 1.0`). Comparing
-a `path` with a `string` is always `false`; `ok self check` warns about it.
+a `path` with a `string` is always `false`.
 
 `<`, `<=`, `>`, `>=` are defined for two numbers, two strings (by Unicode code
 point), two durations, two times, two paths (by their `/` display form) and

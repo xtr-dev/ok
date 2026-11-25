@@ -5,9 +5,11 @@ directory holds the original next to the ok version, plus any sample data the
 script reads. They are the design review for milestone M0: if an ok version
 does not read more clearly than its original, the language should change.
 
-From the milestone in which the features an example needs exist, CI runs it
-(with fixture commands in place of tools such as `git`, `docker` or `psql`, so
-the results are the same on every OS).
+The test suite runs 15 of them (`crates/okrun/tests/examples_run.rs`) with
+fake tools in place of `git`, `docker`, `psql` and the rest, so the results
+are the same on every OS; the expected output is in `tests/examples/`.
+`deploy`, `stale-bugs` and `install-tool` call fixed internet hosts and are
+only parsed by the tests.
 
 | Example | Original | Shows |
 |---|---|---|

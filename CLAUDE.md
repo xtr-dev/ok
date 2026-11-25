@@ -12,15 +12,13 @@ repo and code are built. The original brief is `PROMPT.md`.
 
 ## Current state
 
-- Milestone: **M2 (data)** done, waiting for review. Scripts run with
-  `ok file.ok` and `ok -e`, with formats, pipelines and list functions;
-  `run`, the file/text/env/net stdlib, `main` argument parsing, project mode
-  and trust are later milestones and report "not implemented yet
-  (milestone Mx)".
-- Milestones are in `PROMPT.md`. Stop after each one, report to Bas, and wait
-  for a go-ahead.
+- All milestones M0 to M7 are implemented; `v0.1.0` is tagged locally (not
+  pushed). Bas publishes the repository, the tag/release and the crate.
 - GitHub: private repo `xtr-dev/ok`. Never make it public and never publish
-  to crates.io; Bas does both.
+  to crates.io; Bas does both. CI only runs when started by hand (see Local
+  checks).
+- Not verified: macOS and Windows behaviour (CI is off), the release
+  workflow, and the Windows wrappers (`ok.cmd`, `ok.ps1`).
 
 ## Commands
 
@@ -101,14 +99,30 @@ inputs, call arguments, `for` iterables) may return `Value::Lazy`, and
 `call_value` forces arguments unless the builtin is `streaming`. A new
 builtin that should stream must be declared with `streaming(...)` and pull
 from `lazy::cursor`.
+| `command.rs` | `run`: modes (live/captured/piped), program lookup, pipes, redirects, options |
+| `files.rs` | file and path functions, `glob` |
+| `text.rs` | string and regex functions |
+| `system.rs` | `env`, time, `prompt`/`confirm`, `hash` |
+| `net.rs` | `fetch` (ureq + rustls + platform verifier) |
+| `archive.rs` | `zip`/`unzip`/`tar`/`untar` with zip-slip checks |
+| `sig.rs` | command-line parsing and `--help` from a signature (scripts and tasks) |
+| `project.rs` | project loading, namespaces, mounts, `needs`, running tasks, listing, completions |
+| `trust.rs` | fingerprints, trust store, prompt, diff, `ok trust`/`untrust` |
+| `fmt.rs` | `ok self fmt` (whitespace-only layout) |
+| `tools.rs` | `ok self check`, `fmt`, `init` and the bootstrap wrapper templates |
 | `cli.rs` | `ok` command line |
 
 Tests: unit tests next to the code; `tests/golden.rs` (cases in
 `tests/cases/`, libraries for import tests in `tests/cases/lib/`, data
 fixtures in `tests/cases/data/` (kept byte-exact by `.gitattributes`), and
 files the cases write go to the ignored `tests/cases/out/`),
-`tests/cli.rs`, `tests/examples_parse.rs` (every example must parse),
-`tests/no_panic.rs`.
+`tests/cli.rs`, `tests/examples_parse.rs` (every example parses and is in
+canonical format), `tests/examples_run.rs` (examples with fake tools,
+expectations in `tests/examples/`), `tests/project.rs` (project mode and
+trust), `tests/bootstrap.rs` (`ok self init` and the `./ok` wrapper),
+`tests/no_panic.rs`. `crates/ok-fixture` is the test-only program behind
+`run` tests and the fake tools. Bless everything with `OK_BLESS=1 cargo
+test --workspace` and review the diff.
 
 ## Conventions
 

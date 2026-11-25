@@ -42,10 +42,33 @@ released: Bas publishes the repository and the first release.
 
 ## Install
 
-There are no releases yet. From M7 on, each release ships static binaries for
-Linux (musl), macOS and Windows on x86-64 and arm64, with SHA-256 checksums,
-and `ok self init` writes wrapper scripts (`./ok`, `ok.cmd`) that download a
-pinned, checksum-verified `ok` so contributors need nothing preinstalled.
+Each release ships single static binaries for Linux (musl), macOS and
+Windows on x86-64 and arm64, plus `SHA256SUMS`, `THIRD_PARTY.md` and
+`LICENSE`:
+
+```
+ok-x86_64-unknown-linux-musl      ok-aarch64-unknown-linux-musl
+ok-x86_64-apple-darwin            ok-aarch64-apple-darwin
+ok-x86_64-pc-windows-msvc.exe     ok-aarch64-pc-windows-msvc.exe
+```
+
+Download the one for your machine, check it against `SHA256SUMS`, rename it
+to `ok` (`ok.exe` on Windows) and put it on your PATH.
+
+**In a project, nobody needs to install anything.** Run `ok self init` once:
+it writes a starter `ok.ok` and the wrappers `./ok` (POSIX sh), `ok.cmd` and
+`ok.ps1`, which pin this version of ok and the checksum of every release
+binary. A contributor or CI job then runs `./ok build` (or `ok.cmd build`);
+the wrapper downloads the right binary into the user cache once, refuses it
+if the checksum does not match, and runs it. `OK_DOWNLOAD_URL` points the
+wrappers (and `ok self init`) at a mirror, which is also how to use them
+while the repository is private.
+
+Projects you clone are not trusted automatically: the first task run shows
+the project files and asks. In CI, set `OK_TRUST=1`.
+
+Shell completions: `eval "$(ok self completions bash)"` (or `zsh`, `fish`,
+`powershell`).
 
 ## Build from source
 

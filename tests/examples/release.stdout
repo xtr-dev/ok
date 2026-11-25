@@ -1,0 +1,11 @@
+release v1.3.0 ready in dist/
+==> Cargo.toml <==
+[package]
+name = "myapp"
+version = "1.3.0"
+
+[dependencies]
+serde = { version = "1" }
+==> dist/SHA256SUMS <==
+206b9f0f69841ea17c6f6c64b64c228efa45bbb1a2515660e8bf0ca27a055594  myapp-aarch64-unknown-linux-musl
+fb46ebac336c2cde1c917cfa73be241c60ee38f5ec50de1be44ed0f6c5c4a4ad  myapp-x86_64-unknown-linux-musl

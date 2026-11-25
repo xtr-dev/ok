@@ -1,0 +1,12 @@
+==> (none)
+==> json
+==> yaml
+==> json,yaml
+==> full
+
+features         result     time
+(none)           ok         <secs>
+json             ok         <secs>
+yaml             FAIL       <secs>
+json,yaml        ok         <secs>
+full             ok         <secs>

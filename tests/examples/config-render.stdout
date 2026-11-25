@@ -1,0 +1,17 @@
+build/config.production.json
+==> build/config.production.json <==
+{
+  "server": {
+    "port": 8080,
+    "workers": 16
+  },
+  "database": {
+    "host": "db.internal",
+    "name": "app",
+    "user": "app",
+    "password": "s3cret"
+  },
+  "feature_flags": {
+    "new_checkout": true
+  }
+}

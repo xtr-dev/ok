@@ -1,0 +1,3 @@
+$ docker build --build-arg VERSION=v1.4.0 -t ghcr.io/example/api:3f2a9c1 -t ghcr.io/example/api:v1.4.0 .
+$ docker push ghcr.io/example/api:3f2a9c1
+$ docker push ghcr.io/example/api:v1.4.0

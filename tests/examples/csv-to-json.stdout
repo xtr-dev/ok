@@ -1,0 +1,16 @@
+wrote 2 users to active.json
+==> active.json <==
+[
+  {
+    "name": "Chloé Martin",
+    "email": "chloe@example.com",
+    "age": 41,
+    "active": "true"
+  },
+  {
+    "name": "Visser, Anna",
+    "email": "anna@example.com",
+    "age": 34,
+    "active": "true"
+  }
+]

@@ -1,0 +1,5 @@
+$ cargo test --workspace
+$ git commit -am "chore: release v1.3.0"
+$ git tag -a v1.3.0 -m v1.3.0
+$ cargo build --release --target x86_64-unknown-linux-musl
+$ cargo build --release --target aarch64-unknown-linux-musl

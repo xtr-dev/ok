@@ -1,0 +1,17 @@
+monorepo-list (<work>)
+
+  dev           Run the server locally
+  build         Build the frontend and the server
+  test          Run all tests
+
+admin
+  create-user   Create a user account
+
+db
+  migrate       Apply pending migrations
+  reset         Wipe and reseed the local database
+  seed          Load the seed data
+
+fe
+  build         Build the bundle
+  test          Run the frontend tests

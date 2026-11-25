@@ -452,3 +452,23 @@ store, and users with unusual setups can point it elsewhere.
 
 **An empty answer to the trust prompt means no.** Pressing Enter must never
 run someone else's code.
+
+## 2026-11-25 (M7)
+
+**`ok self init` pins checksums from the release's `SHA256SUMS`.** A binary
+cannot contain its own checksum, so `init` downloads the list published next
+to the binaries (or reads it with `--checksums FILE`) and writes the hashes
+into the wrappers. The wrappers verify before running and never run a
+mismatching file.
+
+**`ok.cmd` delegates to `ok.ps1`.** All logic lives in one PowerShell file;
+the `.cmd` file only exists so that `ok.cmd build` works from cmd.exe.
+
+**The examples run in the test suite with fake tools.** `ok-fixture` copied
+as `git`, `docker`, `psql`, ... logs each call and answers from per-case
+rules, which shows exactly which commands an example runs and makes the
+output identical on every OS. Examples that call fixed internet hosts are
+parsed but not run.
+
+**`v0.1.0` is tagged locally only.** Pushing a tag starts the release
+workflow once CI is on again, and publishing is Bas's call.

@@ -3,9 +3,13 @@
 
 use std::process::{Command, Output};
 
+/// Run ok from an empty directory, outside any project.
 fn ok(args: &[&str]) -> Output {
+    let dir = std::env::temp_dir().join(format!("ok-cli-tests-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
     Command::new(env!("CARGO_BIN_EXE_ok"))
         .args(args)
+        .current_dir(&dir)
         .env("NO_COLOR", "1")
         .output()
         .expect("run ok")
@@ -60,7 +64,7 @@ fn usage_errors_exit_with_2() {
     assert!(stderr(&out).contains("does not exist"));
     let out = ok(&["build"]);
     assert_eq!(out.status.code(), Some(2));
-    assert!(stderr(&out).contains("M5"));
+    assert!(stderr(&out).contains("no ok.ok found"));
 }
 
 #[test]

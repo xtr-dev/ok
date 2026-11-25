@@ -1,0 +1,4 @@
+$ git diff --cached --name-only --diff-filter=ACM
+✗ rustfmt: run `cargo fmt`
+✗ web/app.js: debug statement
+✗ assets/video.mp4: 5120 KiB is over the 1 MiB limit
