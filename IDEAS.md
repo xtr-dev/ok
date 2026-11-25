@@ -23,3 +23,4 @@ in the code. Each needs a spec change and review before it is built.
 - Static detection of undefined names and wrong argument counts in
   `ok self check`.
 - A syntax-tree based formatter (line breaking, spacing inside lines).
+- A man page (`ok.1`), printed by `ok self man` and attached to releases.
