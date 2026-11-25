@@ -31,7 +31,7 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           OK_INSTALL_DIR="$RUNNER_TEMP/okbin" sh site/install.sh
-          "$RUNNER_TEMP/okbin/ok" -e 'print("hello from {os.name}")'
+          "$RUNNER_TEMP/okbin/ok" -e 'print(os.name, os.arch)'
       # Piping the file into iex is what `irm .../install.ps1 | iex` does.
       - name: install.ps1
         if: runner.os == 'Windows'
@@ -39,7 +39,7 @@ jobs:
         run: |
           $env:OK_INSTALL_DIR = "$env:RUNNER_TEMP\okbin"
           Get-Content site/install.ps1 -Raw | Invoke-Expression
-          & "$env:RUNNER_TEMP\okbin\ok.exe" -e 'print("hello from {os.name}")'
+          & "$env:RUNNER_TEMP\okbin\ok.exe" -e 'print(os.name, os.arch)'
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
   deploy:
