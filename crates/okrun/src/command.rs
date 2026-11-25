@@ -953,18 +953,16 @@ fn is_runnable(p: &Path) -> bool {
     let Ok(meta) = std::fs::metadata(p) else {
         return false;
     };
-    if !meta.is_file() {
-        return false;
-    }
+    // On Unix a file must also have an execute bit; Windows has none, so
+    // any regular file found by the PATHEXT search counts as runnable.
     #[cfg(unix)]
-    {
+    let executable = {
         use std::os::unix::fs::PermissionsExt;
         meta.permissions().mode() & 0o111 != 0
-    }
+    };
     #[cfg(not(unix))]
-    {
-        true
-    }
+    let executable = true;
+    meta.is_file() && executable
 }
 
 /// The lazy stdout of a piped command.

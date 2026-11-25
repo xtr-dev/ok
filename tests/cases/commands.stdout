@@ -8,7 +8,7 @@ live output
 [-a]
 [-b]
 [end]
-[dir/file.txt]
+true
 [pre-x/y]
 ["line 2", "line 4"]
 ["line 1", "line 2", "line 3"]

@@ -320,10 +320,14 @@ fn cases(port: u16) -> Vec<Case> {
 
 fn normalize(text: &str, work: &Path, extra: &[(&str, &str)]) -> String {
     let mut t = text.replace("\r\n", "\n");
-    for w in [
+    // Replace the longer spelling first: on macOS the canonical form of a
+    // temp dir is `/private/var/...`, which contains the plain `/var/...`.
+    let mut spellings = vec![
         work.to_path_buf(),
         std::fs::canonicalize(work).unwrap_or_default(),
-    ] {
+    ];
+    spellings.sort_by_key(|w| std::cmp::Reverse(w.as_os_str().len()));
+    for w in spellings {
         let s = w.to_string_lossy().to_string();
         if !s.is_empty() {
             t = t

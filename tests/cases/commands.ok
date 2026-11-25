@@ -6,7 +6,11 @@ let name = "two words"
 run ok-fixture args {name} "quoted {name}" 'raw {name}' --flag={name} ""
 let flags = ["-a", "-b"]
 run ok-fixture args {...flags} {...[]} end
-run ok-fixture args {path("dir/file.txt")} pre-{path("x/y")}
+# A whole-word path becomes a native path (`\` on Windows); inside a longer
+# word it uses the display form with `/` (SPEC.md 9.2).
+let native = if os.name == "windows" { "dir\\file.txt" } else { "dir/file.txt" }
+print((run ok-fixture args {path("dir/file.txt")}).out == "[{native}]")
+run ok-fixture args pre-{path("x/y")}
 print(run ok-fixture lines 4 | lines | where(l => "2" in l or "4" in l))
 print(run ok-fixture forever | lines | take 3)
 "piped into stdin\n" | run ok-fixture upper
