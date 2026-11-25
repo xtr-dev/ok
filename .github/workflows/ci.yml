@@ -1,9 +1,9 @@
 name: CI
 
-# Automatic runs are switched off for now (checks run locally, see
-# CLAUDE.md). Start a run by hand from the Actions tab when needed; restore
-# the push/pull_request triggers to switch CI back on.
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:

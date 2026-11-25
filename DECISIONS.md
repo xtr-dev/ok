@@ -486,3 +486,7 @@ still use `run curl ...` or `run tar ...`. The price is that the network and
 archive dependencies need watching: a security advisory for rustls, ureq,
 zip, tar or flate2 means a patched ok release (see CLAUDE.md, Security
 upkeep).
+
+**CI runs automatically again.** Bas switched the push and pull-request
+triggers back on, so every push to `main` is checked on Linux, macOS and
+Windows. The release workflow still runs only when started by hand.

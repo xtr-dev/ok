@@ -15,10 +15,10 @@ repo and code are built. The original brief is `PROMPT.md`.
 - All milestones M0 to M7 are implemented; `v0.1.0` is tagged locally (not
   pushed). Bas publishes the repository, the tag/release and the crate.
 - GitHub: private repo `xtr-dev/ok`. Never make it public and never publish
-  to crates.io; Bas does both. CI only runs when started by hand (see Local
-  checks).
-- Not verified: macOS and Windows behaviour (CI is off), the release
-  workflow, and the Windows wrappers (`ok.cmd`, `ok.ps1`).
+  to crates.io; Bas does both. CI runs on every push to `main` and every
+  pull request (Linux, macOS, Windows).
+- Not verified: the release workflow (runs only when started by hand) and
+  the Windows wrappers (`ok.cmd`, `ok.ps1`).
 
 ## Commands
 
@@ -37,10 +37,11 @@ OK_BLESS=1 cargo test --test golden # regenerate golden expectations, then revie
 cargo +nightly fuzz run parse -- -max_total_time=300   # needs nightly + cargo-fuzz
 ```
 
-## Local checks (CI is switched off)
+## Local checks
 
-GitHub Actions runs only when started by hand (`workflow_dispatch`); Bas
-asked for local checks only for now. Before every commit run, in order:
+CI (`.github/workflows/ci.yml`) runs on every push to `main` and every pull
+request, on Linux, macOS and Windows. Run the same checks locally before
+every commit, in order:
 
 ```
 cargo fmt --all --check
@@ -51,10 +52,8 @@ cargo about generate about.hbs > THIRD_PARTY.md && git diff --exit-code THIRD_PA
 ```
 
 and at the end of a milestone also `cargo +nightly fuzz run lex -- -max_total_time=60`
-and the same for `parse`. Local checks cover Linux only: macOS and Windows
-behaviour is unverified until CI is switched back on (restore the `push` /
-`pull_request` triggers in `.github/workflows/ci.yml`), so mention that in
-milestone reports.
+and the same for `parse`. Local checks cover only the machine they run on;
+CI is what covers macOS and Windows, so check its result after pushing.
 
 ## Security upkeep
 
@@ -169,6 +168,5 @@ test --workspace` and review the diff.
 - **Report honestly.** Each milestone report lists what was built, what was
   decided, what is weak, and what to change in the spec.
 - Commit small and often, Conventional Commits. Never rewrite pushed history.
-- Each milestone ends with the local checks green (CI on all three OSes
-  when it is switched back on), `SPEC.md` and `CHANGELOG.md` updated, and a
-  report.
+- Each milestone ends with the local checks and CI on all three OSes green,
+  `SPEC.md` and `CHANGELOG.md` updated, and a report.
