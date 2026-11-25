@@ -88,5 +88,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the original.
 - `ok.ok`: the repository's own build and admin tasks (runnable from M5; use
   the documented `cargo` commands until then).
-- Placeholder `ok` binary that answers `ok self version`.
 - `quiet` command option to hide a command's output unless it fails.

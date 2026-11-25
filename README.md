@@ -38,7 +38,7 @@ All milestones of the v0.1.0 plan are implemented: the language, data
 formats and pipelines, commands and the standard library, script
 arguments, project mode, trust, and the release tooling. The language is
 described in `SPEC.md`; design choices are logged in `DECISIONS.md`. The
-first release, v0.1.0, is being prepared.
+first release is [v0.1.0](https://github.com/xtr-dev/ok/releases/tag/v0.1.0).
 
 ## Install
 
