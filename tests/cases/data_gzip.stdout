@@ -1,0 +1,20 @@
+{name: "ok", tags: ["a", "b"]}
+{title: "x", port: 80}
+not text 1d40bdbd58e57c693d64c911c1adb1a06f3268d53b4dfd5c53a0a92ccf2864b0
+{
+500
+{n: 1, even: false}
+2
+string ["alpha", "beta ERROR", "gamma ERROR"]
+[{name: "ana", role: "admin"}, {name: "bo", role: "user"}]
+name,role
+ana,admin
+bo,user
+
+plain words
+
+compressed hidden
+
+io: cannot read out/bad.json.gz: not valid gzip data (invalid gzip header)
+io: cannot read out/bad.json.gz: not valid gzip data (invalid gzip header)
+`gzip` must be true or false, got a string

@@ -35,8 +35,18 @@ const FORMATS: &[&str] = &[
     "json", "jsonl", "csv", "tsv", "lines", "text", "toml", "yaml", "env", "bytes",
 ];
 
-/// The format a file name implies (SPEC.md 13.1).
+/// Whether a file name says the file is gzip-compressed (SPEC.md 13.1.1).
+fn gz_name(p: &OkPath) -> bool {
+    p.ext().eq_ignore_ascii_case("gz")
+}
+
+/// The format a file name implies (SPEC.md 13.1); for a compressed file,
+/// the name without `.gz` decides (13.1.1).
 pub fn format_for(p: &OkPath) -> &'static str {
+    if gz_name(p) {
+        let name = p.name();
+        return format_for(&OkPath::parse(&name[..name.len() - 3]));
+    }
     let name = p.name();
     if name == ".env" || name.starts_with(".env.") {
         return "env";
@@ -153,18 +163,44 @@ fn format_err(args: &Args, msg: String) -> crate::interp::Flow {
     OkError::at(ErrKind::Format, args.span, msg).into()
 }
 
+/// Whether to (de)compress: the `gzip:` option, or else the file name.
+fn use_gzip(opts: &HashMap<String, Value>, p: &OkPath, args: &Args) -> R<bool> {
+    match opts.get("gzip") {
+        None | Some(Value::Null) => Ok(gz_name(p)),
+        Some(Value::Bool(b)) => Ok(*b),
+        Some(other) => type_err(
+            args,
+            format!("`gzip` must be true or false, got {}", other.a_type()),
+        ),
+    }
+}
+
+/// A gzip decoder whose errors say that the data is not gzip, because the
+/// decoder's own messages ("invalid gzip header") do not name the cause.
+/// Consecutive gzip members are read as one stream.
+struct GzRead<R: Read>(flate2::read::MultiGzDecoder<R>);
+
+impl<R: Read> Read for GzRead<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0
+            .read(buf)
+            .map_err(|e| std::io::Error::new(e.kind(), format!("not valid gzip data ({e})")))
+    }
+}
+
 // ----- builtins ---------------------------------------------------------------------
 
 fn read(interp: &mut Interp, mut args: Args) -> R<Value> {
-    let opts = named(&mut args, "read", &["delimiter", "header"])?;
+    let opts = named(&mut args, "read", &["delimiter", "header", "gzip"])?;
     count_args(&args, "read", 1, 2)?;
     let p = path_arg(&args, 0, "read")?;
     let fmt = match format_arg(&args, 1)? {
         Some(f) => check_format(&f, &args, &[])?,
         None => format_for(&p),
     };
+    let gzip = use_gzip(&opts, &p, &args)?;
     let name = p.display();
-    let open = || {
+    let open_file = || {
         std::fs::File::open(p.native()).map_err(|e| {
             let mut err = OkError::at(
                 ErrKind::Io,
@@ -176,6 +212,27 @@ fn read(interp: &mut Interp, mut args: Args) -> R<Value> {
             }
             crate::interp::Flow::from(err)
         })
+    };
+    let open = || -> R<Box<dyn Read>> {
+        let file = open_file()?;
+        Ok(if gzip {
+            Box::new(GzRead(flate2::read::MultiGzDecoder::new(BufReader::new(
+                file,
+            ))))
+        } else {
+            Box::new(file)
+        })
+    };
+    let read_all = |mut r: Box<dyn Read>| -> R<Vec<u8>> {
+        let mut buf = Vec::new();
+        r.read_to_end(&mut buf).map_err(|e| {
+            crate::interp::Flow::from(OkError::at(
+                ErrKind::Io,
+                args.span,
+                format!("cannot read {name}: {}", io_reason(&e)),
+            ))
+        })?;
+        Ok(buf)
     };
     match fmt {
         "text" | "lines" | "jsonl" => {
@@ -190,17 +247,9 @@ fn read(interp: &mut Interp, mut args: Args) -> R<Value> {
                 t,
             ))))
         }
-        "bytes" => {
-            let mut buf = Vec::new();
-            open()?
-                .read_to_end(&mut buf)
-                .map_err(|e| format_err(&args, format!("cannot read {name}: {e}")))?;
-            Ok(Value::Bytes(buf.into()))
-        }
+        "bytes" => Ok(Value::Bytes(read_all(open()?)?.into())),
         doc => {
-            let mut text = String::new();
-            let mut f = open()?;
-            if f.read_to_string(&mut text).is_err() {
+            let Ok(text) = String::from_utf8(read_all(open()?)?) else {
                 return Err(OkError::at(
                     ErrKind::Format,
                     args.span,
@@ -208,7 +257,7 @@ fn read(interp: &mut Interp, mut args: Args) -> R<Value> {
                 )
                 .with_help("read binary data with read(p, \"bytes\")")
                 .into());
-            }
+            };
             let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
             let _ = interp;
             parse_document(doc, text, &name).map_err(|m| format_err(&args, m))
@@ -302,7 +351,7 @@ fn write(interp: &mut Interp, mut args: Args) -> R<Value> {
     let opts = named(
         &mut args,
         "write",
-        &["append", "compact", "delimiter", "header"],
+        &["append", "compact", "delimiter", "header", "gzip"],
     )?;
     count_args(&args, "write", 2, 3)?;
     let span = args.span;
@@ -317,7 +366,7 @@ fn write(interp: &mut Interp, mut args: Args) -> R<Value> {
     if let Value::Str(s) = &args.pos[0] {
         let known = [
             "json", "jsonl", "ndjson", "csv", "tsv", "txt", "log", "md", "toml", "yaml", "yml",
-            "env",
+            "env", "gz",
         ];
         let looks_like_file = !s.contains(['\n', ' '])
             && known.contains(&OkPath::parse(s).ext().to_ascii_lowercase().as_str());
@@ -342,6 +391,7 @@ fn write(interp: &mut Interp, mut args: Args) -> R<Value> {
         None => format_for(&p),
     };
     let append = bool_named(&opts, "append", &args)?;
+    let gzip = use_gzip(&opts, &p, &args)?;
     if !interp.mutation(&format!(
         "write {}{}",
         p.display(),
@@ -388,24 +438,46 @@ fn write(interp: &mut Interp, mut args: Args) -> R<Value> {
                 format!("cannot write {}: {}", p.display(), io_reason(&e)),
             )
         })?;
-    let mut out = std::io::BufWriter::new(file);
+    let out = std::io::BufWriter::new(file);
     let value = std::mem::replace(&mut args.pos[0], Value::Null);
-    serialize(
-        interp,
-        value,
-        fmt,
-        &opts,
-        &args,
-        &mut out,
-        existing_nonempty,
-    )?;
-    out.flush().map_err(|e| {
+    let write_err = |e: std::io::Error| {
         OkError::at(
             ErrKind::Io,
             span,
             format!("cannot write {}: {}", p.display(), io_reason(&e)),
         )
-    })?;
+    };
+    if gzip {
+        // A fixed header (no name, no time, OS "unknown") and a fixed level
+        // make the compressed bytes identical on every OS (SPEC.md 13.1.1).
+        let mut enc = flate2::GzBuilder::new()
+            .operating_system(255)
+            .write(out, flate2::Compression::new(6));
+        serialize(
+            interp,
+            value,
+            fmt,
+            &opts,
+            &args,
+            &mut enc,
+            existing_nonempty,
+        )?;
+        enc.finish()
+            .and_then(|mut w| w.flush())
+            .map_err(write_err)?;
+    } else {
+        let mut out = out;
+        serialize(
+            interp,
+            value,
+            fmt,
+            &opts,
+            &args,
+            &mut out,
+            existing_nonempty,
+        )?;
+        out.flush().map_err(write_err)?;
+    }
     Ok(Value::Null)
 }
 
@@ -1366,5 +1438,12 @@ mod tests {
         assert_eq!(f("data.ndjson"), "jsonl");
         assert_eq!(f("notes"), "text");
         assert_eq!(f("c.yml"), "yaml");
+        // Compressed files: the name without `.gz` decides (SPEC.md 13.1.1).
+        assert_eq!(f("events.jsonl.gz"), "jsonl");
+        assert_eq!(f("a/b.CSV.GZ"), "csv");
+        assert_eq!(f(".env.gz"), "env");
+        assert_eq!(f("data.gz"), "text");
+        assert!(gz_name(&OkPath::parse("x.json.Gz")));
+        assert!(!gz_name(&OkPath::parse("x.tgz")));
     }
 }

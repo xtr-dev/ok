@@ -9,7 +9,9 @@ in the code. Each needs a spec change and review before it is built.
   namespaces.
 - Passing arguments to dependencies: `needs [build(release: true)]`.
 - Stderr redirection operators (`2>`, `2>&1`) in command mode.
-- Reading compressed data directly: `read("x.json.gz")`.
+- Other compression formats for `read`/`write` (zstd `.zst`, xz `.xz`,
+  bzip2 `.bz2`); they need new dependencies.
+- A `gzip:` option for `stdin()`, `parse` and `to`.
 - A permission system for tasks (`task x allow [net, env "KEY"]`); the syntax
   is reserved.
 - A REPL beyond `ok -e`.

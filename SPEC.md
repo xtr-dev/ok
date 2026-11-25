@@ -1213,8 +1213,8 @@ directory (the project root in project mode).
 
 | Function | Returns | Notes |
 |---|---|---|
-| `read(p: path, format: string? = null)` | value | Format from the extension or `format` (13). |
-| `write(value, p: path, format: string? = null, --append: bool)` | `null` | Creates parent directories. Writes `\n` line endings. Streams lazy values. When the value is a short string that looks like a file name (`"out.txt"`) and the path has no extension, the arguments are almost certainly swapped, and `write` refuses with a hint. |
+| `read(p: path, format: string? = null, --gzip: bool? = null)` | value | Format from the extension or `format` (13); a `.gz` file is decompressed (13.1.1). |
+| `write(value, p: path, format: string? = null, --append: bool, --gzip: bool? = null)` | `null` | Creates parent directories. A `.gz` file is compressed (13.1.1). Writes `\n` line endings. Streams lazy values. When the value is a short string that looks like a file name (`"out.txt"`) and the path has no extension, the arguments are almost certainly swapped, and `write` refuses with a hint. |
 | `copy(src: path, dst: path)` | `null` | Files or directories (recursive). `dst` is the exact destination, never "into". Overwrites files. |
 | `move(src: path, dst: path)` | `null` | Rename; falls back to copy and remove across file systems. |
 | `remove(p: path)` | `bool` | File or directory tree. `false` if nothing existed. Refuses the file-system root, the home directory and the project root. |
@@ -1446,9 +1446,41 @@ an explicit `format` argument overrides it. `parse(text, format)` and
 `read(p, "bytes")`. `to(v, "json", compact: true)` and `write(..., compact:
 true)` write JSON on one line.
 
+#### 13.1.1 Compressed files
+
+A file whose name ends in `.gz` (in any letter case) is gzip-compressed:
+`read` decompresses it and `write` compresses it. The format comes from the
+name without `.gz`, by the table above:
+
+```
+let events = read("events.jsonl.gz")          # jsonl, lazy, decompressed as it is read
+write(report, "report.json.gz")               # json, compressed
+read("server.log.gz") | lines | where(l => "ERROR" in l) | count
+```
+
+- `data.gz` has no inner extension and is `text`. An explicit `format`
+  replaces only the format; the file is still decompressed, so
+  `read("blob.bin.gz", "bytes")` gives the decompressed bytes.
+- `gzip: true` or `gzip: false` overrides the name, for example
+  `read("x.gz", "bytes", gzip: false)` for the compressed bytes as stored,
+  or `write(v, "upload.dat", gzip: true)`.
+- Reading streams for the lazy formats (13.2): decompression happens as the
+  data is consumed, in bounded memory. A file of several gzip members one
+  after another (as produced by appending) is read as one stream.
+- `write(..., append: true)` to a compressed file adds a new gzip member,
+  which `read` joins with the existing data. For CSV and TSV the header is
+  written only when the file was empty, as for uncompressed files.
+- Data that is not valid gzip is an `io` error at the point of reading:
+  `cannot read x.json.gz: not valid gzip data (...)`.
+- Written files are identical on every OS: the gzip header carries no file
+  name and no time, and the compression level is fixed.
+
+`stdin()`, `parse` and `to` do not decompress.
+
 ### 13.2 Lazy values
 
-`read` of `jsonl`, `csv`, `tsv`, `lines` and `text`, `stdin()`, `range`, and
+`read` of `jsonl`, `csv`, `tsv`, `lines` and `text` (also compressed,
+13.1.1), `stdin()`, `range`, and
 the stdout of a piped command are lazy: the data is produced as it is
 consumed. A lazy value is indistinguishable from a normal one except for
 when reading happens and when read or parse errors are raised (at the point

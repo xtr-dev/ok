@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Short flags for script and task parameters: `--verbose, -v: bool`.
   Switches group (`-vq`), values follow as the next argument (`-o out.json`),
   and `--help` and completions show them. `-h`, `-C` and `-e` are reserved.
+- Compressed files: `read("x.json.gz")` decompresses and picks the format
+  from the inner extension, `write(v, "x.json.gz")` compresses (identical
+  bytes on every OS), line formats stream, `append: true` adds a gzip
+  member, and `gzip: true/false` overrides the name.
 
 ### Changed
 

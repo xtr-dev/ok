@@ -605,3 +605,26 @@ long names may still be declared by tasks as before. A short form on a
 repeat the default. The usage line keeps the long names, which say what a
 flag does; `--help` lists the short forms, and completion offers them only
 after a single `-`, so the default candidate list stays readable.
+
+**Compression is chosen by the `.gz` name, the format by the name without
+it, and `gzip:` overrides the name.** `read("events.jsonl.gz")` should mean
+what it says without extra arguments, and the inner extension is the
+reader's natural cue for the format. An explicit format replaces only the
+format, so `read(p, "bytes")` on a `.gz` file gives the decompressed bytes,
+consistent with every other format; the compressed bytes as stored (for an
+upload, say) are `read(p, "bytes", gzip: false)`, and `gzip: true` covers
+names that do not end in `.gz`. Detection by content was rejected because
+the name already tells the reader, and a plain file that happens to start
+with the gzip magic bytes must not change meaning. Only gzip is supported:
+`flate2` is already a dependency for `tar`, and other formats (zstd, xz,
+bzip2) would need new ones; they are noted in IDEAS.md.
+
+**Compressed reading streams and accepts several gzip members; appending
+adds a member; output is byte-identical everywhere.** Line formats stay
+lazy because large logs are the main reason to keep files compressed.
+Reading all members (`MultiGzDecoder`) makes `append: true` and files joined
+with `cat` work. The gzip header is written with no name, time 0, OS byte
+255 ("unknown") and level 6, so the same value gives the same file on every
+OS, following "same output everywhere". Corrupt data is reported as
+"not valid gzip data" with the decoder's reason. `stdin()`, `parse` and
+`to` do not decompress: they have no file name to go by.
