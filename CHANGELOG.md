@@ -12,6 +12,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A user guide at https://okrun.dev/docs/: from a first script to tasks, with a standard library reference. Every example is tested against ok, and runs in the browser with a Run button.
 
+### Changed
+
+- `to(v, "json", compact: true)`, `write(..., compact: true)` and JSON Lines write JSON without spaces: `{"a":[1,2]}` instead of `{"a": [1, 2]}`.
+- `p.parts()` of an absolute path starts with its root: `path("/a/b").parts()` is `["/", "a", "b"]` (`"C:/"` or `"//server/share/"` on Windows), so the parts rebuild the path.
+
 ### Fixed
 
 - `THIRD_PARTY.md` no longer lists `ok-fixture`, a test helper that is not part of the binary.
@@ -30,6 +35,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `ok self --help`, `ok trust --help` and `ok untrust --help` print their commands instead of failing with an unknown option.
 - `--env NAME` with a missing `.env.NAME` exits with 2, the code for bad usage, instead of 1, and the help line says how to fix it.
 - Error traces: a script's `main` and the task named on the command line end with ``= in `main`, started by ok`` instead of pointing at their own declaration, and a dependency that fails in a parallel worker is traced to its `needs` entry, as with `-j1`.
+- A match guard that is a bare name or a parenthesised expression (`_ if flag =>`, `_ if (flag) =>`) is a guard; it was read as an arrow closure and failed with "expected `=>` after the pattern".
+- Type errors name list elements in the plural: "must be a list of strings" instead of "a list of a string".
+- "Did you mean" no longer suggests unrelated short names (`a` for `r.b`, `get` for `grep`): names of one or two characters only match a case-only difference, three or four characters allow one edit, longer names two.
+- An unknown name piped into after a command (`run ls | grep x`) says to write `| run grep x`, before the command runs; `ok self check` reports it the same way.
+- An unknown name inside `{...}` of a string (`"body { color: red }"`) explains that `{` starts an interpolation and how to write a literal brace, instead of suggesting `floor`; an interpolation that does not end (`glob("*.{md,txt}")`) gets the same help.
+- The help for a non-bool condition repeats the condition, as SPEC.md 5.3 shows: `if len(files) > 0` or `if files != []` instead of `xs`.
+- Writing TSV or CSV with `header: false` and records says that rows must be lists and names the format, instead of "CSV rows must be records, got a record".
+- `pad(..., align: "middle")` is an `arg` error with a did-you-mean instead of a `type` error.
+- The unknown-format help of `parse` lists `yaml_all`.
+- A misspelled function of an imported namespace says "`math` has no function `quadd`" with a did-you-mean among its exports, instead of "no function `quadd` to call on a record".
+- Importing the same file twice without `as` is a no-op instead of a clash of its names with themselves.
+- `--dry-run` and `--trace` show `remove` of a missing path and `mkdir` of an existing directory, like any other file operation.
+- `--help` lists a bool flag that defaults to true as `--[no-]compress  compress the archive [default: true]` instead of `--no-compress`, which read backwards.
+- SPEC.md: the 12.1 and 12.4 tables list `floor`, `ceil`, `round`, `parse`, `to` and the `delimiter`, `header` and `compact` options; 9.8 says which arguments the trace quotes; 6.9 says `it` is not a name scripts can use; 9.5 examples split piped output with `lines`; 10.2 defines what `fail(x)` raises; 12.1.1 says to single-quote glob patterns with `{a,b}`.
 
 ## [0.2.0] - 2026-11-26
 

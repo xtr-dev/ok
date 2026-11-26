@@ -922,3 +922,27 @@ install, and unreleased changes never reach it early.
 **A failed project load in `ok self check` ends with `ok: the project failed to load: 1 error`.** The files to check are only known once the project loads, so a load error stops the check; checking `ok.ok` and `ok/*.ok` anyway would mostly repeat the same error.
 
 **`--env NAME` with a missing file exits with 2.** The table in 2.3 gives 2 to missing or malformed arguments, and `-C` with a missing directory already exits with 2. Only a missing file counts; a file that exists but cannot be read is an I/O error (1).
+
+## 2026-11-26 (guide findings: parser, messages, formats)
+
+**A match guard ends at the arm's `=>`.** `_ if flag =>` read `flag =>` as an arrow closure. The parser now has a `no_arrow` flag, set only for the outermost level of a guard and cleared again inside brackets, call arguments and closure bodies (everywhere `with_nostruct` is entered), so `xs if xs.any(x => x > 1) =>` still has its closure. A guard that is itself a closure was never useful: it is not a bool.
+
+**Did-you-mean needs the distance to be small relative to the name.** The limit was 1 edit for names of up to 3 characters and 2 above, which turned `r.b` into `a` and `grep` into `get`. Now: a case-only difference always counts; otherwise names of 1 or 2 characters get no suggestion, 3 or 4 characters allow 1 edit, 5 or more allow 2. `payed` still finds `paid` (the guide relies on it); `color` still finds `floor` by distance, which is why the interpolation case below replaces the suggestion by context instead of by distance. A rule based on shared prefixes was considered and dropped: transpositions at the start (`pirnt`) are common typos.
+
+**Context beats distance for two common mistakes.** An unknown name as the stage right after a command (`run ls | grep x`) is almost always a missing `run`, so the help says `| run grep x` (the stage's own text when short, else `grep ...`) and no did-you-mean; the interpreter reports it before starting the command, and `ok self check` reports it without also flagging the stage's arguments. An unknown name inside `{...}` of a string gets help about literal braces, unless the interpolation is exactly that name and a did-you-mean exists (`"{nmae}"` is a typo in an intended interpolation). A parse error that ends an interpolation early (`"*.{md,txt}"`) gets the same brace help.
+
+**Help for a non-bool condition repeats the condition.** The spec showed `if len(files) > 0`; the binary printed `len(xs) > 0`. The help now uses the condition's source text when it is at most 30 characters with no whitespace (pasting it back is then safe without parentheses), and the placeholder otherwise; `if`/`while` are included in the hint as in the spec.
+
+**A bad string for a choice argument is an `arg` error.** `pad(align: "middle")` was a `type` error. Unknown hash algorithms and formats were already `arg` errors with a did-you-mean, so `align` follows them; a non-string stays a `type` error. No other builtin takes a fixed set of strings.
+
+**Re-importing a file is a no-op per importing scope.** The interpreter remembers which resolved files were imported without `as` into which file scope (a weak reference, as for caught errors) and skips a repeat. Comparing the values instead would have accepted a local `let` that happens to equal an export.
+
+**Compact JSON has no spaces.** The spec said "on one line" and called JSON Lines "one compact JSON value per line", without saying whether spaces stay. `compact` was taken at its word: `{"a":[1,2]}`, which is what `JSON.stringify`, `jq -c` and most JSON Lines producers write, and smaller. JSON Lines output changes too (same writer); the request body of `fetch(json:)` is now compact as well. Pretty JSON is unchanged. Listed under Changed, since files written by 0.2.0 differ.
+
+**`parts()` starts with the root.** `path("/a/b").parts()` lost the root, so the parts could not rebuild the path. Like Python's `pathlib`, the prefix comes first when there is one: `"/"`, `"C:/"`, `"C:"` (drive-relative) or `"//server/share/"`; joining the parts in order with `/` gives the path back. Relative paths are unchanged.
+
+**Dry runs and traces show file operations that have nothing to do.** `remove` of a missing path and `mkdir` of an existing directory printed nothing, so a dry run's plan depended on what earlier (skipped) steps would have created, and the same script showed different plans on different machines. They now always print the operation; `remove` still returns `false` for a missing path, since that is a read.
+
+**`--[no-]name` for bool flags that default to true.** The Options column showed `--no-compress  compress the archive [default: true]`. Rewording the help ("do not compress ...") would mean generating English from the author's comment. `--[no-]compress` keeps the comment next to the positive name, says both forms are accepted, and is a common CLI convention (Python's `BooleanOptionalAction`, many Rust CLIs). The usage line keeps `[--no-compress]`, the form that changes the default.
+
+**Not fixed: `run yes | take 3` does not end.** Found while correcting SPEC.md 9.5, whose example used it: piped output is text, so `take` forces all of it before reporting that it needs a list, which never happens for an endless command. The spec example now uses `| lines | take 3`, which stops `yes` as described. Failing early for list stages on lazy text would be the fix; it was left out of this round.
