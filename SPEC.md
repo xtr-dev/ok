@@ -1035,7 +1035,15 @@ The first argument names the program.
 - Otherwise each directory of `PATH` is searched in order. On Windows the
   search also tries each extension in `PATHEXT` (default `.COM;.EXE;.BAT;.CMD`)
   when the name has no extension, so `run npm install` finds `npm.cmd`. The
-  current directory is **not** searched on any OS.
+  current directory is **not** searched on any OS: empty `PATH` entries and
+  `.` are skipped. Other relative entries (`node_modules/.bin`) are relative
+  to ok's working directory, also for a command with a `cwd` option, and the
+  program found is run by its absolute path, so the file that was checked
+  is the file that runs.
+- The search uses the `PATH` that the command gets: ok's own, or one set
+  with `env.set` or the `env` option. On Unix only the variable named
+  exactly `PATH` counts (`path` is another variable); on Windows the name is
+  case-insensitive.
 - Not found is an error: `command not found: cargo (searched PATH)`. On Unix
   a file without execute permission is skipped during the search.
 
@@ -1128,7 +1136,7 @@ run("npm", "ci", cwd: "frontend", timeout: 10m)
 | Option | Type | Meaning |
 |---|---|---|
 | `cwd` | path | Working directory of the child. Relative to the project root or the script's working directory. |
-| `env` | record | Variables to set for the child; a `null` value removes the variable. |
+| `env` | record | Variables to set for the child; a `null` value removes the variable. A name that is empty or contains `=` or NUL is a `value` error, and so is a value containing NUL. |
 | `stdin` | string, bytes, path | Data (string or bytes) or a file (path) for stdin. |
 | `timeout` | duration | Stop the command and the processes it started after this long; raises a `timeout` error (exit 124 if uncaught). |
 | `bytes` | bool | Captured `out`/`err` are bytes, unmodified. |
@@ -1456,7 +1464,11 @@ running code is in), `invocation_dir` (where the user ran `ok`).
 | `args` | `list[string]` | Script arguments when there is no `main`. |
 
 Environment variable names are case-insensitive on Windows and
-case-sensitive elsewhere. `get`, `has`, `set`, `remove` and `all` are methods
+case-sensitive elsewhere. `env.set` and `env.remove` refuse, with a `value`
+error, a name that is empty or contains `=` or NUL (the operating system
+stores a variable as `NAME=value`, so such a name would set a different
+variable), and `env.set` a value containing NUL. An argument containing
+NUL is a `command` error, since no program can receive it. `get`, `has`, `set`, `remove` and `all` are methods
 of `env`; read a variable with such a name through `env.get("get")`.
 
 ### 12.4 Text

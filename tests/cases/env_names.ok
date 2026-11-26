@@ -1,0 +1,10 @@
+# Names that cannot be environment variables are refused, instead of
+# setting a different variable (SPEC.md 9.6, 12.3).
+print(try { run ok-fixture env FOO with {env: {"FOO=BAR": "baz"}} } catch e { "{e.kind}: {e.message}" })
+print(try { run ok-fixture env FOO with {env: {"": "x"}} } catch e { "{e.kind}: {e.message}" })
+print(try { run ok-fixture env FOO with {env: {"A\u{0}B": "x"}} } catch e { "{e.kind}: {e.message}" })
+print(try { run ok-fixture env FOO with {env: {FOO: "a\u{0}b"}} } catch e { "{e.kind}: {e.message}" })
+print(try { env.set("FOO=BAR", "baz") } catch e { "{e.kind}: {e.message}" })
+print(try { env.remove("") } catch e { "{e.kind}: {e.message}" })
+print(try { env.set("FOO", "a\u{0}b") } catch e { "{e.kind}: {e.message}" })
+print(try { run ok-fixture echo "a\u{0}b" } catch e { "{e.kind}: {e.message}" })

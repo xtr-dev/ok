@@ -1,0 +1,8 @@
+value: "FOO=BAR" is not an environment variable name: it contains `=`
+value: "" is not an environment variable name: it is empty
+value: "A\0B" is not an environment variable name: it contains a NUL character
+value: the value of FOO contains a NUL character, which cannot be passed to a program
+value: "FOO=BAR" is not an environment variable name: it contains `=`
+value: "" is not an environment variable name: it is empty
+value: the value of FOO contains a NUL character, which cannot be passed to a program
+command: argument 2 of `ok-fixture` contains a NUL character, which cannot be passed to a program

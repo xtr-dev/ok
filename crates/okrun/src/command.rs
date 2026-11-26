@@ -364,6 +364,11 @@ impl Interp {
                 ("cwd", Value::Path(p)) => o.cwd = Some(p.native()),
                 ("env", Value::Record(e)) => {
                     for (name, value) in e.iter() {
+                        if let Err(msg) = check_env_name(name) {
+                            return Err(OkError::at(ErrKind::Value, span, msg)
+                                .with_help(ENV_NAME_HELP)
+                                .into());
+                        }
                         let value = match value {
                             Value::Null => None,
                             Value::Str(s) => Some(s.to_string()),
@@ -383,6 +388,16 @@ impl Interp {
                                 .into());
                             }
                         };
+                        if let Some(v) = &value
+                            && v.contains('\0')
+                        {
+                            return Err(OkError::at(
+                                ErrKind::Value,
+                                span,
+                                format!("the value of {name} contains a NUL character, which cannot be passed to a program"),
+                            )
+                            .into());
+                        }
                         o.env.push((name.to_string(), value));
                     }
                 }
@@ -477,10 +492,25 @@ impl Interp {
             .with_help("`run` needs the native ok binary; everything else in the script works here")
             .into());
         }
+        if let Some(i) = argv.iter().position(|a| a.contains('\0')) {
+            let mut e = cmd_err(
+                span,
+                if i == 0 {
+                    "the program name contains a NUL character".to_string()
+                } else {
+                    format!(
+                        "argument {i} of `{}` contains a NUL character, which cannot be passed to a program",
+                        display_arg(&argv[0])
+                    )
+                },
+            );
+            e.command = Some(argv.clone());
+            return Err(e.into());
+        }
         let base_cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let cwd = match &opts.cwd {
             Some(c) => base_cwd.join(c),
-            None => base_cwd,
+            None => base_cwd.clone(),
         };
         if !cwd.is_dir() {
             return Err(cmd_err(
@@ -497,16 +527,17 @@ impl Interp {
             .iter()
             .chain(opts.env.iter())
             .rev()
-            .find(|(k, _)| k.eq_ignore_ascii_case("PATH") || k == "PATH")
+            .find(|(k, _)| is_path_var(k))
             .map(|(_, v)| v.clone().map(OsString::from))
             .unwrap_or_else(|| std::env::var_os("PATH"));
-        let program = resolve_program(&argv[0], &cwd, path_var.as_deref()).map_err(|msg| {
-            let mut e = cmd_err(span, msg);
-            e.exit_code = Some(127);
-            e.command = Some(argv.clone());
-            e.help = Some("check that it is installed and on PATH".into());
-            e
-        })?;
+        let program =
+            resolve_program(&argv[0], &cwd, &base_cwd, path_var.as_deref()).map_err(|msg| {
+                let mut e = cmd_err(span, msg);
+                e.exit_code = Some(127);
+                e.command = Some(argv.clone());
+                e.help = Some("check that it is installed and on PATH".into());
+                e
+            })?;
         let p = Prepared {
             argv,
             program,
@@ -1169,10 +1200,44 @@ fn timeout_error(p: &Prepared) -> OkError {
 fn spawn_reason(e: &std::io::Error) -> String {
     match e.kind() {
         std::io::ErrorKind::PermissionDenied => "permission denied (is it executable?)".into(),
-        std::io::ErrorKind::InvalidInput => "an argument cannot be passed safely to this program (batch files refuse some characters)".into(),
+        // Arguments and environment with NUL are refused before spawning,
+        // so on Windows this is the batch-file quoting of SPEC.md 9.4.
+        std::io::ErrorKind::InvalidInput if cfg!(windows) => "an argument cannot be passed safely to this program (batch files refuse some characters)".into(),
         _ => io_reason(e),
     }
 }
+
+/// Whether an environment variable name is `PATH`: exactly on Unix, in any
+/// case on Windows, whose variable names are case-insensitive (SPEC.md 12.3).
+fn is_path_var(name: &str) -> bool {
+    if cfg!(windows) {
+        name.eq_ignore_ascii_case("PATH")
+    } else {
+        name == "PATH"
+    }
+}
+
+/// Why `name` cannot be an environment variable name, if it cannot: the
+/// operating system stores variables as `NAME=value` text, so a name with
+/// `=` or NUL, or an empty one, would set a different variable or none.
+pub(crate) fn check_env_name(name: &str) -> Result<(), String> {
+    let problem = if name.is_empty() {
+        "is empty"
+    } else if name.contains('=') {
+        "contains `=`"
+    } else if name.contains('\0') {
+        "contains a NUL character"
+    } else {
+        return Ok(());
+    };
+    Err(format!(
+        "{} is not an environment variable name: it {problem}",
+        Value::str(name).repr()
+    ))
+}
+
+pub(crate) const ENV_NAME_HELP: &str =
+    "environment variable names are made of letters, digits and `_`, like NODE_ENV";
 
 /// Show an argument list as it would be typed, quoting where needed
 /// (SPEC.md 9.8).
@@ -1245,10 +1310,15 @@ pub fn redact_url(s: &str) -> std::borrow::Cow<'_, str> {
     .into()
 }
 
-/// Find the program to run (SPEC.md 9.3).
+/// Find the program to run (SPEC.md 9.3). `cwd` is the command's working
+/// directory, which a name with a separator is relative to; `base` is ok's
+/// working directory, which relative `PATH` entries are relative to. The
+/// result is absolute when `cwd` and `base` are, so the command runs the
+/// file that was checked whatever its own working directory.
 pub fn resolve_program(
     name: &str,
     cwd: &Path,
+    base: &Path,
     path_var: Option<&std::ffi::OsStr>,
 ) -> Result<PathBuf, String> {
     let has_sep = name.contains('/') || (cfg!(windows) && name.contains('\\'));
@@ -1264,10 +1334,14 @@ pub fn resolve_program(
     }
     if let Some(paths) = path_var {
         for dir in std::env::split_paths(paths) {
-            if dir.as_os_str().is_empty() {
+            // An empty entry or `.` would search the working directory,
+            // where a cloned repository could plant a `git` or `ls`.
+            if dir.as_os_str().is_empty()
+                || (dir.is_relative() && OkPath::from_native(&dir).display() == ".")
+            {
                 continue;
             }
-            for cand in candidates(&dir.join(name), &exts) {
+            for cand in candidates(&base.join(&dir).join(name), &exts) {
                 if is_runnable(&cand) {
                     return Ok(cand);
                 }
@@ -1602,12 +1676,29 @@ mod tests {
             std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         let path = std::env::join_paths([bin.clone()]).unwrap();
-        assert_eq!(resolve_program("tool", &dir, Some(&path)).unwrap(), tool);
-        // Not found when only present in the working directory.
-        assert!(resolve_program("tool", &bin, Some(std::ffi::OsStr::new(""))).is_err());
+        assert_eq!(
+            resolve_program("tool", &dir, &dir, Some(&path)).unwrap(),
+            tool
+        );
+        // Not found when only present in the working directory, also when
+        // PATH names it as `.` or an empty entry.
+        for entry in ["", ".", "./"] {
+            assert!(
+                resolve_program("tool", &bin, &bin, Some(std::ffi::OsStr::new(entry))).is_err(),
+                "{entry:?}"
+            );
+        }
+        // A relative PATH entry is relative to ok's working directory, not
+        // the command's.
+        let sub = dir.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        assert_eq!(
+            resolve_program("tool", &sub, &dir, Some(std::ffi::OsStr::new("bin"))).unwrap(),
+            tool
+        );
         // A name with a separator is relative to the working directory.
         assert_eq!(
-            resolve_program("bin/tool", &dir, None).unwrap(),
+            resolve_program("bin/tool", &dir, &dir, None).unwrap(),
             if cfg!(windows) {
                 dir.join("bin\\tool.exe")
             } else {
@@ -1619,11 +1710,28 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o644)).unwrap();
             assert!(
-                resolve_program("tool", &dir, Some(&path)).is_err(),
+                resolve_program("tool", &dir, &dir, Some(&path)).is_err(),
                 "non-executable files are skipped"
             );
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn only_path_itself_is_the_search_path_outside_windows() {
+        assert!(is_path_var("PATH"));
+        assert_eq!(is_path_var("path"), cfg!(windows));
+        assert_eq!(is_path_var("Path"), cfg!(windows));
+        assert!(!is_path_var("PATHEXT"));
+    }
+
+    #[test]
+    fn environment_names_with_equals_or_nul_are_refused() {
+        assert!(check_env_name("NODE_ENV").is_ok());
+        assert!(check_env_name("ProgramFiles(x86)").is_ok());
+        for bad in ["", "A=B", "=C:", "A\0B"] {
+            assert!(check_env_name(bad).is_err(), "{bad:?}");
+        }
     }
 
     #[cfg(windows)]
@@ -1633,7 +1741,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("npm.cmd"), b"@echo off\r\necho %*\r\n").unwrap();
         let path = std::env::join_paths([dir.clone()]).unwrap();
-        let found = resolve_program("npm", &dir, Some(&path)).unwrap();
+        let found = resolve_program("npm", &dir, &dir, Some(&path)).unwrap();
         assert!(
             found
                 .to_string_lossy()

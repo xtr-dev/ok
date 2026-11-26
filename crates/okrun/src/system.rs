@@ -26,6 +26,15 @@ pub static BUILTINS: &[Builtin] = &[
 
 // ----- env ----------------------------------------------------------------------
 
+/// Refuse a name that cannot be an environment variable (SPEC.md 12.3).
+fn valid_name(args: &Args, name: &str) -> R<()> {
+    crate::command::check_env_name(name).map_err(|msg| {
+        OkError::at(ErrKind::Value, args.span, msg)
+            .with_help(crate::command::ENV_NAME_HELP)
+            .into()
+    })
+}
+
 /// `env.get`, `env.has`, `env.set`, `env.remove`, `env.all`.
 pub fn env_method(interp: &mut Interp, name: &str, span: Span, mut args: Args) -> R<Value> {
     named(&mut args, &format!("env.{name}"), &[])?;
@@ -59,6 +68,7 @@ pub fn env_method(interp: &mut Interp, name: &str, span: Span, mut args: Args) -
         "set" => {
             count_args(&args, "env.set", 2, 2)?;
             let k = key(&args, "set")?;
+            valid_name(&args, &k)?;
             let v = match &args.pos[1] {
                 Value::Str(s) => s.to_string(),
                 Value::Int(_) | Value::Float(_) | Value::Bool(_) => args.pos[1].display(),
@@ -70,12 +80,21 @@ pub fn env_method(interp: &mut Interp, name: &str, span: Span, mut args: Args) -
                     );
                 }
             };
+            if v.contains('\0') {
+                return Err(OkError::at(
+                    ErrKind::Value,
+                    args.span,
+                    format!("the value of {k} contains a NUL character, which cannot be passed to a program"),
+                )
+                .into());
+            }
             interp.set_env(&k, Some(v));
             Ok(Value::Null)
         }
         "remove" => {
             count_args(&args, "env.remove", 1, 1)?;
             let k = key(&args, "remove")?;
+            valid_name(&args, &k)?;
             interp.set_env(&k, None);
             Ok(Value::Null)
         }
@@ -128,7 +147,7 @@ fn which(interp: &mut Interp, mut args: Args) -> R<Value> {
     let cwd = std::env::current_dir().unwrap_or_default();
     let path = interp.env_var("PATH").map(std::ffi::OsString::from);
     Ok(
-        match crate::command::resolve_program(name, &cwd, path.as_deref()) {
+        match crate::command::resolve_program(name, &cwd, &cwd, path.as_deref()) {
             Ok(p) => Value::path(OkPath::from_native(&p)),
             Err(_) => Value::Null,
         },
