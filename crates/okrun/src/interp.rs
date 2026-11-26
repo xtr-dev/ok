@@ -134,6 +134,9 @@ pub struct Interp {
     modules: HashMap<PathBuf, Value>,
     /// Libraries being loaded, for cycle detection.
     loading: Vec<(PathBuf, String)>,
+    /// Libraries imported without `as`, with the scope they were imported
+    /// into: importing the same file there again is a no-op (SPEC.md 11).
+    unaliased: Vec<(Weak<Scope>, PathBuf)>,
     depth: usize,
     /// Caught error records, so `fail(e)` can re-raise the original error.
     caught: Vec<(Weak<Record>, OkError)>,
@@ -187,6 +190,7 @@ impl Interp {
             sources: SourceMap::default(),
             globals,
             modules: HashMap::new(),
+            unaliased: Vec::new(),
             loading: Vec::new(),
             depth: 0,
             caught: Vec::new(),
@@ -537,6 +541,16 @@ impl Interp {
                 let Value::Record(r) = &exports else {
                     return Ok(());
                 };
+                let here = Rc::downgrade(scope);
+                if self
+                    .unaliased
+                    .iter()
+                    .any(|(s, p)| Weak::ptr_eq(s, &here) && *p == full)
+                {
+                    // The same definitions are already in scope.
+                    return Ok(());
+                }
+                self.unaliased.push((here, full.clone()));
                 for (k, v) in r.iter() {
                     if !scope.declare(k, v.clone(), false) {
                         return Err(OkError::at(

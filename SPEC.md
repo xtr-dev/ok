@@ -1255,7 +1255,8 @@ import "frontend/ok.ok" as fe # in project mode: mount a sub-project (15.8)
 - Exported names are all top-level `fn` and `let` names not starting with
   `_`.
 - `import` without `as` brings every exported name into scope; a clash with a
-  local declaration or another import is a load-time error. With `as`, the
+  local declaration or another import is a load-time error. Importing the
+  same file (the same resolved path) again into the same file is a no-op. With `as`, the
   module is a namespace value; `lib.f(x)` calls its function, and a name
   the library does not export is a `name` error (``"`lib` has no function
   `f`"``, with a did-you-mean among its exports).

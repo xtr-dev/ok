@@ -1,0 +1,8 @@
+# Importing the same file twice without `as` is a no-op, not a clash
+# (SPEC.md 11).
+
+import "./lib/math.ok"
+import "./lib/math.ok"
+import "lib/../lib/math.ok"
+
+print(square(3), pi_ish)
