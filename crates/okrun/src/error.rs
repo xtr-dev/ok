@@ -232,15 +232,18 @@ impl Paint {
 
 /// Render an error the way SPEC.md 10.1 shows it. Errors with a source
 /// location show `error[kind]:`; errors without one (command-line and load
-/// errors) show plain `error:`.
+/// errors) show plain `error:`, except trust errors (`error[trust]:`).
 pub fn render(err: &OkError, sources: &SourceMap, color: Color) -> String {
     let p = Paint {
         on: color == Color::Always,
     };
     let mut out = String::new();
     let word = if err.warning { "warning" } else { "error" };
+    // Trust errors name their kind even without a location, so that a
+    // refusal to run is recognisable (SPEC.md 10.1, 16.4).
     let head = match err.span {
         Some(_) => format!("{word}[{}]", err.kind.name()),
+        None if err.kind == ErrKind::Trust => format!("{word}[trust]"),
         None => word.to_string(),
     };
     let head = if err.warning {
@@ -421,5 +424,22 @@ mod tests {
         assert_eq!(suggest("verbos", names), Some("verbose".into()));
         assert_eq!(suggest("zzz", names), None);
         assert_eq!(suggest("Release", names), Some("release".into()));
+    }
+
+    #[test]
+    fn errors_without_a_location_name_only_the_trust_kind() {
+        let sources = SourceMap::default();
+        let trust = OkError::new(ErrKind::Trust, "this project is not trusted")
+            .with_note("the project is at /p")
+            .with_help("run `ok trust`");
+        assert_eq!(
+            render(&trust, &sources, Color::Never),
+            "error[trust]: this project is not trusted\n  = note: the project is at /p\n  = help: run `ok trust`\n"
+        );
+        let usage = OkError::new(ErrKind::Arg, "unknown option -x");
+        assert_eq!(
+            render(&usage, &sources, Color::Never),
+            "error: unknown option -x\n"
+        );
     }
 }

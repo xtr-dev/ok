@@ -1157,7 +1157,8 @@ shows the plan of a script, not a guaranteed preview of every branch.
 Every error shows the kind, message, location and a source snippet with the
 span underlined, followed by optional notes, a call trace and a help line.
 Errors without a source location (command-line and some load errors) show
-only `error: message` and their notes and help.
+only `error: message` and their notes and help; trust errors (16) show
+`error[trust]: message`, so a refusal to run is recognisable.
 
 ```
 error[name]: unknown name `relase`
@@ -2057,8 +2058,15 @@ waits for input):
 
 ```
 error[trust]: this project is not trusted
-  = help: review the files, then run `ok trust`; in CI set OK_TRUST=1
+  = note: the project is at /home/bas/src/myapp
+  = help: review the files, then run `ok trust`; in CI set OK_TRUST=1 or pass --trust
 ```
+
+The note names the root, since `-C` or discovery may have found a project
+other than the one the user meant. If an earlier version of this root was
+trusted, the message is `the project files changed since you trusted them`
+and a second note lists the files whose content differs from the trusted
+copy (`= note: changed: ok.ok, ok/db.ok`), in place of the prompt's diff.
 
 ### 16.5 Commands and store
 

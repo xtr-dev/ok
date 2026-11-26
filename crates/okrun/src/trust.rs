@@ -217,19 +217,12 @@ pub fn ensure_trusted(project: &Project, skip: bool) -> R<()> {
     if store.is_trusted(&root, &fp) {
         return Ok(());
     }
-    if !std::io::stdin().is_terminal() {
-        let mut e = OkError::new(
-            ErrKind::Trust,
-            format!("this project is not trusted: {root}"),
-        );
-        e.help = Some(
-            "review the files, then run `ok trust`; in CI set OK_TRUST=1 or pass --trust".into(),
-        );
-        return Err(e.into());
-    }
     let previous = store
         .previous(&root)
         .filter(|p| store.snapshot_dir(p).is_dir());
+    if !std::io::stdin().is_terminal() {
+        return Err(not_trusted(&store, &root, previous.as_deref(), project).into());
+    }
     let names: Vec<&str> = project
         .trust_files
         .iter()
@@ -282,15 +275,45 @@ pub fn ensure_trusted(project: &Project, skip: bool) -> R<()> {
     }
 }
 
-/// A unified diff between the trusted snapshot and the current files.
-fn diff_project(old_dir: &Path, current: &[(String, PathBuf)]) -> String {
-    let mut out = String::new();
+/// The refusal to run without a terminal (SPEC.md 16.4). When an earlier
+/// version of the root was trusted, the error says the files changed and
+/// names them, standing in for the prompt's diff.
+fn not_trusted(store: &Store, root: &str, previous: Option<&str>, project: &Project) -> OkError {
+    let help = "review the files, then run `ok trust`; in CI set OK_TRUST=1 or pass --trust";
+    let at = format!("the project is at {root}");
+    match previous {
+        Some(fp) => {
+            let changed: Vec<String> = changed_files(&store.snapshot_dir(fp), &project.trust_files)
+                .into_iter()
+                .map(|(rel, _, _)| rel)
+                .collect();
+            let mut e = OkError::new(
+                ErrKind::Trust,
+                "the project files changed since you trusted them",
+            )
+            .with_note(at);
+            if !changed.is_empty() {
+                e = e.with_note(format!("changed: {}", changed.join(", ")));
+            }
+            e.with_help(help)
+        }
+        None => OkError::new(ErrKind::Trust, "this project is not trusted")
+            .with_note(at)
+            .with_help(help),
+    }
+}
+
+/// The files whose content differs between the trusted snapshot and the
+/// current files, added and removed files included, as (path, trusted
+/// content, current content) in path order.
+fn changed_files(old_dir: &Path, current: &[(String, PathBuf)]) -> Vec<(String, String, String)> {
     let mut old_files: Vec<String> = Vec::new();
     collect_rel(old_dir, old_dir, &mut old_files);
     let mut names: Vec<String> = current.iter().map(|(r, _)| r.clone()).collect();
     names.extend(old_files);
     names.sort();
     names.dedup();
+    let mut out = Vec::new();
     for rel in names {
         let old =
             std::fs::read_to_string(old_dir.join(OkPath::parse(&rel).native())).unwrap_or_default();
@@ -300,8 +323,17 @@ fn diff_project(old_dir: &Path, current: &[(String, PathBuf)]) -> String {
             .and_then(|(_, p)| std::fs::read_to_string(p).ok())
             .unwrap_or_default();
         if old != new {
-            out.push_str(&unified_diff(&rel, &old, &new));
+            out.push((rel, old, new));
         }
+    }
+    out
+}
+
+/// A unified diff between the trusted snapshot and the current files.
+fn diff_project(old_dir: &Path, current: &[(String, PathBuf)]) -> String {
+    let mut out = String::new();
+    for (rel, old, new) in changed_files(old_dir, current) {
+        out.push_str(&unified_diff(&rel, &old, &new));
     }
     if out.is_empty() {
         out.push_str("(no differences in file content)\n");

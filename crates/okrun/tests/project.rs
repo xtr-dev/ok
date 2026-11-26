@@ -95,10 +95,12 @@ fn untrusted_projects_cannot_run_tasks_without_approval() {
     let o = p.run(&["gen"]);
     assert_eq!(o.status.code(), Some(1));
     assert!(
-        err(&o).contains("this project is not trusted"),
+        err(&o)
+            .starts_with("error[trust]: this project is not trusted\n  = note: the project is at "),
         "{}",
         err(&o)
     );
+    assert!(err(&o).contains("or pass --trust\n"), "{}", err(&o));
     assert!(out(&o).is_empty(), "nothing may run: {}", out(&o));
     // Listing and help only parse, so they work without trust.
     assert!(p.run(&[]).status.success());
@@ -115,6 +117,17 @@ fn trust_is_bound_to_content() {
     p.write("ok.ok", &format!("{BASIC}\ntask extra {{ print(1) }}\n"));
     let o = p.run(&["gen"]);
     assert_eq!(o.status.code(), Some(1), "a change needs approval again");
+    // Without a terminal there is no diff, so the error names the files.
+    assert!(
+        err(&o).starts_with("error[trust]: the project files changed since you trusted them\n"),
+        "{}",
+        err(&o)
+    );
+    assert!(
+        err(&o).contains("  = note: changed: ok.ok\n"),
+        "{}",
+        err(&o)
+    );
     assert!(out(&p.run(&["trust", "--list"])).contains("sha256"));
     assert!(p.run(&["untrust"]).status.success());
     assert!(p.run(&["trust", "--dir"]).status.success());
@@ -265,7 +278,10 @@ fn symlinks_that_escape_the_project_are_refused() {
     std::fs::write(&outside, "task boom { print(\"boom\") }\n").unwrap();
     std::fs::create_dir_all(p.dir.join("ok")).unwrap();
     std::os::unix::fs::symlink(&outside, p.dir.join("ok/evil.ok")).unwrap();
-    assert_refused_everywhere(&p, "ok/evil.ok is a link to a file outside the project");
+    assert_refused_everywhere(
+        &p,
+        "error[trust]: ok/evil.ok is a link to a file outside the project",
+    );
     // A symlinked import is refused the same way.
     std::fs::remove_file(p.dir.join("ok/evil.ok")).unwrap();
     std::os::unix::fs::symlink(&outside, p.dir.join("lib.ok")).unwrap();

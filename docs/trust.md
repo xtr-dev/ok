@@ -71,7 +71,17 @@ Tasks are code that runs with your permissions. Trust is not a sandbox.
 ok never waits for an answer that cannot come. Without a terminal on standard input, as in CI, a git hook or a pipe, it fails immediately:
 
 ```text
-error: this project is not trusted: /home/you/src/myapp
+error[trust]: this project is not trusted
+  = note: the project is at /home/you/src/myapp
+  = help: review the files, then run `ok trust`; in CI set OK_TRUST=1 or pass --trust
+```
+
+If an earlier version was trusted, the error says the files changed and names them, since there is no prompt to show the diff:
+
+```text
+error[trust]: the project files changed since you trusted them
+  = note: the project is at /home/you/src/myapp
+  = note: changed: ok.ok
   = help: review the files, then run `ok trust`; in CI set OK_TRUST=1 or pass --trust
 ```
 
