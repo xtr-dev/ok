@@ -87,6 +87,8 @@ site/                   landing page, playground (playground.js, playground-work
                         adds ok.wasm and three examples/ folders from the
                         latest release, and names it in the badge; publishing
                         a release redeploys the site
+                        robots.txt, sitemap.xml; og.png is the link-preview
+                        image, rendered from og-image.html (command inside)
 .cargo/config.toml      stack size for the WebAssembly build
 tests/wasm/smoke.mjs    runs the WebAssembly build under Node (CI job `wasm`)
 SPEC.md                 normative language spec
