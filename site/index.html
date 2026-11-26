@@ -60,6 +60,7 @@ header.top {
 .logo svg { width: 28px; height: 28px; }
 nav a { color: var(--muted); text-decoration: none; margin-left: 20px; font-size: 15px; }
 nav a:hover { color: var(--text); }
+@media (max-width: 420px) { nav a { margin-left: 14px; font-size: 14px; } }
 
 .hero { padding: 56px 0 32px; }
 .hero h1 { font-size: clamp(34px, 6vw, 54px); line-height: 1.1; margin: 0 0 18px; letter-spacing: -0.02em; }
@@ -75,7 +76,7 @@ nav a:hover { color: var(--text); }
 .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
 .cmd { display: none; align-items: center; gap: 12px; padding: 14px 16px; }
 .cmd.active { display: flex; }
-.cmd code { flex: 1; font: 14.5px var(--mono); overflow-x: auto; white-space: nowrap; }
+.cmd code { flex: 1; min-width: 0; font: 14.5px var(--mono); overflow-x: auto; white-space: nowrap; }
 .cmd code::before { content: "$ "; color: var(--muted); }
 .cmd.ps code::before { content: "> "; }
 .copy {
@@ -89,9 +90,11 @@ section { padding: 48px 0; }
 section h2 { font-size: 28px; margin: 0 0 8px; letter-spacing: -0.01em; }
 section > .wrap > p.sub { color: var(--muted); margin: 0 0 28px; max-width: 640px; }
 
-.split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-@media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
-figure { margin: 0; }
+/* minmax(0, 1fr) lets a column shrink below its longest code line, so wide
+   code scrolls inside its <pre> instead of widening the page. */
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 760px) { .split { grid-template-columns: minmax(0, 1fr); } }
+figure { margin: 0; min-width: 0; }
 figcaption { font-size: 13px; color: var(--muted); margin: 0 0 6px 2px; font-family: var(--mono); }
 pre {
   margin: 0; background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
@@ -103,7 +106,7 @@ pre {
 .f { color: var(--fn); }
 .o { color: var(--muted); }
 
-.features { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.features { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 16px; }
 .feature { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
 .feature h3 { margin: 0 0 6px; font-size: 17px; }
 .feature p { margin: 0; color: var(--muted); font-size: 15px; }
