@@ -250,6 +250,39 @@ fn assert_refused_everywhere(p: &Proj, expected: &str) {
 }
 
 #[test]
+fn self_check_summarises_a_project_and_a_failed_load() {
+    let p = Proj::new(
+        "check-summary",
+        &[(
+            "ok.ok",
+            "task build(--release: bool) { }\ntask ship needs [build(release: true)] { }\n",
+        )],
+    );
+    let o = p.run(&["self", "check"]);
+    assert_eq!(o.status.code(), Some(0), "{}", err(&o));
+    assert_eq!(
+        out(&o),
+        "ok: 1 file and 2 tasks checked, no problems found\n"
+    );
+    p.write(
+        "ok.ok",
+        "task build(--release: bool) { }\ntask ship needs [build(relase: true)] { }\n",
+    );
+    let o = p.run(&["self", "check"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err(&o).starts_with("error[arg]: task `build` has no parameter `relase`\n"),
+        "{}",
+        err(&o)
+    );
+    assert!(
+        err(&o).ends_with("\nok: the project failed to load: 1 error\n"),
+        "{}",
+        err(&o)
+    );
+}
+
+#[test]
 fn imports_of_imports_cannot_leave_the_project() {
     let p = Proj::new(
         "confined-deep",

@@ -2179,7 +2179,12 @@ Findings are rendered like runtime errors (10.1), warnings with
 `warning[kind]:` instead of `error[kind]:`. All findings of all files are
 shown, in file and source order, followed by a summary on stderr
 (`ok: 3 files checked: 2 errors and 1 warning`); without findings the
-summary goes to stdout (`ok: 3 files checked, no problems found`). The exit
+summary goes to stdout (`ok: 3 files checked, no problems found`). For a
+project the summary also counts its tasks (`ok: 2 files and 3 tasks
+checked, no problems found`). A load-time error of the project stops the
+check before any file is checked, since the files are only known once the
+project loads: it is shown like a finding, followed by `ok: the project
+failed to load: 1 error`. The exit
 code is 1 when there is an error, 0 when there are only warnings, or 1 with
 `--strict`, and 2 for bad usage.
 

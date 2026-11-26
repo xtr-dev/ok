@@ -130,7 +130,18 @@ pub fn check(interp: &mut Interp, args: &[String], start: &Path) -> R<Value> {
                 "no ok.ok found here; pass the files to check: ok self check FILE...",
             ));
         };
-        let project = interp.load_project(&root)?;
+        // A load-time error (SPEC.md 15, 16.6) stops the check, since the
+        // project's files are only known once it loads; it is reported
+        // like a finding, with a summary line.
+        let project = match interp.load_project(&root) {
+            Ok(p) => p,
+            Err(Flow::Err(e)) => {
+                eprint!("{}", render(&e, &interp.sources, Color::Never));
+                eprintln!("ok: the project failed to load: 1 error");
+                return Err(Flow::Exit(1));
+            }
+            Err(other) => return Err(other),
+        };
         tasks = Some(project.tasks.len());
         for (rel, path) in &project.trust_files {
             // Files a project imports are libraries (SPEC.md 11).

@@ -137,9 +137,10 @@ error[arg]: task `build` has no parameter `relase`
   |                        ^^^^^^
   |
   = help: did you mean `release`?
+ok: the project failed to load: 1 error
 ```
 
-A clean project prints a one-line summary:
+An error like this one stops the check, because the project's files are only known once it loads. A clean project prints a one-line summary that also counts its tasks:
 
 ```ok file=ok.ok
 # Compile
