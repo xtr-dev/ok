@@ -207,10 +207,10 @@ print(to({name: "ok", tags: ["a", "b"]}, "json", compact: true))
 ```output
 2
 [1200]
-{"name": "ok", "tags": ["a", "b"]}
+{"name":"ok","tags":["a","b"]}
 ```
 
-`compact: true`, for `write` and `to`, puts JSON on one line instead of pretty-printing it.
+`compact: true`, for `write` and `to`, writes JSON on one line without spaces instead of pretty-printing it. JSON Lines is always written that way.
 
 ## YAML
 
@@ -339,8 +339,8 @@ print(to([{a: 1}, {a: 2}], "jsonl"))
 {id: 7, tags: ["x"]}
 [{x: "1", y: "2"}]
 [{a: 1}, {b: 2}]
-{"a": 1}
-{"a": 2}
+{"a":1}
+{"a":2}
 ```
 
 JSON is easiest to write in a single-quoted string, where `{` does not start an interpolation. A common use is reading a tool's JSON output by piping it into `parse`, as in `let meta = run cargo metadata --format-version 1 | parse("json")`; see [Running commands](commands.md).

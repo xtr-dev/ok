@@ -63,7 +63,7 @@ v
 
 A namespace is easier to read in a long script, because every call says where the function comes from, and it cannot clash with your own names. Use the plain form for a small set of helpers you use everywhere, and `as` for everything else.
 
-A namespace is a record of the exported names. A misspelled name gets a suggestion, like a misspelled field:
+A namespace is a record of the exported names. A misspelled name gets an error that names the namespace, with a suggestion:
 
 ```ok file=typo.ok
 import "./lib/release.ok" as release
@@ -72,13 +72,13 @@ print(release.tagname("2.0.0"))
 ```
 
 ```output exit=1
-error[name]: no function `tagname` to call on a record
+error[name]: `release` has no function `tagname`
  --> typo.ok:3:15
   |
 3 | print(release.tagname("2.0.0"))
-  |               ^^^^^^^
+  |               ^^^^^^^ not exported by the library
   |
-  = help: did you mean `tag_name`?
+  = help: did you mean `release.tag_name`?
 ```
 
 ## What a module exports

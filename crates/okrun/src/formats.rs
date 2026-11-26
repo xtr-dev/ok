@@ -711,9 +711,6 @@ pub fn to_json(
             for (i, item) in items.iter().enumerate() {
                 if i > 0 {
                     out.push(',');
-                    if indent.is_none() {
-                        out.push(' ');
-                    }
                 }
                 nl(out, level + 1);
                 to_json(item, out, indent, level + 1)?;
@@ -730,13 +727,10 @@ pub fn to_json(
             for (i, (k, item)) in r.iter().enumerate() {
                 if i > 0 {
                     out.push(',');
-                    if indent.is_none() {
-                        out.push(' ');
-                    }
                 }
                 nl(out, level + 1);
                 json_string(k, out);
-                out.push_str(": ");
+                out.push_str(if indent.is_some() { ": " } else { ":" });
                 to_json(item, out, indent, level + 1)?;
             }
             nl(out, level);
@@ -1492,7 +1486,7 @@ mod tests {
         );
         assert_eq!(
             run("to({b: 1, a: []}, \"json\", compact: true)"),
-            "{\"b\": 1, \"a\": []}\n"
+            "{\"b\":1,\"a\":[]}\n"
         );
     }
 

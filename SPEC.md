@@ -1523,7 +1523,8 @@ an explicit `format` argument overrides it. `parse(text, format)` and
 
 `read` of a `text` file that is not valid UTF-8 is an error suggesting
 `read(p, "bytes")`. `to(v, "json", compact: true)` and `write(..., compact:
-true)` write JSON on one line.
+true)` write JSON on one line with no spaces (`{"a":[1,2]}`), as `jsonl`
+writes each value.
 
 #### 13.1.1 Compressed files
 

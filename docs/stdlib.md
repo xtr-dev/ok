@@ -549,7 +549,7 @@ print(read("log.txt", "lines"))
 ```output
 [{name: "ana", age: "34"}, {name: "bo", age: "27"}]
 61
-[{"name": "ana", "age": 34}, {"name": "bo", "age": 27}]
+[{"name":"ana","age":34},{"name":"bo","age":27}]
 [{a: "1", b: "2"}]
 {port: 8080, tags: ["web", "api"]}
 ["first", "second"]
@@ -561,7 +561,7 @@ print(read("log.txt", "lines"))
 
 ### write
 
-`write(value, p: path, format: string? = null, --append: bool = false, --compact: bool = false, --delimiter: string = ",", --header: bool = true, --gzip: bool? = null)` returns `null`. Writes `value` to a file in the chosen format, creating parent directories, with `\n` line endings. `append: true` adds to the end of the file (for CSV, the header is only written to an empty file). `compact: true` writes JSON on one line. For CSV, the header is the keys of the first record; with `header: false` the rows are lists. A value the format cannot hold, such as a string written to `.csv`, is a `type` error. A failed write leaves an existing file as it was: the new contents go to a temporary file next to it, which replaces the file only when it is complete, so `read(p) | ... | write(p)` can also rewrite a file in place. The value comes first: `write("out.txt", "x")` is refused with a hint, because the arguments look swapped.
+`write(value, p: path, format: string? = null, --append: bool = false, --compact: bool = false, --delimiter: string = ",", --header: bool = true, --gzip: bool? = null)` returns `null`. Writes `value` to a file in the chosen format, creating parent directories, with `\n` line endings. `append: true` adds to the end of the file (for CSV, the header is only written to an empty file). `compact: true` writes JSON on one line without spaces. For CSV, the header is the keys of the first record; with `header: false` the rows are lists. A value the format cannot hold, such as a string written to `.csv`, is a `type` error. A failed write leaves an existing file as it was: the new contents go to a temporary file next to it, which replaces the file only when it is complete, so `read(p) | ... | write(p)` can also rewrite a file in place. The value comes first: `write("out.txt", "x")` is refused with a hint, because the arguments look swapped.
 
 ### parse
 
