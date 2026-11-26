@@ -276,9 +276,11 @@ run cargo fetch with {quiet: true}
 | `cwd` | path | working directory of the command, relative to the script's working directory (in a project, the project root) |
 | `env` | record | environment variables to set for the command; `null` removes a variable |
 | `stdin` | string, bytes or path | data, or a file, for stdin |
-| `timeout` | duration | stop the command after this long, with a `timeout` error (exit code 124 if not caught) |
+| `timeout` | duration | stop the command, and every process it started, after this long, with a `timeout` error (exit code 124 if not caught) |
 | `bytes` | bool | captured `out` and `err` are raw bytes |
 | `quiet` | bool | hide the output; if the command fails, the error still shows the end of stderr |
+
+A `timeout` also stops the processes the command started, such as the server a test script launches in the background, and it covers reading the output, so nothing left running can keep the script waiting. Such a command runs in a process group of its own, so on Unix it cannot read from the terminal: give it `stdin` if it asks questions.
 
 `quiet` is the option to reach for when a step is noisy and you only care about it when it breaks. The command inherits ok's environment, plus whatever `env` sets; variables you set with `env.set` in the script are passed on as well.
 

@@ -11,6 +11,8 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command as Proc, ExitStatus, Stdio};
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crate::ast::{Arg, CmdPart, CmdWord, Command, Expr};
@@ -19,6 +21,7 @@ use crate::interp::{Interp, R, Scope, io_reason};
 use crate::lazy::{self, Lazy, Source};
 use crate::lexer::RedirectKind;
 use crate::path::OkPath;
+use crate::procs::{Tree, Watchdog};
 use crate::source::Span;
 use crate::value::{Record, Value};
 
@@ -688,17 +691,62 @@ fn open_target(path: &Path, append: bool, span: Span) -> R<std::fs::File> {
     }
 }
 
+/// What stops a command with a timeout, and the processes it started,
+/// once the deadline passes (SPEC.md 9.6).
+struct Guard {
+    tree: Arc<Tree>,
+    dog: Watchdog,
+    limit: Duration,
+    deadline: Instant,
+}
+
+impl Guard {
+    /// Stop watching. Returns true when the deadline passed (and the
+    /// processes were killed); otherwise the processes the command left
+    /// running in the background are left alone.
+    fn finish(&mut self) -> bool {
+        if self.dog.stop() || self.tree.killed() {
+            self.tree.kill();
+            return true;
+        }
+        self.tree.release();
+        false
+    }
+}
+
+/// How long the output pipes of a timed-out command may stay open after
+/// its processes were killed. Only a process that left the command's
+/// process group (a daemon calling `setsid`) can hold them longer; ok then
+/// stops reading instead of waiting for it.
+const KILL_GRACE: Duration = Duration::from_millis(500);
+
 impl Interp {
-    fn spawn(&self, c: &mut Proc, p: &Prepared) -> R<Child> {
-        c.spawn().map_err(|e| {
+    /// Start the command. With a timeout it gets its own process group or
+    /// job, watched until the deadline.
+    fn spawn(&self, c: &mut Proc, p: &Prepared) -> R<(Child, Option<Guard>)> {
+        if p.opts.timeout.is_some() {
+            crate::procs::prepare(c);
+        }
+        let child = c.spawn().map_err(|e| {
             let mut err = cmd_err(
                 p.span,
                 format!("cannot start {}: {}", p.argv[0], spawn_reason(&e)),
             );
             err.command = Some(p.argv.clone());
             err.exit_code = Some(126);
-            err.into()
-        })
+            crate::interp::Flow::from(err)
+        })?;
+        let guard = p.opts.timeout.map(|limit| {
+            let tree = Arc::new(Tree::adopt(&child));
+            let deadline = Instant::now() + limit;
+            Guard {
+                dog: Watchdog::start(tree.clone(), deadline),
+                tree,
+                limit,
+                deadline,
+            }
+        });
+        Ok((child, guard))
     }
 
     fn spawn_live(&mut self, mut p: Prepared) -> R<Value> {
@@ -710,10 +758,11 @@ impl Interp {
             c.stdout(f);
         }
         let started = Instant::now();
-        let mut child = self.spawn(&mut c, &p)?;
+        let (mut child, mut guard) = self.spawn(&mut c, &p)?;
         drop(c);
         let feeder = feed_stdin(&mut child, feed);
-        let status = wait_with_timeout(&mut child, p.opts.timeout);
+        let status = wait_with_timeout(&mut child, guard.as_ref());
+        let timed_out = guard.as_mut().is_some_and(Guard::finish);
         if let Some(t) = feeder {
             let _ = t.join();
         }
@@ -721,7 +770,7 @@ impl Interp {
         let elapsed = started.elapsed();
         let status = status
             .map_err(|e| cmd_err(p.span, format!("waiting for {} failed: {e}", p.argv[0])))?;
-        let Some(status) = status else {
+        let (Some(status), false) = (status, timed_out) else {
             return Err(timeout_error(&p).into());
         };
         let code = exit_code(&status);
@@ -765,37 +814,32 @@ impl Interp {
             }
         }
         let started = Instant::now();
-        let mut child = self.spawn(&mut c, &p)?;
+        let (mut child, mut guard) = self.spawn(&mut c, &p)?;
         // The command keeps copies of the pipe's write end; dropping it
         // lets the reader see the end of the output once the child exits.
         drop(c);
         let feeder = feed_stdin(&mut child, feed);
         let out_reader = match merged_reader {
-            Some(r) => Some(std::thread::spawn(move || read_all(r))),
-            None => child
-                .stdout
-                .take()
-                .map(|s| std::thread::spawn(move || read_all(s))),
+            Some(r) => Some(read_all(r)),
+            None => child.stdout.take().map(read_all),
         };
-        let err_reader = child
-            .stderr
-            .take()
-            .map(|s| std::thread::spawn(move || read_all(s)));
-        let status = wait_with_timeout(&mut child, p.opts.timeout);
-        if let Some(t) = feeder {
+        let err_reader = child.stderr.take().map(read_all);
+        let status = wait_with_timeout(&mut child, guard.as_ref());
+        // Processes the command started may keep the pipes open; with a
+        // timeout, reading ends at the deadline too.
+        let out = collect(out_reader, guard.as_ref());
+        let err = collect(err_reader, guard.as_ref());
+        let timed_out = guard.as_mut().is_some_and(Guard::finish);
+        if let Some(t) = feeder
+            && !timed_out
+        {
             let _ = t.join();
         }
         self.upstream_done();
-        let out = out_reader
-            .map(|t| t.join().unwrap_or_default())
-            .unwrap_or_default();
-        let err = err_reader
-            .map(|t| t.join().unwrap_or_default())
-            .unwrap_or_default();
         let elapsed = started.elapsed();
         let status = status
             .map_err(|e| cmd_err(p.span, format!("waiting for {} failed: {e}", p.argv[0])))?;
-        let Some(status) = status else {
+        let (Some(status), false) = (status, timed_out) else {
             return Err(timeout_error(&p).into());
         };
         let code = exit_code(&status);
@@ -869,7 +913,7 @@ impl Interp {
                 None
             }
         };
-        let mut child = self.spawn(&mut c, &p)?;
+        let (mut child, guard) = self.spawn(&mut c, &p)?;
         drop(c);
         let feeder = feed_stdin(&mut child, feed);
         let stdout = match merged_reader {
@@ -881,11 +925,12 @@ impl Interp {
         Ok(Lazy::text(Box::new(ProcessOutput {
             child: Some(child),
             reader: stdout.map(BufReader::new),
+            lines: None,
             feeder,
             argv: p.argv,
             bang: p.bang,
             span: p.span,
-            timeout: p.opts.timeout.map(|t| Instant::now() + t),
+            guard,
             upstream,
             stderr_file,
         })))
@@ -908,27 +953,51 @@ fn feed_stdin(child: &mut Child, data: Option<Vec<u8>>) -> Option<std::thread::J
     }))
 }
 
-fn read_all(mut r: impl Read) -> Vec<u8> {
-    let mut buf = Vec::new();
-    let _ = r.read_to_end(&mut buf);
-    buf
+/// Read a pipe to the end on a thread; the bytes arrive on the channel.
+fn read_all(mut r: impl Read + Send + 'static) -> mpsc::Receiver<Vec<u8>> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = r.read_to_end(&mut buf);
+        let _ = tx.send(buf);
+    });
+    rx
 }
 
-/// Wait for the child; `Ok(None)` means the timeout expired and the child
-/// was killed.
+/// The bytes of a [`read_all`]. With a timeout, waiting ends at the
+/// deadline: the command's processes are killed, and if a process outside
+/// them still holds the pipe after [`KILL_GRACE`], ok stops waiting.
+fn collect(rx: Option<mpsc::Receiver<Vec<u8>>>, guard: Option<&Guard>) -> Vec<u8> {
+    let Some(rx) = rx else {
+        return Vec::new();
+    };
+    let Some(g) = guard else {
+        return rx.recv().unwrap_or_default();
+    };
+    match rx.recv_timeout(g.deadline.saturating_duration_since(Instant::now())) {
+        Ok(b) => b,
+        Err(_) => {
+            g.tree.kill();
+            rx.recv_timeout(KILL_GRACE).unwrap_or_default()
+        }
+    }
+}
+
+/// Wait for the child; `Ok(None)` means the deadline passed and the
+/// command was killed together with the processes it started.
 fn wait_with_timeout(
     child: &mut Child,
-    timeout: Option<Duration>,
+    guard: Option<&Guard>,
 ) -> std::io::Result<Option<ExitStatus>> {
-    let Some(t) = timeout else {
+    let Some(g) = guard else {
         return child.wait().map(Some);
     };
-    let deadline = Instant::now() + t;
     loop {
         if let Some(s) = child.try_wait()? {
             return Ok(Some(s));
         }
-        if Instant::now() >= deadline {
+        if Instant::now() >= g.deadline {
+            g.tree.kill();
             let _ = child.kill();
             let _ = child.wait();
             return Ok(None);
@@ -1234,28 +1303,52 @@ fn is_runnable(p: &Path) -> bool {
 struct ProcessOutput {
     child: Option<Child>,
     reader: Option<BufReader<OutPipe>>,
+    /// With a timeout, lines are read on a thread so that reading can end
+    /// at the deadline; started on the first read.
+    lines: Option<mpsc::Receiver<std::io::Result<Vec<u8>>>>,
     feeder: Option<std::thread::JoinHandle<()>>,
     argv: Vec<String>,
     bang: bool,
     span: Span,
-    timeout: Option<Instant>,
+    guard: Option<Guard>,
     upstream: Vec<Box<dyn Source>>,
     /// The file stderr was redirected to, named in a failure.
     stderr_file: Option<PathBuf>,
 }
 
+/// Lines of a piped command's stdout read ahead by the reading thread.
+const LINES_AHEAD: usize = 64;
+
 impl ProcessOutput {
+    fn prepared(&self) -> Prepared {
+        Prepared {
+            argv: self.argv.clone(),
+            program: PathBuf::new(),
+            opts: Options {
+                timeout: self.guard.as_ref().map(|g| g.limit),
+                ..Options::default()
+            },
+            redirects: Redirects {
+                stderr_to: self.stderr_file.clone().map(|f| StderrTo::File(f, false)),
+                ..Redirects::default()
+            },
+            bang: self.bang,
+            span: self.span,
+        }
+    }
+
     fn wait(&mut self) -> R<()> {
         let Some(mut child) = self.child.take() else {
             return Ok(());
         };
-        if let Some(t) = self.feeder.take() {
+        let status = wait_with_timeout(&mut child, self.guard.as_ref());
+        let timed_out = self.guard.as_mut().is_some_and(Guard::finish);
+        if let Some(t) = self.feeder.take()
+            && !timed_out
+        {
             let _ = t.join();
         }
-        let remaining = self
-            .timeout
-            .map(|d| d.saturating_duration_since(Instant::now()));
-        let status = wait_with_timeout(&mut child, remaining).map_err(|e| {
+        let status = status.map_err(|e| {
             cmd_err(
                 self.span,
                 format!("waiting for {} failed: {e}", self.argv[0]),
@@ -1264,46 +1357,81 @@ impl ProcessOutput {
         for mut up in std::mem::take(&mut self.upstream) {
             up.finish()?;
         }
-        let prepared = Prepared {
-            argv: self.argv.clone(),
-            program: PathBuf::new(),
-            opts: Options::default(),
-            redirects: Redirects {
-                stderr_to: self.stderr_file.clone().map(|f| StderrTo::File(f, false)),
-                ..Redirects::default()
-            },
-            bang: self.bang,
-            span: self.span,
-        };
-        let Some(status) = status else {
-            return Err(timeout_error(&prepared).into());
+        let (Some(status), false) = (status, timed_out) else {
+            return Err(timeout_error(&self.prepared()).into());
         };
         let code = exit_code(&status);
         if code != 0 && !self.bang {
-            return Err(failure(&prepared, code, None).into());
+            return Err(failure(&self.prepared(), code, None).into());
         }
         Ok(())
+    }
+
+    /// The next line of output with its line ending, or `None` at the end.
+    fn read_line(&mut self) -> std::io::Result<Option<Vec<u8>>> {
+        let Some(g) = &self.guard else {
+            let Some(reader) = &mut self.reader else {
+                return Ok(None);
+            };
+            let mut buf = Vec::new();
+            let n = reader.read_until(b'\n', &mut buf)?;
+            return Ok((n > 0).then_some(buf));
+        };
+        if self.lines.is_none() {
+            let Some(mut reader) = self.reader.take() else {
+                return Ok(None);
+            };
+            let (tx, rx) = mpsc::sync_channel(LINES_AHEAD);
+            std::thread::spawn(move || {
+                loop {
+                    let mut buf = Vec::new();
+                    match reader.read_until(b'\n', &mut buf) {
+                        Ok(0) => break,
+                        Ok(_) => {
+                            if tx.send(Ok(buf)).is_err() {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            let _ = tx.send(Err(e));
+                            break;
+                        }
+                    }
+                }
+            });
+            self.lines = Some(rx);
+        }
+        let Some(rx) = &self.lines else {
+            return Ok(None);
+        };
+        match rx.recv_timeout(g.deadline.saturating_duration_since(Instant::now())) {
+            Ok(line) => line.map(Some),
+            Err(mpsc::RecvTimeoutError::Disconnected) => Ok(None),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // Past the deadline: kill the command's processes and stop
+                // reading; `wait` reports the timeout.
+                g.tree.kill();
+                self.lines = None;
+                Ok(None)
+            }
+        }
     }
 }
 
 impl Source for ProcessOutput {
     fn next(&mut self, _: &mut Interp) -> R<Option<Value>> {
-        let Some(reader) = &mut self.reader else {
-            self.wait()?;
-            return Ok(None);
-        };
-        let mut buf = Vec::new();
-        let n = reader.read_until(b'\n', &mut buf).map_err(|e| {
+        let line = self.read_line().map_err(|e| {
             cmd_err(
                 self.span,
                 format!("cannot read the output of {}: {e}", self.argv[0]),
             )
         })?;
-        if n == 0 {
+        let Some(buf) = line else {
             self.reader = None;
+            self.lines = None;
             self.wait()?;
             return Ok(None);
-        }
+        };
         match String::from_utf8(buf) {
             Ok(s) => Ok(Some(Value::str(s))),
             Err(_) => Err(OkError::at(
@@ -1322,6 +1450,7 @@ impl Source for ProcessOutput {
 
     fn finish(&mut self) -> R<()> {
         self.reader = None;
+        self.lines = None;
         self.wait()
     }
 }
@@ -1332,6 +1461,10 @@ impl Drop for ProcessOutput {
     fn drop(&mut self) {
         if let Some(mut child) = self.child.take() {
             self.reader = None;
+            self.lines = None;
+            if let Some(g) = &self.guard {
+                g.tree.kill();
+            }
             let _ = child.kill();
             let _ = child.wait();
         }

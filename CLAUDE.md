@@ -138,6 +138,7 @@ inputs, call arguments, `for` iterables) may return `Value::Lazy`, and
 builtin that should stream must be declared with `streaming(...)` and pull
 from `lazy::cursor`.
 | `command.rs` | `run`: modes (live/captured/piped), program lookup, pipes, redirects, options |
+| `procs.rs` | process groups / job objects for `timeout`, the timeout watchdog, interrupt handling (Ctrl-C passes SIGTERM on, removes temporary files) |
 | `files.rs` | file and path functions, `glob` |
 | `text.rs` | string and regex functions |
 | `system.rs` | `env`, time, `prompt`/`confirm`, `hash` |

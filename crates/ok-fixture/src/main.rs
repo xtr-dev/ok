@@ -14,6 +14,9 @@
 //!   lines N             print lines 1..=N
 //!   forever             print lines until the pipe closes
 //!   sleep MS            sleep for MS milliseconds
+//!   spawn FILE ACTION.. start `ok-fixture ACTION..` as a child sharing
+//!                       stdout and stderr, write its process id to FILE,
+//!                       wait for it and exit with its code
 //!   env NAME            print the variable, or <unset>
 //!   pwd                 print the working directory's last component
 //!   bytes               print bytes that are not valid UTF-8
@@ -162,6 +165,15 @@ fn main() {
             let ms: u64 = rest.first().and_then(|c| c.parse().ok()).unwrap_or(100);
             std::thread::sleep(std::time::Duration::from_millis(ms));
             0
+        }
+        Some("spawn") if rest.len() >= 2 => {
+            let me = std::env::current_exe().expect("own path");
+            let mut child = std::process::Command::new(me)
+                .args(&rest[1..])
+                .spawn()
+                .expect("start the child");
+            let _ = std::fs::write(&rest[0], child.id().to_string());
+            child.wait().ok().and_then(|s| s.code()).unwrap_or(1)
         }
         Some("env") => {
             let name = rest.first().cloned().unwrap_or_default();

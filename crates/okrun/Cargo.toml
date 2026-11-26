@@ -36,5 +36,19 @@ ureq = { version = "3.5.2", default-features = false, features = ["rustls-no-pro
 yaml-rust2 = "0.13.2"
 zip = { version = "9.8.2", default-features = false, features = ["deflate-flate2"] }
 
+# Interrupts (Ctrl-C, SIGTERM, SIGHUP) stop the process groups of commands
+# with a timeout and remove temporary files before ok exits. WASI has no
+# signals.
+[target.'cfg(any(unix, windows))'.dependencies]
+ctrlc = { version = "3.5.3", features = ["termination"] }
+
+# Stopping a timed-out command together with the processes it started:
+# a process group on Unix, a job object on Windows.
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.32.0", default-features = false, features = ["signal"] }
+
+[target.'cfg(windows)'.dependencies]
+win32job = "2.1.0"
+
 [lints]
 workspace = true

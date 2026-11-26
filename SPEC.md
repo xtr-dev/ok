@@ -126,6 +126,14 @@ error: unknown flag --trace for task `build`
 | 128+S | On Unix, an uncaught failure of a child killed by signal S. |
 | 130 | Interrupted by Ctrl-C. |
 
+Once a script has started a command with a `timeout` (9.6) or made a
+temporary file or directory (12.1), ok handles interrupts itself: on
+Ctrl-C, SIGTERM or SIGHUP (Ctrl-C or Ctrl-Break, or closing the console, on
+Windows) it sends SIGTERM to the process groups of running commands with a
+timeout, removes the files of `tempdir()` and `tempfile()`, and exits with
+code 130. Otherwise the interrupt ends ok directly, as it ends any
+program.
+
 `exit(code)` exits with any code from 0 to 255.
 
 ### 2.4 Shebang
@@ -1120,9 +1128,22 @@ run("npm", "ci", cwd: "frontend", timeout: 10m)
 | `cwd` | path | Working directory of the child. Relative to the project root or the script's working directory. |
 | `env` | record | Variables to set for the child; a `null` value removes the variable. |
 | `stdin` | string, bytes, path | Data (string or bytes) or a file (path) for stdin. |
-| `timeout` | duration | Kill the child after this long; raises a `timeout` error (exit 124 if uncaught). |
+| `timeout` | duration | Stop the command and the processes it started after this long; raises a `timeout` error (exit 124 if uncaught). |
 | `bytes` | bool | Captured `out`/`err` are bytes, unmodified. |
 | `quiet` | bool | Hide the command's output. It is captured and discarded instead of shown; on failure the error still includes the last lines of stderr. |
+
+A `timeout` covers the whole command: running it, and reading its output
+when it is captured or piped, so a process it left running in the
+background cannot keep ok waiting past the deadline. When the deadline
+passes, ok kills the command together with every process it started: on
+Unix the command runs in its own process group, which is killed as a
+whole; on Windows it runs in a job object, which is closed. Processes that
+a command which finished in time leaves in the background keep running.
+Because of its own process group, a command with a `timeout` does not get
+Ctrl-C from the terminal (ok passes the interrupt on, 2.3) and cannot read
+from the terminal on Unix; give it `stdin` instead. A process that leaves
+the group itself (a daemon calling `setsid`) is not stopped, and ok stops
+reading its output 0.5 s after the deadline.
 
 A command that should run without printing anything uses `quiet`:
 

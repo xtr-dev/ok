@@ -30,6 +30,7 @@ pub mod list;
 pub mod net;
 pub mod parser;
 pub mod path;
+pub mod procs;
 pub mod project;
 pub mod sig;
 pub mod source;
