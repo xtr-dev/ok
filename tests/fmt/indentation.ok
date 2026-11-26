@@ -1,0 +1,25 @@
+# Indentation: one level per bracket line, one more for continuations.
+fn describe(xs) {
+      print(match xs {
+            [] => "empty"
+            [only] => "one: {only}"
+            _ => "many"
+      })
+  let names = xs
+  | where .active
+      | map(.name)
+  let sum = 1 +
+  2 +
+          3
+    let r = fetch(url,
+  headers: {
+  accept: "json",
+  },
+      )
+  if sum > 3 {
+  print(names)
+  }
+  else {
+  print(r)
+  }
+}

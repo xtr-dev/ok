@@ -1,0 +1,28 @@
+#!/usr/bin/env ok
+
+
+# The file's help text.
+#
+# It keeps its blank comment line.
+
+
+
+fn main(
+      input: path,       # the input file
+  --out: path = "o.json",  # where to write
+) {
+
+  # Read the input.
+  let rows = read(input)
+      # Only the active rows.
+      | where .active    # trailing, after code
+    # Sorted by name.
+    | sort .name
+
+
+  write(rows, out)
+      # A comment before the closing brace.
+}
+# At the end of the file.
+
+

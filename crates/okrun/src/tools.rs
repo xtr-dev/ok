@@ -93,6 +93,29 @@ fn read_source(interp: &mut Interp, shown: &str, path: &Path) -> Result<(u32, St
     Ok((id, text))
 }
 
+/// Like [`read_source`], but the source map gets the text the formatter
+/// works on: `\n` line endings, no byte order mark. Returns the id, the
+/// text as read and the normalised text.
+fn read_for_format(
+    interp: &mut Interp,
+    shown: &str,
+    path: &Path,
+) -> Result<(u32, String, String), OkError> {
+    let text = std::fs::read_to_string(path).map_err(|e| {
+        OkError::new(
+            ErrKind::Io,
+            format!("cannot read {shown}: {}", crate::interp::io_reason(&e)),
+        )
+    })?;
+    let norm = crate::fmt::normalize(&text);
+    let id = interp.sources.add(
+        shown.to_string(),
+        Some(path.to_path_buf()),
+        norm.clone().into(),
+    );
+    Ok((id, text, norm))
+}
+
 /// `ok self check [--strict] [FILES...]`: parse and check without running
 /// anything (SPEC.md 17). Errors exit with 1; warnings only with
 /// `--strict`.
@@ -172,12 +195,7 @@ fn plural(n: usize) -> &'static str {
 
 /// `ok self fmt [--check] [FILES...]`.
 pub fn fmt(interp: &mut Interp, args: &[String], start: &Path) -> R<Value> {
-    let check_only = args.iter().any(|a| a == "--check");
-    let mut files: Vec<PathBuf> = args
-        .iter()
-        .filter(|a| *a != "--check")
-        .map(PathBuf::from)
-        .collect();
+    let (check_only, mut files) = options_and_files(args, "--check", "fmt")?;
     if files.is_empty() {
         let Some(root) = crate::project::discover(start) else {
             return Err(usage(
@@ -188,19 +206,23 @@ pub fn fmt(interp: &mut Interp, args: &[String], start: &Path) -> R<Value> {
         files = project.trust_files.iter().map(|(_, p)| p.clone()).collect();
     }
     let mut changed = Vec::new();
+    let mut failed = 0;
     for f in &files {
         let shown = OkPath::from_native(f).display();
-        let text = std::fs::read_to_string(f).map_err(|e| {
-            OkError::new(
-                ErrKind::Io,
-                format!("cannot read {shown}: {}", crate::interp::io_reason(&e)),
-            )
-        })?;
-        let formatted = crate::fmt::format_source(&text).map_err(|mut e| {
-            e.message = format!("{shown}: {}", e.message);
-            e.span = None;
-            e
-        })?;
+        let result = read_for_format(interp, &shown, f).and_then(|(id, text, norm)| {
+            crate::fmt::format_file(id, &norm).map(|formatted| (text, formatted))
+        });
+        let (text, formatted) = match result {
+            Ok(r) => r,
+            Err(mut e) => {
+                if e.span.is_none() {
+                    e.message = format!("{shown}: {}", e.message);
+                }
+                eprint!("{}", render(&e, &interp.sources, Color::Never));
+                failed += 1;
+                continue;
+            }
+        };
         if formatted != text {
             changed.push(shown.clone());
             if !check_only {
@@ -214,10 +236,12 @@ pub fn fmt(interp: &mut Interp, args: &[String], start: &Path) -> R<Value> {
             }
         }
     }
-    if check_only && !changed.is_empty() {
+    if check_only {
         for c in &changed {
             println!("would reformat {c}");
         }
+    }
+    if failed > 0 || (check_only && !changed.is_empty()) {
         return Err(Flow::Exit(1));
     }
     if changed.is_empty() {

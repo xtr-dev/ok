@@ -204,3 +204,31 @@ fn golden_check_cases() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
+
+/// Formatter cases: every `tests/fmt/NAME.ok` formats to `NAME.formatted`,
+/// and formatting that again changes nothing.
+#[test]
+fn golden_fmt_cases() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fmt");
+    let blessing = std::env::var_os("OK_BLESS").is_some();
+    let mut failures = Vec::new();
+    for case in cases_in(&dir) {
+        let stem = case.file_stem().unwrap().to_string_lossy().to_string();
+        let src = read_or_empty(&case);
+        let got = okrun::fmt::format_source(&src).expect("the case formats");
+        let p = dir.join(format!("{stem}.formatted"));
+        if blessing {
+            fs::write(&p, &got).expect("write expectation");
+            continue;
+        }
+        let want = read_or_empty(&p);
+        if got != want {
+            failures.push(format!("== {stem}\n--- expected\n{want}--- actual\n{got}"));
+        }
+        let again = okrun::fmt::format_source(&got).expect("formats again");
+        if again != got {
+            failures.push(format!("== {stem}: formatting is not idempotent"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}

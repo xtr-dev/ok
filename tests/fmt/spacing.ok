@@ -1,0 +1,15 @@
+# Spacing inside lines.
+let total=price*count+  shipping -discount
+let flags = [ "--release","--locked" ]
+let opts = { cwd:"frontend" , env : {CI:"1"} }
+let ok = not done and(a or b)
+if total>100 {print("big")} else {   print( "small" ) }
+fn area( w:int , h:int=2 , --unit:string="m" )   {
+w*h
+}
+let neg = -total + - 1
+let first = flags[ 0 ]?
+let r = read("x.toml")?   ??   {}
+let items = xs | where .size > 0 | sort .name | take -1
+let f = (a,b) => a+b
+let empty = {  }

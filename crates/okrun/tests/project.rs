@@ -552,6 +552,8 @@ fn check_rejects_unknown_options() {
     let o = p.run(&["self", "check", "--bogus"]);
     assert_eq!(o.status.code(), Some(2));
     assert!(err(&o).contains("unknown option --bogus"), "{}", err(&o));
+    let o = p.run(&["self", "fmt", "--strict"]);
+    assert_eq!(o.status.code(), Some(2));
 }
 
 /// Tasks `a` and `b` each wait until the other one has started, so the

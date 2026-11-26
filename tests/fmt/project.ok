@@ -1,0 +1,14 @@
+requires "0.1"
+env file ".env"
+
+import "ok/_lib.ok"     # helpers
+import "frontend/ok.ok" as fe   # mounted
+
+# Build it
+task build(  --release:bool ) needs [ gen,fe.build ,deploy(env:"staging") ] sources ["src/**"]  outputs ["dist/app"] {
+run cargo build {...if release { ["--release"] } else { [] }}
+}
+
+task reset-db confirm "This wipes the database"  hidden {
+  run sqlx database reset -y
+}
