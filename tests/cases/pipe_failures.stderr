@@ -1,0 +1,6 @@
+error[command]: command failed with exit code 6
+  --> pipe_failures.ok:13:1
+   |
+13 | run ok-fixture exit 6 | run ok-fixture cat
+   | ^^^^^^^^^^^^^^^^^^^^^^
+   = command: ok-fixture exit 6

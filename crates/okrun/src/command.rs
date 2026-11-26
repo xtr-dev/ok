@@ -766,10 +766,12 @@ impl Interp {
         if let Some(t) = feeder {
             let _ = t.join();
         }
-        self.upstream_done();
+        let upstream = self.upstream_done();
         let elapsed = started.elapsed();
         let status = status
             .map_err(|e| cmd_err(p.span, format!("waiting for {} failed: {e}", p.argv[0])))?;
+        // The leftmost failure of a pipeline is the one reported (SPEC.md 9.7).
+        upstream?;
         let (Some(status), false) = (status, timed_out) else {
             return Err(timeout_error(&p).into());
         };
@@ -835,10 +837,11 @@ impl Interp {
         {
             let _ = t.join();
         }
-        self.upstream_done();
+        let upstream = self.upstream_done();
         let elapsed = started.elapsed();
         let status = status
             .map_err(|e| cmd_err(p.span, format!("waiting for {} failed: {e}", p.argv[0])))?;
+        upstream?;
         let (Some(status), false) = (status, timed_out) else {
             return Err(timeout_error(&p).into());
         };
@@ -931,17 +934,24 @@ impl Interp {
             bang: p.bang,
             span: p.span,
             guard,
+            handed: false,
             upstream,
             stderr_file,
         })))
     }
 
     /// Finish commands whose stdout was connected directly to a downstream
-    /// command's stdin.
-    fn upstream_done(&mut self) {
+    /// command's stdin, once that command has ended. Returns the first
+    /// failure, so that `run a | run b` fails when `a` does (SPEC.md 9.7).
+    fn upstream_done(&mut self) -> R<()> {
+        let mut first = Ok(());
         for mut src in std::mem::take(&mut self.upstream) {
-            let _ = src.finish();
+            let r = src.finish();
+            if first.is_ok() {
+                first = r;
+            }
         }
+        first
     }
 }
 
@@ -1003,6 +1013,21 @@ fn wait_with_timeout(
             return Ok(None);
         }
         std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// Whether the command was killed by SIGPIPE, the signal that ends a
+/// program writing to a pipe nobody reads any more.
+fn killed_by_broken_pipe(status: &ExitStatus) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        status.signal() == Some(nix::sys::signal::Signal::SIGPIPE as i32)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = status;
+        false
     }
 }
 
@@ -1311,6 +1336,9 @@ struct ProcessOutput {
     bang: bool,
     span: Span,
     guard: Option<Guard>,
+    /// Whether stdout was connected to a downstream command, which has
+    /// ended by the time `finish` is called.
+    handed: bool,
     upstream: Vec<Box<dyn Source>>,
     /// The file stderr was redirected to, named in a failure.
     stderr_file: Option<PathBuf>,
@@ -1341,6 +1369,7 @@ impl ProcessOutput {
         let Some(mut child) = self.child.take() else {
             return Ok(());
         };
+        let stopped_early = self.handed && self.stop_if_unread(&mut child);
         let status = wait_with_timeout(&mut child, self.guard.as_ref());
         let timed_out = self.guard.as_mut().is_some_and(Guard::finish);
         if let Some(t) = self.feeder.take()
@@ -1360,11 +1389,31 @@ impl ProcessOutput {
         let (Some(status), false) = (status, timed_out) else {
             return Err(timeout_error(&self.prepared()).into());
         };
+        // A command whose reader stopped early is ended by a broken pipe;
+        // its status is ignored (SPEC.md 9.5).
+        if stopped_early || (self.handed && killed_by_broken_pipe(&status)) {
+            return Ok(());
+        }
         let code = exit_code(&status);
         if code != 0 && !self.bang {
             return Err(failure(&self.prepared(), code, None).into());
         }
         Ok(())
+    }
+
+    /// Windows has no SIGPIPE that would tell a command ended by its reader
+    /// going away, so there a command still running after the command it
+    /// feeds has ended is stopped, and its status ignored. Unix waits for
+    /// it, as a shell does.
+    fn stop_if_unread(&mut self, child: &mut Child) -> bool {
+        if !cfg!(windows) || !matches!(child.try_wait(), Ok(None)) {
+            return false;
+        }
+        if let Some(g) = &self.guard {
+            g.tree.kill();
+        }
+        let _ = child.kill();
+        true
     }
 
     /// The next line of output with its line ending, or `None` at the end.
@@ -1445,7 +1494,9 @@ impl Source for ProcessOutput {
     }
 
     fn take_child_stdout(&mut self) -> Option<Stdio> {
-        self.reader.take().map(|r| Stdio::from(r.into_inner()))
+        let out = self.reader.take().map(|r| Stdio::from(r.into_inner()));
+        self.handed |= out.is_some();
+        out
     }
 
     fn finish(&mut self) -> R<()> {

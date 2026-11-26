@@ -1,0 +1,5 @@
+command 3 ["ok-fixture", "exit", "3"]
+0 true
+4
+5
+["LINE 1", "LINE 2", "LINE 3"]

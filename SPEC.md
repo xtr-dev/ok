@@ -1092,7 +1092,9 @@ directly, without buffering in ok.
 Piped output is text, not a list: split it with `lines` before list
 stages such as `where` or `take`. If a pipeline stops reading a command's
 stdout early (`run yes | lines | take 3`), ok closes the pipe and terminates
-the command; its exit status is then ignored.
+the command; its exit status is then ignored. The same holds for a command
+piped into another command that stops reading early (`run yes | run head
+-1`, 9.7).
 
 A redirect target is one command-mode word: `> build.log`, `> "my file.txt"`,
 `> {out_dir / "dump.sql"}`. Its value must be a string or path; it is
@@ -1167,6 +1169,17 @@ Uncaught, ok exits with the child's exit code (2.3).
 
 `run!` never raises for a nonzero exit; the result record carries the code.
 It still raises when the program cannot be found or started.
+
+In a pipeline of commands, `run a | run b`, every command's failure counts
+(like `set -o pipefail` in a shell): a nonzero exit or timeout of `a` is
+raised once `b` has ended, even when `b` succeeded. When several commands of
+a pipeline fail, the error of the leftmost one is raised, since a later
+failure is usually a consequence. A command ended because the command it
+feeds stopped reading is not a failure (9.5): on Unix, one killed by
+SIGPIPE; on Windows, which has no such signal, one still running when the
+command it feeds has ended, which ok then terminates. `!` applies to the
+command it is written on: `run! a | run b` ignores the exit code of `a`
+only, and `run a | run! b` still raises for `a`.
 
 ### 9.8 Tracing
 

@@ -86,6 +86,10 @@ fn timeout_stops_the_command_and_the_processes_it_started() {
             "try { run ok-fixture spawn pid sleep 30000 with {timeout: 300ms} } catch e { print(\"{e.kind}: {e.message}\") }\n",
         ),
         (
+            "piped into a command",
+            "let r = try { let x = run ok-fixture spawn pid sleep 30000 with {timeout: 300ms} | run ok-fixture cat } catch e { \"{e.kind}: {e.message}\" }\nprint(r)\n",
+        ),
+        (
             "piped",
             "let r = try { run ok-fixture spawn pid sleep 30000 with {timeout: 300ms} | lines } catch e { \"{e.kind}: {e.message}\" }\nprint(r)\n",
         ),

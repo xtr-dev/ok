@@ -233,6 +233,8 @@ Commands can be piped into each other, too. `run a | run b` connects the stdout 
 run git log --format=%an | run sort | run uniq -c
 ```
 
+Every command in such a pipeline counts, as with `set -o pipefail` in bash: if `curl` fails in `run curl -fsSL {url} | run tar -xz`, the script stops with curl's error once tar has finished, even though tar itself succeeded. When several commands fail, the error is about the leftmost one, which is usually the cause. A command that is ended because the next one stopped reading, as `yes` is in `run yes | run head -1`, is not a failure. `run!` applies to the command it is written on: `run! grep TODO {f} | run wc -l` counts the matching lines and does not fail when grep finds none.
+
 ## Redirects
 
 A redirect sends a stream to a file or reads one from a file. The target is one word: a bare name, a quoted string or `{expr}`.
