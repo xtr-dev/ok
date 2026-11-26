@@ -387,7 +387,14 @@ fn env_files_and_env_flag() {
         out(&p.run_trusted(&["--env", "prod", "show"])),
         "base prod app\n"
     );
-    assert!(err(&p.run_trusted(&["--env", "nope", "show"])).contains(".env.nope"));
+    let o = p.run_trusted(&["--env", "nope", "show"]);
+    assert_eq!(
+        o.status.code(),
+        Some(2),
+        "a missing --env file is bad usage"
+    );
+    assert!(err(&o).contains(".env.nope"), "{}", err(&o));
+    assert!(err(&o).contains("leave out --env nope"), "{}", err(&o));
 }
 
 #[test]

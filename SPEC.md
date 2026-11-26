@@ -1970,6 +1970,7 @@ time; there is no content-hash mode in v1.
   already set in the process environment win. `--env NAME` additionally loads
   `<file>.NAME` for each declared env file (or `.env.NAME` at the root if none
   is declared); that file must exist, and its values override the base file.
+A missing `.env.NAME` is a usage error (exit code 2, 2.3).
 - `requires "0.3"` declares the minimum ok version. An older ok refuses to
   load the project and says which version is needed.
 

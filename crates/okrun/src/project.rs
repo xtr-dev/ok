@@ -1013,14 +1013,23 @@ impl Interp {
                 Ok(t) => t,
                 Err(_) if !required => continue,
                 Err(e) => {
-                    return Err(OkError::new(
+                    let mut err = OkError::new(
                         ErrKind::Io,
                         format!(
                             "cannot read {rel} (asked for with --env): {}",
                             crate::interp::io_reason(&e)
                         ),
-                    )
-                    .into());
+                    );
+                    // A missing file means `--env NAME` names no
+                    // environment: bad usage, like `-C` with a missing
+                    // directory (SPEC.md 2.3). Other read failures stay
+                    // I/O errors.
+                    if e.kind() == std::io::ErrorKind::NotFound {
+                        let name = opts.env.as_deref().unwrap_or_default();
+                        err = err.with_help(format!("create {rel}, or leave out --env {name}"));
+                        err.exit_code = Some(2);
+                    }
+                    return Err(err.into());
                 }
             };
             let Value::Record(r) = crate::formats::parse_document("env", &text, &rel)
