@@ -34,11 +34,12 @@ in `ok`, each next to the original.
 
 ## Status
 
-All milestones of the v0.1.0 plan are implemented: the language, data
-formats and pipelines, commands and the standard library, script
-arguments, project mode, trust, and the release tooling. The language is
-described in `SPEC.md`; design choices are logged in `DECISIONS.md`. The
-first release is [v0.1.0](https://github.com/xtr-dev/ok/releases/tag/v0.1.0).
+The language, data formats and pipelines, commands and the standard
+library, script arguments, project mode with parallel tasks, trust, static
+checks, the formatter, a WebAssembly build and the release tooling are
+implemented. The language is described in `SPEC.md`; design choices are
+logged in `DECISIONS.md`; changes per version are in `CHANGELOG.md`. The
+latest release is on the [releases page](https://github.com/xtr-dev/ok/releases/latest).
 
 ## Install
 

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-26
+
 ### Added
 
 - ok builds for WebAssembly (`wasm32-wasip1`). This build runs the
@@ -52,6 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   differ from the original.
 
 ### Changed
+
+Some of these changes can break scripts written for 0.1.0: a `match` arm
+whose alternatives bind different names, arguments starting with `-` and a
+letter (now short flags), and the same stream redirected twice.
 
 - Redirecting the same stream twice in one command (`> a > b`) is an error
   instead of using the last target.

@@ -3558,8 +3558,8 @@ limitations under the License.
 
 Used by:
 
-- [ok-fixture 0.1.0](https://crates.io/crates/ok-fixture)
-- [okrun 0.1.0](https://github.com/xtr-dev/ok)
+- [ok-fixture 0.2.0](https://crates.io/crates/ok-fixture)
+- [okrun 0.2.0](https://github.com/xtr-dev/ok)
 - [arraydeque 0.5.1](https://github.com/andylokandy/arraydeque)
 - [constant_time_eq 0.6.1](https://codeberg.org/cesarb/constant_time_eq)
 - [itoa 1.0.19](https://github.com/dtolnay/itoa)
