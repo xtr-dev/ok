@@ -5,7 +5,7 @@ print(a)
 # `!` applies to the command it is written on.
 let r = run! ok-fixture exit 4 | run ok-fixture upper
 print(r.code, r.ok)
-let b = try { let x = run ok-fixture exit 4 | run ok-fixture exit 5 | lines } catch e { e.code }
+let b = try { let x = run ok-fixture exit 4 | run ok-fixture drain 5 | lines } catch e { e.code }
 print(b)
 let c = run ok-fixture lines 2 | run! ok-fixture exit 5
 print(c.code)

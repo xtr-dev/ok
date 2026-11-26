@@ -11,6 +11,7 @@
 //!                       stdout and stderr (flushing each), exit with CODE
 //!   cat                 copy stdin to stdout
 //!   upper               copy stdin to stdout in upper case
+//!   drain CODE          read stdin to the end, then exit with CODE
 //!   lines N             print lines 1..=N
 //!   forever             print lines until the pipe closes
 //!   sleep MS            sleep for MS milliseconds
@@ -144,6 +145,10 @@ fn main() {
             }
             let _ = out.write_all(s.as_bytes());
             0
+        }
+        Some("drain") => {
+            let _ = std::io::copy(&mut std::io::stdin(), &mut std::io::sink());
+            rest.first().and_then(|c| c.parse().ok()).unwrap_or(0)
         }
         Some("lines") => {
             let n: u64 = rest.first().and_then(|c| c.parse().ok()).unwrap_or(3);
