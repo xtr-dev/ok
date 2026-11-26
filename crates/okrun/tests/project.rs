@@ -255,6 +255,16 @@ fn sources_and_outputs_skip_up_to_date_tasks() {
             ("in/a.txt", "a"),
         ],
     );
+    // File systems keep coarse timestamps (a few ms on Linux), so a source
+    // written just before the first run could share the output's mtime, and
+    // "newer than the newest source" would then be false. Age the source.
+    let a = std::fs::File::options()
+        .write(true)
+        .open(p.dir.join("in/a.txt"))
+        .unwrap();
+    a.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(10))
+        .unwrap();
+    drop(a);
     assert_eq!(out(&p.run_trusted(&["gen"])), "generating\n");
     let o = p.run_trusted(&["gen"]);
     assert_eq!(out(&o), "");
