@@ -1,4 +1,4 @@
-# ok
+# ✅ ok
 
 `ok` is a portable scripting language and task runner in one static binary.
 It replaces hard-to-read bash scripts, Python or JS scripts that need a
