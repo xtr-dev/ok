@@ -320,6 +320,14 @@ fn symlinks_that_escape_the_project_are_refused() {
     std::os::unix::fs::symlink(&outside, p.dir.join("lib.ok")).unwrap();
     p.write("ok.ok", "import \"lib.ok\"\ntask a { print(1) }\n");
     assert_refused_everywhere(&p, "error[trust]: \"lib.ok\" is outside the project");
+    // And so is a root ok.ok that is a link to a file elsewhere.
+    std::fs::remove_file(p.dir.join("lib.ok")).unwrap();
+    std::fs::remove_file(p.dir.join("ok.ok")).unwrap();
+    std::os::unix::fs::symlink(&outside, p.dir.join("ok.ok")).unwrap();
+    assert_refused_everywhere(
+        &p,
+        "error[trust]: ok.ok is a link to a file outside the project",
+    );
 }
 
 #[test]

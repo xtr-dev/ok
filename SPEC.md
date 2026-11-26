@@ -2197,7 +2197,8 @@ JSON, not a file) is an error, never treated as empty.
 
 In project mode every project file and every import must resolve, after
 following symlinks, inside the project root. An import or a namespace file
-that escapes the root is a load-time error, whether by `..` or by a symlink.
+that escapes the root is a load-time error, whether by `..` or by a symlink;
+so is a root `ok.ok` that is a symlink to a file outside the root.
 It is found whenever the project is loaded, so listing, `ok self check`,
 `ok trust` and running a task all refuse the project, and nothing is
 fingerprinted or trusted (completions offer no project names). Imports of

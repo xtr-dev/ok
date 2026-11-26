@@ -152,6 +152,19 @@ impl Interp {
         let mut file_ns: Vec<Option<String>> = Vec::new();
 
         let root_path = root.join("ok.ok");
+        // The root file follows the same confinement as every other
+        // project file (SPEC.md 16.6): a link to a file outside the root
+        // would let content nobody reviewed with the project stand in for it.
+        if let Ok(canon) = crate::path::canonical(&root_path)
+            && !canon.starts_with(&root)
+        {
+            return Err(OkError::new(
+                ErrKind::Trust,
+                "ok.ok is a link to a file outside the project",
+            )
+            .with_help("project files must live inside the project root")
+            .into());
+        }
         let (id, prog) =
             self.parse_project_file(&root, &root_path, FileKind::Project { root: true })?;
         let mut env_files = Vec::new();
