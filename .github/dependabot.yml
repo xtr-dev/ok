@@ -1,0 +1,19 @@
+# Weekly update pull requests for the pinned GitHub Actions (their commit
+# SHAs) and the Rust crates. Security advisories are also checked daily by
+# security.yml, independent of these pull requests.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: cargo
+    directories: ["/", "/fuzz"]
+    schedule:
+      interval: weekly
+    groups:
+      crates:
+        update-types: [minor, patch]

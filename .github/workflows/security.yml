@@ -1,0 +1,23 @@
+# Daily check of the dependencies against the RustSec advisory database, so
+# an advisory published between pushes is noticed within a day. A failure
+# here means: update the crate and ship a patch release (CLAUDE.md, Security
+# upkeep).
+name: Security
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  advisories:
+    name: cargo-deny advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: EmbarkStudios/cargo-deny-action@81891abc19297b21343b15ef67dc61e4aea74fda # v2.1.4
+        with:
+          command: check advisories
