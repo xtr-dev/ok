@@ -624,13 +624,9 @@ fn touch(interp: &mut Interp, mut args: Args) -> R<Value> {
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// A fresh, unpredictable name in the temporary directory.
 fn temp_name(prefix: &str, ext: &str) -> PathBuf {
-    let n = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos())
-        .unwrap_or(0);
-    temp_root().join(format!("{prefix}-{}-{nanos:08x}-{n}{ext}", process_id()))
+    temp_root().join(format!("{prefix}-{}{ext}", unique_suffix()))
 }
 
 /// The id of this process, for unique temporary names. WASI has no process
@@ -677,6 +673,7 @@ fn prepare_temp_parent(interp: &mut Interp, p: &Path) -> std::io::Result<()> {
     if cfg!(target_os = "wasi") && parent.file_name().is_some_and(|n| n == WASI_TEMP) {
         // `cleanup` removes entries in reverse order, so this goes last.
         interp.temps.insert(0, parent.to_path_buf());
+        crate::procs::track_temp(parent.to_path_buf());
     }
     Ok(())
 }
@@ -684,17 +681,34 @@ fn prepare_temp_parent(interp: &mut Interp, p: &Path) -> std::io::Result<()> {
 fn tempdir(interp: &mut Interp, mut args: Args) -> R<Value> {
     named(&mut args, "tempdir", &[])?;
     count_args(&args, "tempdir", 0, 0)?;
-    let p = temp_name("ok", "");
-    prepare_temp_parent(interp, &p)
-        .and_then(|()| std::fs::create_dir(&p))
-        .map_err(|e| {
-            OkError::at(
-                ErrKind::Io,
-                args.span,
-                format!("cannot create a temporary directory: {}", io_reason(&e)),
-            )
-        })?;
-    interp.temps.push(p.clone());
+    // Only the owner may enter the directory (0700 on Unix), so another
+    // user can neither read what the script puts in it nor swap its files.
+    let created = prepare_temp_parent(interp, &temp_name("ok", "")).and_then(|()| {
+        let mut last = None;
+        for _ in 0..16 {
+            let p = temp_name("ok", "");
+            let mut b = std::fs::DirBuilder::new();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                b.mode(0o700);
+            }
+            match b.create(&p) {
+                Ok(()) => return Ok(p),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last = Some(e),
+                Err(e) => return Err(e),
+            }
+        }
+        Err(last.unwrap_or_else(|| std::io::ErrorKind::AlreadyExists.into()))
+    });
+    let p = created.map_err(|e| {
+        OkError::at(
+            ErrKind::Io,
+            args.span,
+            format!("cannot create a temporary directory: {}", io_reason(&e)),
+        )
+    })?;
+    interp.track_temp(p.clone());
     Ok(Value::path(OkPath::from_native(&p)))
 }
 
@@ -712,9 +726,10 @@ fn tempfile(interp: &mut Interp, mut args: Args) -> R<Value> {
             );
         }
     };
-    let p = temp_name("ok", &ext);
-    prepare_temp_parent(interp, &p)
-        .and_then(|()| std::fs::File::create(&p).map(drop))
+    // Created only if the name is free, readable only by its owner.
+    let p = prepare_temp_parent(interp, &temp_name("ok", &ext))
+        .and_then(|()| create_unique(|| temp_name("ok", &ext)))
+        .map(|(p, _)| p)
         .map_err(|e| {
             OkError::at(
                 ErrKind::Io,
@@ -722,7 +737,7 @@ fn tempfile(interp: &mut Interp, mut args: Args) -> R<Value> {
                 format!("cannot create a temporary file: {}", io_reason(&e)),
             )
         })?;
-    interp.temps.push(p.clone());
+    interp.track_temp(p.clone());
     Ok(Value::path(OkPath::from_native(&p)))
 }
 

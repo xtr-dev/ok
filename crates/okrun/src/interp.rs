@@ -261,12 +261,16 @@ impl Interp {
     /// `tempfile()`. Called when a run ends, also after an error.
     pub fn cleanup(&mut self) {
         for p in std::mem::take(&mut self.temps).into_iter().rev() {
-            if p.is_dir() {
-                let _ = std::fs::remove_dir_all(&p);
-            } else {
-                let _ = std::fs::remove_file(&p);
-            }
+            crate::procs::remove_temp(&p);
+            crate::procs::untrack_temp(&p);
         }
+    }
+
+    /// Register a temporary file or directory for removal when the run
+    /// ends, or when ok is interrupted (SPEC.md 2.3).
+    pub fn track_temp(&mut self, p: PathBuf) {
+        self.temps.push(p.clone());
+        crate::procs::track_temp(p);
     }
 
     /// Announce a file-system or network change for `--trace` and

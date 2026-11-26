@@ -126,3 +126,49 @@ fn timeout_that_does_not_expire_changes_nothing() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Ctrl-C (SIGINT) or SIGTERM while a script runs: ok removes its
+/// temporary files, stops the process group of a command with a timeout
+/// and exits with 130 (SPEC.md 2.3, 12.1).
+#[cfg(unix)]
+#[test]
+fn an_interrupt_removes_temporary_files_and_stops_timed_commands() {
+    use std::io::BufRead;
+    use std::os::unix::fs::PermissionsExt;
+    for signal in [nix::sys::signal::SIGINT, nix::sys::signal::SIGTERM] {
+        let dir = scratch(&format!("interrupt-{}", signal as i32));
+        std::fs::write(
+            dir.join("s.ok"),
+            "let d = tempdir()\nlet f = tempfile()\nprint(d)\nprint(f)\nrun ok-fixture spawn pid sleep 30000 with {timeout: 60s}\n",
+        )
+        .unwrap();
+        let mut child = Command::new(env!("CARGO_BIN_EXE_ok"))
+            .arg("s.ok")
+            .current_dir(&dir)
+            .env("PATH", fixture_path())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("start ok");
+        let mut lines = std::io::BufReader::new(child.stdout.take().unwrap()).lines();
+        let d = PathBuf::from(lines.next().unwrap().unwrap());
+        let f = PathBuf::from(lines.next().unwrap().unwrap());
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&d), 0o700);
+        assert_eq!(mode(&f), 0o600);
+        let until = Instant::now() + Duration::from_secs(10);
+        while !dir.join("pid").exists() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        nix::sys::signal::kill(nix::unistd::Pid::from_raw(child.id() as i32), signal).unwrap();
+        let status = child.wait().unwrap();
+        assert_eq!(status.code(), Some(130), "{signal:?}");
+        assert!(
+            !d.exists() && !f.exists(),
+            "{signal:?}: temporary files left"
+        );
+        #[cfg(target_os = "linux")]
+        assert!(gone(&dir.join("pid")), "{signal:?}: the command survived");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

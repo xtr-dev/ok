@@ -224,7 +224,7 @@ The script keeps running, so its reads see the files as they were. A `remove` of
 
 ## Temporary files
 
-`tempdir()` creates a new directory and `tempfile()` a new empty file. Both are removed when the script exits, also when it fails, so you do not need to clean up yourself.
+`tempdir()` creates a new directory and `tempfile()` a new empty file. Both are removed when the script exits, also when it fails or you press Ctrl-C, so you do not need to clean up yourself. Other users of the machine cannot look inside them.
 
 ```ok file=temp.ok
 let work = tempdir()

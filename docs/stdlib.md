@@ -475,11 +475,11 @@ true false
 
 ### tempdir
 
-`tempdir()` returns a `path` to a new, empty directory. It is removed when the script exits, also when it ends with an error.
+`tempdir()` returns a `path` to a new, empty directory. It is removed when the script exits, also when it ends with an error or is stopped with Ctrl-C. Its name cannot be guessed, and on Unix only you can open it (mode 0700), so other users of the machine cannot read or replace what you put there.
 
 ### tempfile
 
-`tempfile(--ext: string = "")` returns a `path` to a new, empty file, removed when the script exits. `ext` gives it an extension, so that `write` and `read` pick the right format: `tempfile(ext: "json")`.
+`tempfile(--ext: string = "")` returns a `path` to a new, empty file, removed when the script exits, like a `tempdir()`. On Unix only you can read or write it (mode 0600). `ext` gives it an extension, so that `write` and `read` pick the right format: `tempfile(ext: "json")`.
 
 ### chmod
 

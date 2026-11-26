@@ -1383,8 +1383,8 @@ directory (the project root in project mode).
 | `list_dir(p: path = cwd)` | `list[path]` | Entries joined to `p`, sorted by name. |
 | `stat(p: path)` | record | `{size: int, modified: time, created: time?, is_file, is_dir, is_symlink: bool, mode: int?}`; `mode` is `null` on Windows. |
 | `touch(p: path)` | `null` | Create empty or update the modification time (19 for WebAssembly). |
-| `tempdir()` | `path` | A new directory in the system's temporary directory (19 for WebAssembly), removed when the script exits (also on error). |
-| `tempfile(--ext: string = "")` | `path` | A new empty file, removed at exit. |
+| `tempdir()` | `path` | A new directory in the system's temporary directory (19 for WebAssembly), removed when the script exits (also on error, and on Ctrl-C or SIGTERM, 2.3). Its name is unpredictable, it never is a directory that existed before, and on Unix only its owner may use it (mode 0700). |
+| `tempfile(--ext: string = "")` | `path` | A new empty file, removed at exit like `tempdir()`. Its name is unpredictable, it never is a file that existed before, and on Unix only its owner may read or write it (mode 0600). |
 | `chmod(p: path, mode: int)` | `null` | Sets Unix permission bits, `chmod(p, 0o755)`. On Windows there are no permission bits, and `chmod` does nothing and succeeds. |
 | `stdin(format: string? = null, --delimiter: string = ",", --header: bool = true, --max_size: int? = 1_073_741_824, --max_line: int? = 67_108_864)` | value | ok's own stdin, lazily, parsed as `format` (default `text`). Limits as for `read` (13.1.2). |
 | `parse(text: string, format: string, --delimiter: string = ",", --header: bool = true)` | value | `read` without the file (13.1); also accepts `"yaml_all"` (13.6). |
