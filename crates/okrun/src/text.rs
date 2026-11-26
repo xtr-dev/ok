@@ -246,6 +246,19 @@ fn pad(_: &mut Interp, mut args: Args) -> R<Value> {
     let align = match opts.get("align") {
         None => "left".to_string(),
         Some(Value::Str(a)) if matches!(&**a, "left" | "right" | "center") => a.to_string(),
+        // A string that is not one of the choices is a bad argument, not a
+        // wrong type, like an unknown hash algorithm or format.
+        Some(Value::Str(a)) => {
+            let help = crate::error::suggest(a, ["left", "right", "center"])
+                .map(|s| format!("did you mean \"{s}\"?"));
+            return Err(OkError::at(
+                ErrKind::Arg,
+                args.span,
+                format!("`align` must be \"left\", \"right\" or \"center\", got \"{a}\""),
+            )
+            .maybe_help(help)
+            .into());
+        }
         Some(other) => {
             return type_err(
                 &args,

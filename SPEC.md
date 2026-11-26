@@ -1378,7 +1378,7 @@ of `env`; read a variable with such a name through `env.get("get")`.
 | `starts_with(s, prefix)`, `ends_with(s, suffix)` | `bool` | |
 | `upper(s)`, `lower(s)` | `string` | Unicode. |
 | `repeat(s, n: int)` | `string` | |
-| `pad(x, width: int, --fill: string = " ", --align: string = "left")` | `string` | `align` is `"left"`, `"right"` or `"center"`. `x` is converted with `str`. |
+| `pad(x, width: int, --fill: string = " ", --align: string = "left")` | `string` | `align` is `"left"`, `"right"` or `"center"`; another string is an `arg` error. `x` is converted with `str`. |
 | `fmt(x, spec: string)` | `string` | 12.6 |
 | `str(x)` | `string` | Display form (5.1). |
 | `int(x)`, `float(x)` | number | From strings (error if malformed), numbers (`int` truncates), bools. |

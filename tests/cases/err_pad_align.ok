@@ -1,0 +1,5 @@
+# A bad choice for `align` is an `arg` error with a did-you-mean (SPEC.md 12.4).
+
+let r = try { pad("x", 5, align: "middle") } catch e { e.kind }
+print(r)
+print(pad("x", 5, align: "centre"))

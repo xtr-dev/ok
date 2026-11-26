@@ -1,0 +1,7 @@
+error[arg]: `align` must be "left", "right" or "center", got "centre"
+ --> err_pad_align.ok:5:7
+  |
+5 | print(pad("x", 5, align: "centre"))
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: did you mean "center"?
