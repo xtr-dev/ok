@@ -1,0 +1,7 @@
+error[type]: argument `xs` of `names` must be a list of strings, got a list whose element 1 is an int
+ --> err_rest_type.ok:6:1
+  |
+6 | names("a", 2)
+  | ^^^^^^^^^^^^^
+  |
+  = note: `names` is declared at err_rest_type.ok:3:4

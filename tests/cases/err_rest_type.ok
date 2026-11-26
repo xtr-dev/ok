@@ -1,0 +1,6 @@
+# A typed rest parameter names the element type in the plural (SPEC.md 7.2).
+
+fn names(...xs: string) {
+  xs
+}
+names("a", 2)

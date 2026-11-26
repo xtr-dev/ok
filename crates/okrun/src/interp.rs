@@ -2105,7 +2105,7 @@ fn display_fn_name(name: &str) -> String {
 pub(crate) fn type_phrase(ty: &TypeAnn) -> String {
     match ty {
         TypeAnn::Optional(inner) => format!("{} or null", type_phrase(inner)),
-        TypeAnn::List(Some(inner)) => format!("a list of {}", type_phrase(inner)),
+        TypeAnn::List(Some(inner)) => format!("a list of {}", type_plural(inner)),
         TypeAnn::Any => "any value".into(),
         TypeAnn::Choice(cs) => format!(
             "one of {}",
@@ -2115,6 +2115,22 @@ pub(crate) fn type_phrase(ty: &TypeAnn) -> String {
                 .join(", ")
         ),
         other => crate::value::with_article(&other.describe()),
+    }
+}
+
+/// The plural of a type, for the elements of a list type: "a list of
+/// strings", "a list of ints or nulls".
+fn type_plural(ty: &TypeAnn) -> String {
+    match ty {
+        TypeAnn::Optional(inner) => format!("{} or nulls", type_plural(inner)),
+        TypeAnn::List(None) => "lists".into(),
+        TypeAnn::List(Some(inner)) => format!("lists of {}", type_plural(inner)),
+        TypeAnn::Any => "values of any type".into(),
+        TypeAnn::Null => "nulls".into(),
+        TypeAnn::Bytes => "bytes values".into(),
+        TypeAnn::Fn => "functions".into(),
+        TypeAnn::Choice(_) => format!("values that are {}", type_phrase(ty)),
+        other => format!("{}s", other.describe()),
     }
 }
 
