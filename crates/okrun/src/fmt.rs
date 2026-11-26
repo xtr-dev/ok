@@ -28,7 +28,7 @@
 //! positions) and the comments with the original; if they differ, it
 //! refuses instead of returning the text.
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 
 use crate::ast::*;
 use crate::error::{ErrKind, OkError};
@@ -521,6 +521,16 @@ fn continues(t: &Tok) -> bool {
     )
 }
 
+/// What the indentation of a line depends on: the indentation of each
+/// open bracket's line, whether the previous line ended in an operator, and
+/// the previous line's last token.
+#[derive(Clone, Default)]
+struct IndentState {
+    stack: Vec<usize>,
+    prev_continues: bool,
+    prev_last: Option<usize>,
+}
+
 /// A line of code: a run of tokens, and what precedes it.
 struct Line {
     first: usize,
@@ -815,47 +825,41 @@ impl<'a> Formatter<'a> {
         lines
     }
 
-    /// The indentation level of each line (SPEC.md 17).
-    fn indents(&self, lines: &[Line]) -> Vec<usize> {
-        let mut out = Vec::with_capacity(lines.len());
-        let mut stack: Vec<usize> = Vec::new();
-        let mut prev_continues = false;
-        let mut prev_last: Option<&Tok> = None;
-        for line in lines {
-            let first = self.toks[line.first].tok;
-            let closes_first = is_closer(first);
-            let base = if closes_first {
-                stack.last().copied().unwrap_or(0)
-            } else {
-                stack.last().map_or(0, |i| i + 1)
-            };
-            let after_list = matches!(
-                prev_last,
-                Some(Tok::Comma | Tok::LParen | Tok::LBracket | Tok::LBrace)
-            );
-            let method_chain = matches!(first, Tok::Dot)
-                && line.first < line.last
-                && matches!(self.toks[line.first + 1].tok, Tok::Ident(_) | Tok::Kw(_))
-                && !after_list;
-            let cont =
-                !closes_first && (matches!(first, Tok::Pipe) || method_chain || prev_continues);
-            let indent = base + usize::from(cont);
-            out.push(indent);
-            let depth_before = stack.len();
-            for t in &self.toks[line.first..=line.last] {
-                if is_opener(t.tok) {
-                    stack.push(indent);
-                } else if is_closer(t.tok) {
-                    stack.pop();
-                }
+    /// The indentation of `line` (SPEC.md 17), given the state after the lines before
+    /// it, which is updated to include `line`.
+    fn indent_step(&self, state: &mut IndentState, line: &Line) -> usize {
+        let first = self.toks[line.first].tok;
+        let closes_first = is_closer(first);
+        let base = if closes_first {
+            state.stack.last().copied().unwrap_or(0)
+        } else {
+            state.stack.last().map_or(0, |i| i + 1)
+        };
+        let after_list = matches!(
+            state.prev_last.map(|i| self.toks[i].tok),
+            Some(Tok::Comma | Tok::LParen | Tok::LBracket | Tok::LBrace)
+        );
+        let method_chain = matches!(first, Tok::Dot)
+            && line.first < line.last
+            && matches!(self.toks[line.first + 1].tok, Tok::Ident(_) | Tok::Kw(_))
+            && !after_list;
+        let cont =
+            !closes_first && (matches!(first, Tok::Pipe) || method_chain || state.prev_continues);
+        let indent = base + usize::from(cont);
+        let depth_before = state.stack.len();
+        for t in &self.toks[line.first..=line.last] {
+            if is_opener(t.tok) {
+                state.stack.push(indent);
+            } else if is_closer(t.tok) {
+                state.stack.pop();
             }
-            let last = self.toks[line.last].tok;
-            // A trailing operator continues the statement unless the line
-            // opened a bracket (the bracket's contents carry the indentation).
-            prev_continues = continues(last) && stack.len() <= depth_before;
-            prev_last = Some(last);
         }
-        out
+        let last = self.toks[line.last].tok;
+        // A trailing operator continues the statement unless the line
+        // opened a bracket (the bracket's contents carry the indentation).
+        state.prev_continues = continues(last) && state.stack.len() <= depth_before;
+        state.prev_last = Some(line.last);
+        indent
     }
 
     /// The code of a line, without indentation and end-of-line comment.
@@ -960,28 +964,46 @@ impl<'a> Formatter<'a> {
     }
 
     fn run(mut self) -> String {
-        // Each round breaks every long line once; the new lines are checked
-        // again in the next round. Breaks only ever split lines, so this ends.
-        for _ in 0..10_000 {
-            let lines = self.lines();
-            let indents = self.indents(&lines);
-            let mut changed = false;
-            for (line, &indent) in lines.iter().zip(&indents) {
-                if !self.breakable_long_line(line, indent) {
-                    continue;
-                }
-                if let Some((breaks, comma)) = self.breaks_for(line) {
+        // Lines are visited in order. A long line that can be broken is
+        // split, and its pieces are checked right away with their own
+        // indentation (which only depends on the lines before), so a line
+        // that needs many breaks (a long `else if` chain written on one
+        // line) is handled in one pass instead of one pass per break.
+        let mut state = IndentState::default();
+        let mut lines = Vec::new();
+        let mut indents = Vec::new();
+        for line in self.lines() {
+            let mut pending = VecDeque::from([line]);
+            while let Some(piece) = pending.pop_front() {
+                let before = state.clone();
+                let indent = self.indent_step(&mut state, &piece);
+                if self.breakable_long_line(&piece, indent)
+                    && let Some((breaks, comma)) = self.breaks_for(&piece)
+                {
                     self.forced.extend(breaks);
                     self.commas.extend(comma);
-                    changed = true;
+                    state = before;
+                    let mut first = piece.first;
+                    let mut parts = Vec::new();
+                    for i in piece.first + 1..=piece.last {
+                        if self.forced.contains(&i) {
+                            parts.push(Line { first, last: i - 1 });
+                            first = i;
+                        }
+                    }
+                    parts.push(Line {
+                        first,
+                        last: piece.last,
+                    });
+                    for p in parts.into_iter().rev() {
+                        pending.push_front(p);
+                    }
+                    continue;
                 }
-            }
-            if !changed {
-                return self.render(&lines, &indents);
+                lines.push(piece);
+                indents.push(indent);
             }
         }
-        let lines = self.lines();
-        let indents = self.indents(&lines);
         self.render(&lines, &indents)
     }
 
