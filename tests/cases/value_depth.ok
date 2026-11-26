@@ -42,3 +42,10 @@ for n in [80, 81] {
     try { parse(to({a: nest(n)}, "toml"), "toml") == {a: nest(n)} } catch e { e.message },
   )
 }
+
+# A value that holds itself twice doubles in size each round; past 1 GiB
+# written out, building it is an error rather than an abort when it is
+# displayed or serialised.
+var twice = [1]
+print(try { for i in range(40) { twice = [twice, twice] } } catch e { e.message })
+print(len(twice))

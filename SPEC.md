@@ -547,20 +547,24 @@ is `floor(a / b)`, `ceil`, `round` (halves round away from zero: `round(2.5)
 Strings are UTF-8. `len(s)` counts Unicode scalar values. `s[i]` returns the
 scalar at index `i` as a one-character string; negative indexes count from
 the end. `+` concatenates two strings; adding a string and a non-string is a
-type error that suggests interpolation. Iterating a string with `for` is an
+type error that suggests interpolation. A string built by `+`, `repeat` or
+`pad` may be at most 1 GiB; a larger one is an error, not an abort. Iterating a string with `for` is an
 error that suggests `.chars()` or `.lines()`.
 
 ### 5.7 Lists and records
 
 Lists hold any values. `xs[i]` with a negative `i` counts from the end; an
 out-of-range index is an error (`xs[i]?` gives `null`). `+` concatenates two
-lists. Spread `...xs` inserts the elements into a list literal or the
+lists, into at most 1 GiB of elements (16 bytes each). Spread `...xs` inserts the elements into a list literal or the
 arguments of a call.
 
 Lists and records nest at most 1000 levels deep (a list of numbers is one
 level); building a deeper value, as `x = [x]` in a long loop would, is a
 `value` error. Displaying, comparing and freeing a value work through every
-level, and the limit keeps them from exhausting the stack.
+level, and the limit keeps them from exhausting the stack. Likewise a value
+may take at most 1 GiB written out, counting a shared element each time it
+occurs: `x = [x, x]` doubles that size each round, and building a value past
+the limit is a `value` error.
 
 Records map string keys to values and preserve insertion order. `r.key` and
 `r["key"]` read a field; a missing key is an error that lists close matches

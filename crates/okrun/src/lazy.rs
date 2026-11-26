@@ -210,7 +210,10 @@ pub struct RangeSource {
 }
 
 impl Source for RangeSource {
-    fn next(&mut self, _: &mut Interp) -> R<Option<Value>> {
+    fn next(&mut self, interp: &mut Interp) -> R<Option<Value>> {
+        // A range is the one source that can produce elements without end
+        // and without evaluating anything, so it counts sandbox steps.
+        interp.step()?;
         if self.done
             || (self.step > 0 && self.next >= self.end)
             || (self.step < 0 && self.next <= self.end)
@@ -411,9 +414,7 @@ pub fn canonical_key(v: &Value) -> String {
         // key. -2^63 <= f < 2^63 makes the conversion exact.
         Value::Int(i) => format!("int:{i}"),
         Value::Float(f)
-            if f.fract() == 0.0
-                && *f >= -9.223_372_036_854_775_808e18
-                && *f < 9.223_372_036_854_775_808e18 =>
+            if f.fract() == 0.0 && *f >= (i64::MIN as f64) && *f < -(i64::MIN as f64) =>
         {
             format!("int:{}", *f as i64)
         }

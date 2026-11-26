@@ -14,3 +14,5 @@ yaml 256 cannot write YAML nested more than 255 levels deep (this value nests 25
 255 cannot write JSON nested more than 127 levels deep (this value nests 128); ok could not read it back
 toml 80 true
 toml 81 cannot write TOML nested more than 81 levels deep (this value nests 82); ok could not read it back
+value is too large: written out, it would take more than 1 GiB
+2

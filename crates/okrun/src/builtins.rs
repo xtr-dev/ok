@@ -255,13 +255,20 @@ pub(crate) fn arity(args: &Args, name: &str, min: usize, max: usize) -> R<()> {
     Ok(())
 }
 
-fn write_line(to_stderr: bool, args: &Args) -> R<Value> {
+fn write_line(interp: &mut Interp, to_stderr: bool, args: &Args) -> R<Value> {
     let line = args
         .pos
         .iter()
         .map(Value::display)
         .collect::<Vec<_>>()
         .join(" ");
+    if let Some(sb) = &mut interp.sandbox {
+        if sb.output.len() + line.len() < crate::interp::SANDBOX_MAX_OUTPUT {
+            sb.output.push_str(&line);
+            sb.output.push('\n');
+        }
+        return Ok(Value::Null);
+    }
     let result = if to_stderr {
         let mut e = std::io::stderr().lock();
         writeln!(e, "{line}")
@@ -279,14 +286,14 @@ fn write_line(to_stderr: bool, args: &Args) -> R<Value> {
     }
 }
 
-fn print(_: &mut Interp, args: Args) -> R<Value> {
+fn print(interp: &mut Interp, args: Args) -> R<Value> {
     arity(&args, "print", 0, usize::MAX)?;
-    write_line(false, &args)
+    write_line(interp, false, &args)
 }
 
-fn eprint(_: &mut Interp, args: Args) -> R<Value> {
+fn eprint(interp: &mut Interp, args: Args) -> R<Value> {
     arity(&args, "eprint", 0, usize::MAX)?;
-    write_line(true, &args)
+    write_line(interp, true, &args)
 }
 
 fn str_(_: &mut Interp, args: Args) -> R<Value> {

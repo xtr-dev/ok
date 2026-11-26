@@ -233,6 +233,7 @@ impl Interp {
         stdin: Option<Value>,
         scope: &Rc<Scope>,
     ) -> R<Value> {
+        self.sandbox_check("run", span)?;
         let mut argv = Vec::new();
         for w in &cmd.words {
             self.word_args(w, scope, &mut argv)?;
@@ -279,6 +280,7 @@ impl Interp {
         stdin: Option<Value>,
         scope: &Rc<Scope>,
     ) -> R<Value> {
+        self.sandbox_check("run", span)?;
         let mut argv = Vec::new();
         let mut rec = Record::new();
         for a in args {

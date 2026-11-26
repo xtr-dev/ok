@@ -58,27 +58,46 @@ impl Func {
 /// WebAssembly build.
 pub const MAX_VALUE_DEPTH: u32 = 1000;
 
-/// The elements of a list, with the list's nesting depth cached so that
-/// checking a new value against [`MAX_VALUE_DEPTH`] costs O(1). It
-/// dereferences to the `Vec` for reading; changes go through methods that
-/// keep the depth an upper bound.
+/// The largest [`Value::weight`] a value may have (SPEC.md 5.7). Lists and
+/// records share their elements, so `r = [r, r]` doubles a value's size at
+/// no cost; after 40 rounds displaying, serialising or comparing it would
+/// need terabytes. Data that really is this large would not fit in memory
+/// (`read` stops at 1 GiB), so the limit only stops runaway sharing.
+pub const MAX_VALUE_WEIGHT: u64 = 1 << 30;
+
+/// The elements of a list, with the list's nesting depth and weight cached
+/// so that checking a new value against [`MAX_VALUE_DEPTH`] and
+/// [`MAX_VALUE_WEIGHT`] costs O(1). It dereferences to the `Vec` for
+/// reading; changes go through methods that keep the depth an upper bound
+/// and the weight exact.
 #[derive(Clone, Default)]
 pub struct List {
     items: Vec<Value>,
     depth: u32,
+    weight: u64,
 }
 
 impl List {
     pub fn new(items: Vec<Value>) -> List {
         let depth = 1 + items.iter().map(Value::depth).max().unwrap_or(0);
-        List { items, depth }
+        let weight = items.iter().fold(1u64, |w, v| w.saturating_add(v.weight()));
+        List {
+            items,
+            depth,
+            weight,
+        }
     }
 
-    /// Changes element `i` (which must exist) with `f`, then raises the
-    /// cached depth if the element got deeper.
+    /// Changes element `i` (which must exist) with `f`, then updates the
+    /// cached depth and weight.
     pub fn update<T>(&mut self, i: usize, f: impl FnOnce(&mut Value) -> T) -> T {
+        let before = self.items[i].weight();
         let r = f(&mut self.items[i]);
         self.depth = self.depth.max(1 + self.items[i].depth());
+        self.weight = self
+            .weight
+            .saturating_sub(before)
+            .saturating_add(self.items[i].weight());
         r
     }
 }
@@ -99,6 +118,8 @@ pub struct Record {
     /// An upper bound of the nesting depth of the record's values, plus
     /// one; see [`List`].
     depth: u32,
+    /// The record's [`Value::weight`] minus one.
+    weight: u64,
 }
 
 impl Record {
@@ -114,8 +135,13 @@ impl Record {
     /// the cached depth if the value got deeper.
     pub fn update<T>(&mut self, key: &str, f: impl FnOnce(&mut Value) -> T) -> Option<T> {
         let i = *self.index.get(key)?;
+        let before = self.values[i].weight();
         let r = f(&mut self.values[i]);
         self.depth = self.depth.max(1 + self.values[i].depth());
+        self.weight = self
+            .weight
+            .saturating_sub(before)
+            .saturating_add(self.values[i].weight());
         Some(r)
     }
 
@@ -134,8 +160,16 @@ impl Record {
         self.depth = self.depth.max(1 + value.depth());
         let key = key.into();
         if let Some(&i) = self.index.get(&key) {
+            self.weight = self
+                .weight
+                .saturating_sub(self.values[i].weight())
+                .saturating_add(value.weight());
             self.values[i] = value;
         } else {
+            self.weight = self
+                .weight
+                .saturating_add(key.len() as u64)
+                .saturating_add(value.weight());
             self.index.insert(key.clone(), self.keys.len());
             self.keys.push(key);
             self.values.push(value);
@@ -175,6 +209,20 @@ impl Value {
             Value::List(l) => l.depth,
             Value::Record(r) => r.depth(),
             _ => 0,
+        }
+    }
+
+    /// The size of this value written out in full, roughly: the bytes of
+    /// its strings and keys plus one per element, counting an element as
+    /// often as it occurs, even where lists and records share it. O(1):
+    /// containers cache it.
+    pub fn weight(&self) -> u64 {
+        match self {
+            Value::Str(s) => s.len() as u64,
+            Value::Bytes(b) => b.len() as u64,
+            Value::List(l) => l.weight,
+            Value::Record(r) => r.weight.saturating_add(1),
+            _ => 1,
         }
     }
 
@@ -644,10 +692,10 @@ mod tests {
         assert_eq!(cmp_int_float(big - 1, f), Some(Ordering::Equal));
         assert!(!equal(
             &Value::Int(i64::MAX),
-            &Value::Float(9.223_372_036_854_775_808e18)
+            &Value::Float(-(i64::MIN as f64))
         ));
         assert_eq!(
-            cmp_int_float(i64::MIN, -9.223_372_036_854_775_808e18),
+            cmp_int_float(i64::MIN, i64::MIN as f64),
             Some(Ordering::Equal)
         );
         assert_eq!(cmp_int_float(-3, -2.5), Some(Ordering::Less));

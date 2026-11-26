@@ -204,12 +204,7 @@ fn chars(_: &mut Interp, mut args: Args) -> R<Value> {
     ))
 }
 
-/// The largest string, in bytes, that `repeat` and `pad` build. A script
-/// asking for more almost certainly has a wrong count, and an allocation
-/// that large would abort the program instead of raising an error.
-const MAX_BUILT_STRING: u128 = 1 << 30;
-
-fn repeat(_: &mut Interp, mut args: Args) -> R<Value> {
+fn repeat(interp: &mut Interp, mut args: Args) -> R<Value> {
     named(&mut args, "repeat", &[])?;
     count_args(&args, "repeat", 2, 2)?;
     let s = str_at(&args, 0, "repeat")?;
@@ -219,13 +214,13 @@ fn repeat(_: &mut Interp, mut args: Args) -> R<Value> {
             format!("`repeat` needs a count, got {}", args.pos[1].a_type()),
         );
     };
-    if n < 0 || (n as u128) * (s.len() as u128) > MAX_BUILT_STRING {
+    if n < 0 || (n as u128) * (s.len() as u128) > interp.max_built_size() as u128 {
         return arg_err(&args, format!("cannot repeat a string {n} times"));
     }
     Ok(Value::str(s.repeat(n as usize)))
 }
 
-fn pad(_: &mut Interp, mut args: Args) -> R<Value> {
+fn pad(interp: &mut Interp, mut args: Args) -> R<Value> {
     let opts = named(&mut args, "pad", &["fill", "align"])?;
     count_args(&args, "pad", 2, 2)?;
     let s = args.pos[0].display();
@@ -280,10 +275,14 @@ fn pad(_: &mut Interp, mut args: Args) -> R<Value> {
         return Ok(Value::str(s));
     }
     let n = width - len;
-    if (n as u128) * (fill.len_utf8() as u128) + s.len() as u128 > MAX_BUILT_STRING {
+    let max = interp.max_built_size();
+    if (n as u128) * (fill.len_utf8() as u128) + s.len() as u128 > max as u128 {
         return arg_err(
             &args,
-            format!("cannot pad a string to {width} characters: the result would be over 1 GiB"),
+            format!(
+                "cannot pad a string to {width} characters: the result would be over {}",
+                crate::list::byte_size(max as u64)
+            ),
         );
     }
     let f = |k: usize| fill.to_string().repeat(k);

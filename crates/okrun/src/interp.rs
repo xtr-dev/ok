@@ -21,7 +21,7 @@ use crate::parser;
 use crate::path::OkPath;
 use crate::sig;
 use crate::source::{SourceMap, Span};
-use crate::value::{Func, MAX_VALUE_DEPTH, Record, Value, compare, equal};
+use crate::value::{Func, MAX_VALUE_DEPTH, MAX_VALUE_WEIGHT, Record, Value, compare, equal};
 
 /// Maximum depth of nested ok function calls.
 const MAX_CALL_DEPTH: usize = 2000;
@@ -39,6 +39,92 @@ pub const MAX_EVAL_DEPTH: usize = if cfg!(debug_assertions) {
 } else {
     50_000
 };
+
+/// Restrictions for running programs nobody reviewed: the `eval` fuzz
+/// target and the no-panic tests run generated programs with them. A
+/// sandboxed interpreter cannot touch the system (no commands, network,
+/// file access, imports, terminal input or sleeping), is deterministic (no
+/// clock), writes `print` output into [`Sandbox::output`] instead of
+/// stdout, and stops after a budget of evaluation steps so that endless
+/// loops end. The `ok` binary never sets it.
+pub struct Sandbox {
+    /// Evaluation steps left: one per expression evaluated and per element
+    /// a `range` produces. At zero, the program ends with [`Flow::Exit`]
+    /// and exit code [`SANDBOX_EXHAUSTED`], which `try` cannot catch.
+    pub steps_left: u64,
+    /// What `print` and `eprint` wrote, up to [`SANDBOX_MAX_OUTPUT`] bytes.
+    pub output: String,
+}
+
+/// The exit code of a sandboxed program that used up its step budget.
+pub const SANDBOX_EXHAUSTED: i32 = 125;
+
+/// How much `print` output a sandbox keeps.
+pub const SANDBOX_MAX_OUTPUT: usize = 1 << 20;
+
+/// Builtins a sandboxed program may not call: everything that reads or
+/// changes files, starts processes, uses the network or the terminal,
+/// waits, or reads the clock.
+const SANDBOX_DENIED: &[&str] = &[
+    "chmod", "confirm", "copy", "exists", "fetch", "glob", "is_dir", "is_file", "list_dir",
+    "mkdir", "move", "now", "prompt", "read", "remove", "sleep", "stat", "stdin", "tar", "tempdir",
+    "tempfile", "touch", "untar", "unzip", "which", "write", "zip",
+];
+
+/// What a program run with [`run_sandboxed`] did.
+pub struct SandboxRun {
+    /// What it printed.
+    pub output: String,
+    /// How it ended: `ok`, `exit CODE` or `error KIND: MESSAGE`.
+    pub outcome: String,
+}
+
+/// Run untrusted source text in a [`Sandbox`] with a budget of `steps`, on a
+/// thread of its own with a large stack (test and fuzzing threads have
+/// small ones). Used by the fuzz targets and the no-panic tests; a panic
+/// in the interpreter is passed on to the caller.
+pub fn run_sandboxed(src: &str, steps: u64) -> SandboxRun {
+    let src = src.to_string();
+    let thread = std::thread::Builder::new()
+        .stack_size(256 * 1024 * 1024)
+        .spawn(move || {
+            SANDBOX_SCOPES.with(|reg| *reg.borrow_mut() = Some(Vec::new()));
+            let mut interp = Interp::new(Vec::new());
+            interp.sandbox = Some(Box::new(Sandbox {
+                steps_left: steps,
+                output: String::new(),
+            }));
+            // Sanitizer and debug builds take much more stack per level.
+            interp.max_eval_depth = 3000;
+            let base = std::env::temp_dir();
+            let outcome = match interp.run_source("sandbox.ok", &src, base) {
+                Ok(_) => "ok".to_string(),
+                Err(Flow::Exit(code)) => format!("exit {code}"),
+                Err(Flow::Err(e)) => format!("error {}: {}", e.kind.name(), e.message),
+                Err(_) => "stray control flow".to_string(),
+            };
+            interp.cleanup();
+            let output = interp
+                .sandbox
+                .take()
+                .map(|sb| sb.output)
+                .unwrap_or_default();
+            drop(interp);
+            let scopes = SANDBOX_SCOPES
+                .with(|reg| reg.borrow_mut().take())
+                .unwrap_or_default();
+            for scope in scopes.iter().filter_map(std::rc::Weak::upgrade) {
+                let vars = std::mem::take(&mut *scope.vars.borrow_mut());
+                drop(vars);
+            }
+            SandboxRun { output, outcome }
+        })
+        .expect("start the sandbox thread");
+    match thread.join() {
+        Ok(run) => run,
+        Err(panic) => std::panic::resume_unwind(panic),
+    }
+}
 
 /// Ways evaluation can leave the normal path.
 pub enum Flow {
@@ -75,12 +161,33 @@ pub struct Scope {
     parent: Option<Rc<Scope>>,
 }
 
+thread_local! {
+    /// While a sandboxed program runs on this thread, every scope it
+    /// creates. A function value refers to the scope it was declared in,
+    /// which holds the function, so scopes form reference cycles that are
+    /// never freed; the `ok` process simply exits, but the fuzz targets run
+    /// many programs and would leak each one. [`run_sandboxed`] empties the
+    /// registered scopes afterwards, which breaks the cycles.
+    static SANDBOX_SCOPES: RefCell<Option<Vec<std::rc::Weak<Scope>>>> = const { RefCell::new(None) };
+}
+
 impl Scope {
     pub fn new(parent: Option<Rc<Scope>>) -> Rc<Scope> {
-        Rc::new(Scope {
+        let scope = Rc::new(Scope {
             vars: RefCell::new(HashMap::new()),
             parent,
-        })
+        });
+        SANDBOX_SCOPES.with(|reg| {
+            if let Some(list) = reg.borrow_mut().as_mut() {
+                // Forget scopes that are already gone now and then, so a
+                // long loop does not grow the list without bound.
+                if list.len() >= 4096 && list.len().is_power_of_two() {
+                    list.retain(|w| w.strong_count() > 0);
+                }
+                list.push(Rc::downgrade(&scope));
+            }
+        });
+        scope
     }
 
     pub fn lookup(&self, name: &str) -> Option<Value> {
@@ -178,6 +285,8 @@ pub struct Interp {
     /// `env file`): `None` removes a variable. Applied to every child
     /// process, so ok never mutates its own process environment.
     pub env_overlay: Vec<(String, Option<String>)>,
+    /// Set for programs that must not touch the system; see [`Sandbox`].
+    pub sandbox: Option<Box<Sandbox>>,
 }
 
 /// Global options that change how commands and file operations behave.
@@ -226,7 +335,88 @@ impl Interp {
             project_root: None,
             project_files: None,
             env_overlay: Vec::new(),
+            sandbox: None,
         }
+    }
+
+    /// Count one evaluation step against the sandbox budget, if any.
+    pub(crate) fn step(&mut self) -> R<()> {
+        if let Some(sb) = &mut self.sandbox {
+            if sb.steps_left == 0 {
+                return Err(Flow::Exit(SANDBOX_EXHAUSTED));
+            }
+            sb.steps_left -= 1;
+        }
+        Ok(())
+    }
+
+    /// The largest string or list (in bytes) that operations building one
+    /// from a count or by concatenation produce: 1 GiB, or 64 MiB in a
+    /// sandbox (whose fuzzing runs flag single allocations over 512 MiB).
+    /// Going beyond is almost always a runaway loop, and an allocation that
+    /// fails aborts the program instead of raising an error.
+    pub fn max_built_size(&self) -> usize {
+        if self.sandbox.is_some() {
+            64 << 20
+        } else {
+            1 << 30
+        }
+    }
+
+    /// An error when a result of `bytes` bytes would exceed
+    /// [`Interp::max_built_size`].
+    pub(crate) fn check_built_size(&self, bytes: usize, what: &str, span: Span) -> R<()> {
+        if bytes > self.max_built_size() {
+            return err(
+                ErrKind::Value,
+                span,
+                format!(
+                    "the {what} would be too large: over {}",
+                    crate::list::byte_size(self.max_built_size() as u64)
+                ),
+            );
+        }
+        Ok(())
+    }
+
+    /// The largest [`Value::weight`] of a value: [`MAX_VALUE_WEIGHT`], or
+    /// 4 Mi in a sandbox, where displaying a value must stay well below the
+    /// fuzzer's allocation limit.
+    fn max_weight(&self) -> u64 {
+        if self.sandbox.is_some() {
+            1 << 22
+        } else {
+            MAX_VALUE_WEIGHT
+        }
+    }
+
+    /// Rejects a value heavier than [`Interp::max_weight`] (SPEC.md 5.7).
+    fn check_weight(&self, weight: u64, span: Span) -> R<()> {
+        if weight > self.max_weight() {
+            return Err(OkError::at(
+                ErrKind::Value,
+                span,
+                format!(
+                    "value is too large: written out, it would take more than {}",
+                    crate::list::byte_size(self.max_weight())
+                ),
+            )
+            .with_help("a list or record that holds itself several times doubles in size each time, as in `x = [x, x]`")
+            .into());
+        }
+        Ok(())
+    }
+
+    /// An error when the sandbox forbids `what` (a builtin, `run`, `import`).
+    pub(crate) fn sandbox_check(&self, what: &str, span: Span) -> R<()> {
+        if self.sandbox.is_some() {
+            return err(
+                ErrKind::Value,
+                span,
+                format!("`{what}` is not available in the sandbox"),
+            );
+        }
+        Ok(())
     }
 
     /// Replace a global value (used by project mode for `cwd` and
@@ -500,6 +690,7 @@ impl Interp {
         dir: &Path,
         file: u32,
     ) -> R<()> {
+        self.sandbox_check("import", span)?;
         if raw.contains("://") {
             return err(
                 ErrKind::Name,
@@ -924,6 +1115,9 @@ impl Interp {
         // The rest of the binding was within the limit already, so only the
         // assigned path can make it too deep.
         check_depth(keys.len() as u32 + new_value.depth(), value.span)?;
+        // Replacing part of a value can only grow it by the new part.
+        let current = owner.lookup(&place.root).map_or(0, |v| v.weight());
+        self.check_weight(current.saturating_add(new_value.weight()), value.span)?;
         // Take the value out of its binding so copy-on-write does not copy it.
         let mut root = {
             let mut vars = owner.vars.borrow_mut();
@@ -1089,6 +1283,7 @@ impl Interp {
             .with_help("make the recursion shallower, or use a loop")
             .into());
         }
+        self.step()?;
         self.eval_depth += 1;
         let r = self.eval_lazy_inner(e, scope);
         self.eval_depth -= 1;
@@ -1098,6 +1293,7 @@ impl Interp {
         // before its result is checked.
         if let Ok(v) = &r {
             check_depth(v.depth(), e.span)?;
+            self.check_weight(v.weight(), e.span)?;
         }
         r
     }
@@ -1626,7 +1822,14 @@ impl Interp {
         };
         match &**func {
             Func::Builtin(b) => {
+                if self.sandbox.is_some() && SANDBOX_DENIED.contains(&b.name) {
+                    self.sandbox_check(b.name, span)?;
+                }
                 let args = if b.lazy { args } else { self.force_args(args)? };
+                // `hash` of a path reads the file.
+                if b.name == "hash" && matches!(args.pos.first(), Some(Value::Path(_))) {
+                    self.sandbox_check("hash", span)?;
+                }
                 (b.f)(self, args)
             }
             Func::User { decl, env } => {
@@ -2057,8 +2260,15 @@ impl Interp {
             BinOp::Add => match (&a, &b) {
                 (Int(x), Int(y)) => x.checked_add(*y).map(Int).ok_or_else(|| overflow(span)),
                 (Int(_) | Float(_), Int(_) | Float(_)) => finite(num(&a) + num(&b)),
-                (Str(x), Str(y)) => Ok(Value::str(format!("{x}{y}"))),
-                (List(x), List(y)) => Ok(Value::list(x.iter().chain(y.iter()).cloned().collect())),
+                (Str(x), Str(y)) => {
+                    self.check_built_size(x.len() + y.len(), "string", span)?;
+                    Ok(Value::str(format!("{x}{y}")))
+                }
+                (List(x), List(y)) => {
+                    let bytes = (x.len() + y.len()).saturating_mul(std::mem::size_of::<Value>());
+                    self.check_built_size(bytes, "list", span)?;
+                    Ok(Value::list(x.iter().chain(y.iter()).cloned().collect()))
+                }
                 (Duration(x), Duration(y)) => x
                     .checked_add(*y)
                     .map(Duration)
