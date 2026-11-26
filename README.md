@@ -45,13 +45,13 @@ first release is [v0.1.0](https://github.com/xtr-dev/ok/releases/tag/v0.1.0).
 Linux and macOS:
 
 ```
-curl -fsSL https://xtr-dev.github.io/ok/install.sh | sh
+curl -fsSL https://okrun.dev/install.sh | sh
 ```
 
 Windows (PowerShell):
 
 ```
-irm https://xtr-dev.github.io/ok/install.ps1 | iex
+irm https://okrun.dev/install.ps1 | iex
 ```
 
 The scripts download the binary for your machine from the latest release,

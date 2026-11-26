@@ -1,5 +1,5 @@
 # Publishes site/ (the landing page and the install scripts) to GitHub Pages
-# at https://xtr-dev.github.io/ok/. The install scripts are first run on
+# at https://okrun.dev/. The install scripts are first run on
 # Linux, macOS and Windows against the latest release, so a broken script is
 # never published.
 name: Pages

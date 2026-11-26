@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install ok on Linux or macOS:
 #
-#   curl -fsSL https://xtr-dev.github.io/ok/install.sh | sh
+#   curl -fsSL https://okrun.dev/install.sh | sh
 #
 # Downloads the release binary for this machine from GitHub, checks it
 # against the release's SHA256SUMS, and installs it as `ok` in

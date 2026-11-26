@@ -851,3 +851,10 @@ parameter help in the examples) stay aligned when the code before them is
 reindented; when the code grows into the comment, two spaces separate them.
 Own-line comments take the indentation of the code below them, which puts
 a comment above a `| stage` line at the stage's level.
+
+## 2026-11-26 (site)
+
+**The site moves to https://okrun.dev/.** The landing page and install
+scripts are served from the custom domain `okrun.dev` (GitHub Pages, HTTPS
+enforced); `https://xtr-dev.github.io/ok/` redirects there. The install
+one-liners in the README and on the page use the new address.

@@ -1,6 +1,6 @@
 # Install ok on Windows (PowerShell):
 #
-#   irm https://xtr-dev.github.io/ok/install.ps1 | iex
+#   irm https://okrun.dev/install.ps1 | iex
 #
 # Downloads the release binary for this machine from GitHub, checks it
 # against the release's SHA256SUMS, installs it as ok.exe in
