@@ -240,9 +240,14 @@ fn run(args: Vec<String>) -> i32 {
         "self" => return self_command(&script_args, &opts, &start, color),
         "trust" | "untrust" => {
             let mut interp = new_interp(Vec::new(), &opts);
-            let result =
-                crate::trust::command(name == "untrust", &script_args, &start, &mut interp)
-                    .map(|_| Value::Null);
+            let result = crate::trust::command(
+                name == "untrust",
+                opts.env.as_deref(),
+                &script_args,
+                &start,
+                &mut interp,
+            )
+            .map(|_| Value::Null);
             return finish(&mut interp, result, color, false);
         }
         _ => {}

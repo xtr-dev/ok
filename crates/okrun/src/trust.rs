@@ -54,6 +54,83 @@ pub fn fingerprint(files: &[(String, PathBuf)]) -> Result<String, OkError> {
     Ok(hex::encode(h.finalize()))
 }
 
+/// Everything trust covers for one run (SPEC.md 16.2): the project files,
+/// and the env files the run loads, which can change what every program a
+/// task starts does (`NODE_OPTIONS`, `PATH`), so they are code too.
+pub struct Inputs {
+    /// Project files, as (path relative to the root, path), in path order.
+    pub code: Vec<(String, PathBuf)>,
+    /// The env files that exist, in the same form. Reviews show only
+    /// their variable names, since values are often secrets.
+    pub env: Vec<(String, PathBuf)>,
+}
+
+impl Inputs {
+    /// The inputs of a run of `project` with `--env env`.
+    pub fn of(project: &Project, env: Option<&str>) -> Inputs {
+        Inputs {
+            code: project.trust_files.clone(),
+            env: project.existing_env_files(env),
+        }
+    }
+
+    fn all(&self) -> Vec<(String, PathBuf)> {
+        self.code.iter().chain(&self.env).cloned().collect()
+    }
+
+    pub fn fingerprint(&self) -> Result<String, OkError> {
+        fingerprint(&self.all())
+    }
+
+    /// The file names for the prompt and `ok trust`, env files marked.
+    fn names(&self) -> String {
+        let code = self
+            .code
+            .iter()
+            .map(|(r, _)| terminal_safe_line(r).into_owned());
+        let env = self
+            .env
+            .iter()
+            .map(|(r, _)| format!("{} (names only)", terminal_safe_line(r)));
+        code.chain(env).collect::<Vec<_>>().join(", ")
+    }
+
+    /// Each file as a review shows it: project files as they are, env
+    /// files as their variable names.
+    fn shown(&self) -> Vec<(String, String)> {
+        let code = self.code.iter().map(|(r, p)| (r.clone(), read_text(p)));
+        let env = self.env.iter().map(|(r, p)| (r.clone(), env_summary(p)));
+        code.chain(env).collect()
+    }
+}
+
+/// A file's text as the review compares it; unreadable files compare as
+/// empty, and bytes that are not UTF-8 are replaced.
+fn read_text(path: &Path) -> String {
+    String::from_utf8_lossy(&std::fs::read(path).unwrap_or_default()).into_owned()
+}
+
+/// What the review shows of an env file: its variable names and a hash of
+/// its content, never the values. The hash makes a changed value visible
+/// in the diff without showing it.
+fn env_summary(path: &Path) -> String {
+    let bytes = std::fs::read(path).unwrap_or_default();
+    let sha = hex::encode(sha2::Sha256::digest(&bytes));
+    let text = String::from_utf8_lossy(&bytes);
+    let mut out = format!("# variable names only; sha256 of the content: {sha}\n");
+    match crate::formats::parse_document("env", &text, "") {
+        Ok(crate::value::Value::Record(r)) => {
+            for (k, _) in r.iter() {
+                out.push_str(k);
+                out.push('\n');
+            }
+        }
+        // The parse error may quote a value, so it is not shown.
+        _ => out.push_str("# (not a valid env file)\n"),
+    }
+    out
+}
+
 #[derive(Clone)]
 struct Entry {
     root: String,
@@ -147,8 +224,40 @@ impl Store {
         self.dir.join("snapshots").join(fp)
     }
 
-    fn snapshot(&self, fp: &str, files: &[(String, PathBuf)]) -> Result<(), OkError> {
+    /// Where the env file summaries of a snapshot are kept: env files can
+    /// live outside the root, so they are not copied into the snapshot
+    /// directory by path.
+    fn env_snapshot(&self, fp: &str) -> PathBuf {
+        self.dir.join("snapshots").join(format!("{fp}-env.json"))
+    }
+
+    fn old_env(&self, fp: &str) -> Vec<(String, String)> {
+        let text = std::fs::read_to_string(self.env_snapshot(fp)).unwrap_or_default();
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+        v.as_object()
+            .into_iter()
+            .flatten()
+            .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_string()))
+            .collect()
+    }
+
+    fn snapshot(&self, fp: &str, inputs: &Inputs) -> Result<(), OkError> {
         let dir = self.snapshot_dir(fp);
+        if !inputs.env.is_empty() {
+            let map: serde_json::Map<String, serde_json::Value> = inputs
+                .env
+                .iter()
+                .map(|(r, p)| (r.clone(), env_summary(p).into()))
+                .collect();
+            let text = serde_json::to_string_pretty(&map).unwrap_or_default() + "\n";
+            let dst = self.env_snapshot(fp);
+            crate::files::ensure_parent(&dst)
+                .and_then(|_| std::fs::write(&dst, text))
+                .map_err(|e| {
+                    store_err(format!("cannot save the env file names: {}", io_reason(&e)))
+                })?;
+        }
+        let files = &inputs.code;
         for (rel, path) in files {
             let dst = dir.join(OkPath::parse(rel).native());
             crate::files::ensure_parent(&dst)
@@ -160,10 +269,15 @@ impl Store {
         Ok(())
     }
 
+    /// Whether `root` is trusted with this fingerprint. Content trust
+    /// belongs to the root it was given for: the same files elsewhere (a
+    /// copy next to different env files, another checkout) are asked
+    /// about again.
     fn is_trusted(&self, root: &str, fp: &str) -> bool {
         self.entries.iter().any(|e| {
-            (e.mode == "dir" && e.root == root)
-                || (e.mode == "content" && e.fingerprint.as_deref() == Some(fp))
+            e.root == root
+                && (e.mode == "dir"
+                    || (e.mode == "content" && e.fingerprint.as_deref() == Some(fp)))
         })
     }
 
@@ -190,13 +304,8 @@ impl Store {
     }
 }
 
-fn now_trusting(
-    store: &mut Store,
-    root: &str,
-    fp: &str,
-    files: &[(String, PathBuf)],
-) -> Result<(), OkError> {
-    store.snapshot(fp, files)?;
+fn now_trusting(store: &mut Store, root: &str, fp: &str, inputs: &Inputs) -> Result<(), OkError> {
+    store.snapshot(fp, inputs)?;
     store.add(root, "content", Some(fp.to_string()));
     store.save()
 }
@@ -207,13 +316,14 @@ fn root_key(p: &Project) -> String {
 
 /// Check that a project may run tasks, asking on a terminal if needed
 /// (SPEC.md 16.3, 16.4).
-pub fn ensure_trusted(project: &Project, skip: bool) -> R<()> {
+pub fn ensure_trusted(project: &Project, skip: bool, env: Option<&str>) -> R<()> {
     if skip || std::env::var("OK_TRUST").is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true")) {
         return Ok(());
     }
     let mut store = Store::load()?;
     let root = root_key(project);
-    let fp = fingerprint(&project.trust_files)?;
+    let inputs = Inputs::of(project, env);
+    let fp = inputs.fingerprint()?;
     if store.is_trusted(&root, &fp) {
         return Ok(());
     }
@@ -221,9 +331,9 @@ pub fn ensure_trusted(project: &Project, skip: bool) -> R<()> {
         .previous(&root)
         .filter(|p| store.snapshot_dir(p).is_dir());
     if !std::io::stdin().is_terminal() {
-        return Err(not_trusted(&store, &root, previous.as_deref(), project).into());
+        return Err(not_trusted(&store, &root, previous.as_deref(), &inputs).into());
     }
-    let names = file_list(&project.trust_files);
+    let names = inputs.names();
     let mut err = std::io::stderr();
     let headline = if previous.is_some() {
         "The project files changed since you trusted them."
@@ -249,21 +359,21 @@ pub fn ensure_trusted(project: &Project, skip: bool) -> R<()> {
         }
         match line.trim().to_ascii_lowercase().as_str() {
             "v" | "view" => {
-                for (rel, path) in &project.trust_files {
+                for (rel, text) in inputs.shown() {
                     let _ = writeln!(
                         err,
                         "\n==> {} <==\n{}",
-                        terminal_safe_line(rel),
-                        view_text(path)
+                        terminal_safe_line(&rel),
+                        view_text(&text)
                     );
                 }
             }
             "d" | "diff" if previous.is_some() => {
-                let old_dir = store.snapshot_dir(previous.as_deref().unwrap_or_default());
-                let _ = write!(err, "{}", diff_project(&old_dir, &project.trust_files));
+                let old = previous.as_deref().unwrap_or_default();
+                let _ = write!(err, "{}", diff_project(&store, old, &inputs));
             }
             "t" | "trust" | "y" | "yes" => {
-                now_trusting(&mut store, &root, &fp, &project.trust_files)?;
+                now_trusting(&mut store, &root, &fp, &inputs)?;
                 return Ok(());
             }
             "n" | "no" | "" => {
@@ -275,36 +385,25 @@ pub fn ensure_trusted(project: &Project, skip: bool) -> R<()> {
     }
 }
 
-/// The file names of a trust review, joined with commas and safe to show.
-fn file_list(files: &[(String, PathBuf)]) -> String {
-    files
-        .iter()
-        .map(|(r, _)| terminal_safe_line(r).into_owned())
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
 /// A project file as `[v]iew` shows it. The review is what the user agrees
 /// to, so the text must look exactly like what ok will run: control,
 /// bidirectional and zero-width characters are shown as escapes (a `\r`
 /// or an ANSI sequence could otherwise hide a line of code), and a leading
 /// byte order mark, which ok ignores, is left out.
-fn view_text(path: &Path) -> String {
-    let bytes = std::fs::read(path).unwrap_or_default();
-    let text = String::from_utf8_lossy(&bytes);
-    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+fn view_text(text: &str) -> String {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     terminal_safe(text).into_owned()
 }
 
 /// The refusal to run without a terminal (SPEC.md 16.4). When an earlier
 /// version of the root was trusted, the error says the files changed and
 /// names them, standing in for the prompt's diff.
-fn not_trusted(store: &Store, root: &str, previous: Option<&str>, project: &Project) -> OkError {
+fn not_trusted(store: &Store, root: &str, previous: Option<&str>, inputs: &Inputs) -> OkError {
     let help = "review the files, then run `ok trust`; in CI set OK_TRUST=1 or pass --trust";
     let at = format!("the project is at {root}");
     match previous {
         Some(fp) => {
-            let changed: Vec<String> = changed_files(&store.snapshot_dir(fp), &project.trust_files)
+            let changed: Vec<String> = changed_files(store, fp, inputs)
                 .into_iter()
                 .map(|(rel, _, _)| rel)
                 .collect();
@@ -324,36 +423,44 @@ fn not_trusted(store: &Store, root: &str, previous: Option<&str>, project: &Proj
     }
 }
 
-/// The files whose content differs between the trusted snapshot and the
-/// current files, added and removed files included, as (path, trusted
-/// content, current content) in path order.
-fn changed_files(old_dir: &Path, current: &[(String, PathBuf)]) -> Vec<(String, String, String)> {
+/// The files whose content differs between the snapshot of the trusted
+/// fingerprint `fp` and the current inputs, added and removed files
+/// included, as (path, trusted content, current content) in path order.
+/// Env files compare as their summaries (names and a hash).
+fn changed_files(store: &Store, fp: &str, current: &Inputs) -> Vec<(String, String, String)> {
+    let old_dir = store.snapshot_dir(fp);
+    let mut old: Vec<(String, String)> = Vec::new();
     let mut old_files: Vec<String> = Vec::new();
-    collect_rel(old_dir, old_dir, &mut old_files);
-    let mut names: Vec<String> = current.iter().map(|(r, _)| r.clone()).collect();
-    names.extend(old_files);
+    collect_rel(&old_dir, &old_dir, &mut old_files);
+    for rel in old_files {
+        let text = read_text(&old_dir.join(OkPath::parse(&rel).native()));
+        old.push((rel, text));
+    }
+    old.extend(store.old_env(fp));
+    let new = current.shown();
+    let mut names: Vec<&String> = old.iter().chain(&new).map(|(r, _)| r).collect();
     names.sort();
     names.dedup();
+    let find = |list: &[(String, String)], rel: &str| {
+        list.iter()
+            .find(|(r, _)| r == rel)
+            .map(|(_, t)| t.clone())
+            .unwrap_or_default()
+    };
     let mut out = Vec::new();
     for rel in names {
-        let old =
-            std::fs::read_to_string(old_dir.join(OkPath::parse(&rel).native())).unwrap_or_default();
-        let new = current
-            .iter()
-            .find(|(r, _)| *r == rel)
-            .and_then(|(_, p)| std::fs::read_to_string(p).ok())
-            .unwrap_or_default();
-        if old != new {
-            out.push((rel, old, new));
+        let (o, n) = (find(&old, rel), find(&new, rel));
+        if o != n {
+            out.push((rel.clone(), o, n));
         }
     }
     out
 }
 
 /// A unified diff between the trusted snapshot and the current files.
-fn diff_project(old_dir: &Path, current: &[(String, PathBuf)]) -> String {
+fn diff_project(store: &Store, fp: &str, current: &Inputs) -> String {
     let mut out = String::new();
-    for (rel, old, new) in changed_files(old_dir, current) {
+    for (rel, old, new) in changed_files(store, fp, current) {
         out.push_str(&unified_diff(&rel, &old, &new));
     }
     if out.is_empty() {
@@ -452,6 +559,7 @@ pub fn unified_diff(name: &str, old: &str, new: &str) -> String {
 /// `ok trust [--dir] [--list] [DIR]` and `ok untrust [DIR]` (SPEC.md 16.5).
 pub fn command(
     untrust: bool,
+    env: Option<&str>,
     args: &[String],
     discover_from: &Path,
     interp: &mut crate::interp::Interp,
@@ -545,12 +653,13 @@ pub fn command(
         return Ok(());
     }
     let project = interp.load_project(&root)?;
-    let fp = fingerprint(&project.trust_files)?;
-    now_trusting(&mut store, &key, &fp, &project.trust_files)?;
+    let inputs = Inputs::of(&project, env);
+    let fp = inputs.fingerprint()?;
+    now_trusting(&mut store, &key, &fp, &inputs)?;
     println!(
         "trusted {}\n  files:  {}\n  sha256: {fp}",
         terminal_safe_line(&key),
-        file_list(&project.trust_files)
+        inputs.names()
     );
     Ok(())
 }
@@ -585,7 +694,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ok-view-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("ok.ok"), "\u{feff}a\u{202e}b\tc\n").unwrap();
-        let shown = view_text(&dir.join("ok.ok"));
+        let shown = view_text(&read_text(&dir.join("ok.ok")));
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(shown, "a\\u{202e}b\tc\n");
     }

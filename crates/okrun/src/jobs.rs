@@ -235,7 +235,7 @@ impl Interp {
             return Ok(());
         }
 
-        let fingerprint = crate::trust::fingerprint(&project.trust_files)?;
+        let fingerprint = crate::trust::Inputs::of(project, opts.env.as_deref()).fingerprint()?;
         let width = (0..n)
             .filter(|&i| !alone[i])
             .map(|i| plan.insts[i].label.chars().count())
@@ -478,8 +478,8 @@ impl Interp {
             [fp, task, from, k] => (*fp, *task, *from, k.parse::<usize>().map_err(|_| bad())?),
             _ => return Err(bad().into()),
         };
-        crate::trust::ensure_trusted(project, opts.trust)?;
-        if crate::trust::fingerprint(&project.trust_files)? != fp {
+        crate::trust::ensure_trusted(project, opts.trust, opts.env.as_deref())?;
+        if crate::trust::Inputs::of(project, opts.env.as_deref()).fingerprint()? != fp {
             return Err(OkError::new(
                 ErrKind::Trust,
                 "the project files changed while the task was running",

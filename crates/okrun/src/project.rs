@@ -483,6 +483,17 @@ impl Interp {
     }
 }
 
+/// The prefix that keeps `key` out of env files, if any (SPEC.md 15.7):
+/// `OK_` variables configure ok itself (`OK_TRUST` would switch off trust
+/// for nested runs, `OK_CONFIG_DIR` move the trust store), and `LD_` and
+/// `DYLD_` variables make the system loader inject code into every program
+/// a task starts. Compared without case, as Windows does.
+pub fn forbidden_env_key(key: &str) -> Option<&'static str> {
+    ["OK_", "LD_", "DYLD_"].into_iter().find(|p| {
+        key.len() >= p.len() && key.as_bytes()[..p.len()].eq_ignore_ascii_case(p.as_bytes())
+    })
+}
+
 /// Whether a task parameter must be given (SPEC.md 7.2).
 fn is_required(p: &crate::ast::Param) -> bool {
     p.default.is_none()
@@ -610,6 +621,42 @@ pub struct TaskOpts {
 }
 
 impl Project {
+    /// The env files a run with `--env env` loads, in loading order, each
+    /// with whether it must exist (SPEC.md 15.7): the declared files, then
+    /// `<file>.NAME` for each of them (or `.env.NAME` at the root when none
+    /// is declared).
+    pub fn env_paths(&self, env: Option<&str>) -> Vec<(PathBuf, bool)> {
+        let mut files: Vec<(PathBuf, bool)> = self
+            .env_files
+            .iter()
+            .map(|f| (self.root.join(OkPath::parse(f).native()), false))
+            .collect();
+        if let Some(name) = env {
+            if self.env_files.is_empty() {
+                files.push((self.root.join(format!(".env.{name}")), true));
+            } else {
+                files.extend(self.env_files.iter().map(|f| {
+                    (
+                        self.root
+                            .join(OkPath::parse(&format!("{f}.{name}")).native()),
+                        true,
+                    )
+                }));
+            }
+        }
+        files
+    }
+
+    /// The env files of [`Project::env_paths`] that exist, as (path shown
+    /// relative to the root, path).
+    pub fn existing_env_files(&self, env: Option<&str>) -> Vec<(String, PathBuf)> {
+        self.env_paths(env)
+            .into_iter()
+            .filter(|(p, _)| p.is_file())
+            .map(|(p, _)| (rel_of(&self.root, &p), p))
+            .collect()
+    }
+
     pub fn find(&self, ns: Option<&str>, name: &str) -> Option<usize> {
         self.tasks
             .iter()
@@ -880,7 +927,7 @@ impl Interp {
         }
         plan(ti, project, &mut seen, &mut order);
 
-        crate::trust::ensure_trusted(project, opts.trust)?;
+        crate::trust::ensure_trusted(project, opts.trust, opts.env.as_deref())?;
 
         // All confirmations are asked before anything runs (SPEC.md 15.7).
         for &i in &order {
@@ -984,30 +1031,7 @@ impl Interp {
     /// `env file` declarations and `--env NAME` (SPEC.md 15.7). Variables
     /// already set in the process environment win.
     fn load_env_files(&mut self, project: &Project, opts: &TaskOpts) -> R<()> {
-        let mut files: Vec<(PathBuf, bool)> = project
-            .env_files
-            .iter()
-            .map(|f| (project.root.join(OkPath::parse(f).native()), false))
-            .collect();
-        if let Some(name) = &opts.env {
-            let extra: Vec<(PathBuf, bool)> = if project.env_files.is_empty() {
-                vec![(project.root.join(format!(".env.{name}")), true)]
-            } else {
-                project
-                    .env_files
-                    .iter()
-                    .map(|f| {
-                        (
-                            project
-                                .root
-                                .join(OkPath::parse(&format!("{f}.{name}")).native()),
-                            true,
-                        )
-                    })
-                    .collect()
-            };
-            files.extend(extra);
-        }
+        let files = project.env_paths(opts.env.as_deref());
         let mut merged: Vec<(String, String)> = Vec::new();
         for (path, required) in files {
             let rel = rel_of(&project.root, &path);
@@ -1040,6 +1064,15 @@ impl Interp {
                 continue;
             };
             for (k, v) in r.iter() {
+                if let Some(prefix) = forbidden_env_key(k) {
+                    return Err(OkError::new(
+                        ErrKind::Value,
+                        format!("{rel} sets {k}, but env files cannot set variables starting with {prefix}"),
+                    )
+                    .with_note(format!("{prefix} variables change how ok itself or the system's program loader works, so a project file could take over every program a task runs"))
+                    .with_help(format!("remove {k} from {rel}; if you need it, set it in your own environment before running ok"))
+                    .into());
+                }
                 merged.retain(|(mk, _)| mk != &**k);
                 merged.push((k.to_string(), v.display()));
             }

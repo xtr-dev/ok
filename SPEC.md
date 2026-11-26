@@ -2053,7 +2053,12 @@ time; there is no content-hash mode in v1.
   already set in the process environment win. `--env NAME` additionally loads
   `<file>.NAME` for each declared env file (or `.env.NAME` at the root if none
   is declared); that file must exist, and its values override the base file.
-A missing `.env.NAME` is a usage error (exit code 2, 2.3).
+A missing `.env.NAME` is a usage error (exit code 2, 2.3). The env files a
+  run loads are covered by trust (16.2). An env file may not set a variable
+  whose name starts with `OK_`, `LD_` or `DYLD_` (compared without case):
+  those configure ok itself (`OK_TRUST`, `OK_CONFIG_DIR`) or make the system
+  loader inject code into every program. Such a key is an error naming the
+  file and the key, before any task runs.
 - `requires "0.3"` declares the minimum ok version. An older ok refuses to
   load the project and says which version is needed.
 
@@ -2107,12 +2112,21 @@ trust.
 ### 16.2 What is trusted
 
 The **project files** are the root `ok.ok`, the files in `ok/`, and every
-file they import, transitively. Their **fingerprint** is the SHA-256 of, for
-each file in order of its `/`-separated path relative to the root: the path,
-a NUL byte, the content length in decimal, a NUL byte, and the content.
+file they import, transitively. The **env files** of a run are those of
+15.7 that exist: the declared files and, with `--env NAME`, their `.NAME`
+variants. The **fingerprint** is the SHA-256 of, for each project and env
+file in order of its `/`-separated path relative to the root: the path, a
+NUL byte, the content length in decimal, a NUL byte, and the content. A run
+with `--env NAME` therefore has its own fingerprint.
 
-A project is trusted when its current fingerprint has been trusted, or its
-root directory has been trusted with `ok trust --dir`.
+Env files often hold secrets, so the prompt, the diff and the snapshots
+show and keep only an env file's variable names and the SHA-256 of its
+content, never its values.
+
+A project is trusted when its current fingerprint has been trusted for the
+same root directory, or that root directory has been trusted with
+`ok trust --dir`. Content trust does not carry over to a copy of the files
+in another directory.
 
 ### 16.3 Prompt
 
@@ -2158,7 +2172,8 @@ copy (`= note: changed: ok.ok, ok/db.ok`), in place of the prompt's diff.
 ### 16.5 Commands and store
 
 ```
-ok trust [DIR]            trust the current content of the project at DIR (default: discovered)
+ok trust [DIR]            trust the current content of the project at DIR (default: discovered),
+                          with the env files of `--env NAME` if given
 ok trust --dir [DIR]      trust the directory, whatever its content (for your own projects)
 ok trust --list           list trusted directories and fingerprints
 ok untrust [DIR]          remove trust for the project at DIR

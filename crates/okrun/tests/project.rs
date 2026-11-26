@@ -952,3 +952,106 @@ fn listings_and_help_show_hidden_characters_as_escapes() {
     let help = out(&p.run(&["build", "--help"]));
     assert!(help.starts_with("Build \\u{200b}it\\u{2060}"), "{help}");
 }
+
+/// Every file under `dir`, read as text, joined: to check what the trust
+/// store keeps.
+fn read_tree(dir: &Path) -> String {
+    let mut all = String::new();
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            all.push_str(&read_tree(&p));
+        } else {
+            all.push_str(&String::from_utf8_lossy(&std::fs::read(&p).unwrap()));
+        }
+    }
+    all
+}
+
+#[test]
+fn env_files_are_trusted_with_the_project_but_their_values_are_never_shown() {
+    let p = Proj::new(
+        "envtrust",
+        &[
+            (
+                "ok.ok",
+                "env file \".env\"\ntask show { print(env.get(\"TOKEN\")) }\n",
+            ),
+            (".env", "TOKEN=first-secret\n"),
+            (".env.prod", "TOKEN=prod-secret\n"),
+        ],
+    );
+    let t = p.run(&["trust"]);
+    assert!(t.status.success(), "{}", err(&t));
+    assert!(
+        out(&t).contains("files:  ok.ok, .env (names only)"),
+        "{}",
+        out(&t)
+    );
+    assert_eq!(out(&p.run(&["show"])), "first-secret\n");
+
+    // A changed value needs approval again, and the error names the file.
+    p.write(".env", "TOKEN=second-secret\n");
+    let o = p.run(&["show"]);
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    assert!(err(&o).contains("= note: changed: .env\n"), "{}", err(&o));
+    assert!(p.run(&["trust"]).status.success());
+    assert_eq!(out(&p.run(&["show"])), "second-secret\n");
+
+    // `--env NAME` loads one more file, so that run is trusted separately.
+    let o = p.run(&["--env", "prod", "show"]);
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    assert!(err(&o).contains("changed: .env.prod"), "{}", err(&o));
+    assert!(p.run(&["--env", "prod", "trust"]).status.success());
+    assert_eq!(out(&p.run(&["--env", "prod", "show"])), "prod-secret\n");
+
+    // The store keeps the names of env variables, never their values.
+    let store = read_tree(&p.store);
+    assert!(store.contains("TOKEN"), "{store}");
+    assert!(!store.contains("secret"), "{store}");
+}
+
+#[test]
+fn content_trust_belongs_to_the_directory_it_was_given_for() {
+    let p = Proj::new("bound", &[("ok.ok", BASIC)]);
+    assert!(p.run(&["trust"]).status.success());
+    assert_eq!(out(&p.run(&["gen"])), "gen\n");
+    // The same file in another directory (next to other env files, or a
+    // different checkout) is not trusted by that approval.
+    let other = p.dir.parent().unwrap().join("copy");
+    std::fs::create_dir_all(&other).unwrap();
+    std::fs::write(other.join("ok.ok"), BASIC).unwrap();
+    let o = p.cmd(&["gen"]).current_dir(&other).output().unwrap();
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    assert!(
+        err(&o).starts_with("error[trust]: this project is not trusted"),
+        "{}",
+        err(&o)
+    );
+}
+
+#[test]
+fn env_files_cannot_set_ok_or_loader_variables() {
+    for key in [
+        "OK_TRUST",
+        "LD_PRELOAD",
+        "DYLD_INSERT_LIBRARIES",
+        "ok_config_dir",
+    ] {
+        let p = Proj::new(
+            "envkeys",
+            &[
+                ("ok.ok", "env file \".env\"\ntask show { print(\"ran\") }\n"),
+                (".env", &format!("A=1\n{key}=x\n")),
+            ],
+        );
+        let o = p.run_trusted(&["show"]);
+        assert_eq!(o.status.code(), Some(1), "{key}: {}", err(&o));
+        assert_eq!(out(&o), "", "{key}: nothing runs");
+        assert!(
+            err(&o).starts_with(&format!("error: .env sets {key}, but env files cannot set")),
+            "{}",
+            err(&o)
+        );
+    }
+}

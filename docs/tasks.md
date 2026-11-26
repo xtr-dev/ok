@@ -439,6 +439,8 @@ hello: postgres://staging.internal/app
 
 A variable that is already set in your environment wins over both files, so `DATABASE_URL=... ok show` works as you would expect. A missing `.env` is ignored, but a file asked for with `--env` must exist. The format (quotes, comments, no variable expansion) is described in [section 13.7 of the spec](../SPEC.md#137-env).
 
+An env file changes what every program a task starts does (think of `PATH` or `NODE_OPTIONS`), so the env files a run loads are part of what you [trust](trust.md#what-is-trusted): editing `.env`, or running with `--env staging` for the first time, asks for approval again. The review shows only the variable names, never the values. Two kinds of variable cannot be set from an env file at all: those starting with `OK_`, which configure ok itself (`OK_TRUST` would switch off the trust check for nested runs), and those starting with `LD_` or `DYLD_`, which make the system load code into every program. Set those in your own environment if you really need them.
+
 ## Trying a task with `--dry-run`
 
 `--dry-run` prints the commands a task would run and the file changes it would make, without doing either. It is a good way to read what an unfamiliar task does:

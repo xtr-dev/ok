@@ -23,7 +23,11 @@ These only parse the files; loading a project never runs any of its code (see [T
 
 The **project files** are the root `ok.ok`, every file in `ok/`, and every file those import, directly or indirectly, including mounted sub-projects. ok computes one SHA-256 **fingerprint** over their paths and contents. Trust is recorded for a project root together with that fingerprint.
 
-So any change to any of these files, even a comment, means the project is no longer the one you approved, and ok asks again. Files that tasks read or run, such as a `Cargo.toml` or a shell script called with `run`, are not part of the fingerprint. Only ok code is.
+The **env files** a run loads (`env file ".env"` and, with `--env NAME`, `.env.NAME`, see [Tasks](tasks.md#environment-files)) are part of the fingerprint too: a variable such as `NODE_OPTIONS` or `PATH` changes what every program a task starts does, so a changed `.env` is a changed project. Since env files often hold secrets, the prompt shows only their variable names, never the values, and the trust store keeps only the names. A run with `--env staging` loads one more file than a run without, so it is approved separately; `ok --env staging trust` approves it ahead of time.
+
+So any change to any of these files, even a comment, means the project is no longer the one you approved, and ok asks again. Files that tasks read or run, such as a `Cargo.toml` or a shell script called with `run`, are not part of the fingerprint. Only ok code and env files are.
+
+Trust belongs to the directory it was given in. The same files copied to another directory, or another checkout of the repository, are asked about again.
 
 Each version you approve is remembered. If you switch back to a branch whose project files you trusted before, ok runs its tasks without asking.
 
@@ -44,7 +48,7 @@ Tasks are code that runs with your permissions. Trust is not a sandbox.
 [v]iew files, [t]rust and run, [n]o:
 ```
 
-- `v` prints every project file, then asks again.
+- `v` prints every project file, then asks again. Control characters, bidirectional controls and invisible characters are shown as escapes such as `\r` or `\u{202e}`, so that nothing in a file can make it look different from what runs. Env files are shown as their variable names.
 - `t` records trust for this content and runs the task.
 - `n` runs nothing and exits with code 1.
 
@@ -147,7 +151,7 @@ The trust store is a small directory in your configuration folder:
 | macOS | `~/Library/Application Support/ok/` |
 | Windows | `%APPDATA%\ok\` |
 
-It holds `trust.json`, with one entry per trusted root and fingerprint (or directory), and `snapshots/`, a copy of each trusted version that the `[d]iff` choice compares against. `OK_CONFIG_DIR` points ok at a different directory, which is useful in tests that need an empty store.
+It holds `trust.json`, with one entry per trusted root and fingerprint (or directory), and `snapshots/`, a copy of each trusted version that the `[d]iff` choice compares against (for env files, only their variable names). `OK_CONFIG_DIR` points ok at a different directory, which is useful in tests that need an empty store.
 
 ## Imports stay inside the project
 
