@@ -211,9 +211,50 @@ fn imports_cannot_leave_the_project() {
         &[("ok.ok", "import \"../outside.ok\"\ntask a { print(1) }\n")],
     );
     std::fs::write(p.dir.parent().unwrap().join("outside.ok"), "fn f() { 1 }\n").unwrap();
-    let o = p.run_trusted(&["a"]);
-    assert_eq!(o.status.code(), Some(1));
-    assert!(err(&o).contains("outside the project"), "{}", err(&o));
+    assert_refused_everywhere(&p, "error[trust]: \"../outside.ok\" is outside the project");
+}
+
+/// An import that leaves the project is a load-time error (SPEC.md 16.6):
+/// running, listing, `ok self check` and `ok trust` all refuse, and nothing
+/// is trusted, so a fingerprint never leaves out the outside file.
+fn assert_refused_everywhere(p: &Proj, expected: &str) {
+    for args in [
+        &["a"][..],
+        &[],
+        &["self", "tasks"],
+        &["self", "check"],
+        &["trust"],
+    ] {
+        let o = p.run_trusted(args);
+        assert_eq!(o.status.code(), Some(1), "{args:?}: {}", err(&o));
+        assert!(err(&o).contains(expected), "{args:?}: {}", err(&o));
+        assert_eq!(out(&o), "", "{args:?}");
+    }
+    assert!(
+        !p.store.join("trust.json").exists(),
+        "nothing may be trusted"
+    );
+}
+
+#[test]
+fn imports_of_imports_cannot_leave_the_project() {
+    let p = Proj::new(
+        "confined-deep",
+        &[
+            ("ok.ok", "import \"lib/a.ok\"\ntask a { print(1) }\n"),
+            ("lib/a.ok", "import \"../../outside.ok\"\nfn g() { 2 }\n"),
+            ("ok/_helper.ok", "import \"../../outside.ok\"\n"),
+        ],
+    );
+    std::fs::write(p.dir.parent().unwrap().join("outside.ok"), "fn f() { 1 }\n").unwrap();
+    assert_refused_everywhere(&p, "\"../../outside.ok\" is outside the project");
+    let o = p.run_trusted(&["self", "check"]);
+    // The snippet shows the importing file, which no task had loaded.
+    assert!(
+        err(&o).contains(" --> lib/a.ok:1:8\n") || err(&o).contains(" --> ok/_helper.ok:1:8\n"),
+        "{}",
+        err(&o)
+    );
 }
 
 #[cfg(unix)]
@@ -224,8 +265,12 @@ fn symlinks_that_escape_the_project_are_refused() {
     std::fs::write(&outside, "task boom { print(\"boom\") }\n").unwrap();
     std::fs::create_dir_all(p.dir.join("ok")).unwrap();
     std::os::unix::fs::symlink(&outside, p.dir.join("ok/evil.ok")).unwrap();
-    let o = p.run_trusted(&["a"]);
-    assert!(err(&o).contains("outside the project"), "{}", err(&o));
+    assert_refused_everywhere(&p, "ok/evil.ok is a link to a file outside the project");
+    // A symlinked import is refused the same way.
+    std::fs::remove_file(p.dir.join("ok/evil.ok")).unwrap();
+    std::os::unix::fs::symlink(&outside, p.dir.join("lib.ok")).unwrap();
+    p.write("ok.ok", "import \"lib.ok\"\ntask a { print(1) }\n");
+    assert_refused_everywhere(&p, "error[trust]: \"lib.ok\" is outside the project");
 }
 
 #[test]

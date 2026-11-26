@@ -141,7 +141,7 @@ It holds `trust.json`, with one entry per trusted root and fingerprint (or direc
 
 ## Imports stay inside the project
 
-For the fingerprint to mean anything, every file a project loads has to be part of it. So in project mode, every import and every namespace file must resolve inside the project root, after following symlinks. An `import "../shared/lib.ok"` that leaves the root, or an `ok/` file that is a symlink to somewhere else, is an error when you run a task:
+For the fingerprint to mean anything, every file a project loads has to be part of it. So in project mode, every import and every namespace file must resolve inside the project root, after following symlinks. An `import "../shared/lib.ok"` that leaves the root, or an `ok/` file that is a symlink to somewhere else, is an error as soon as ok loads the project: listing the tasks, `ok self check` and `ok trust` refuse it as well as running a task, so nothing outside the root is ever trusted by mistake:
 
 ```text
 error[trust]: "../shared/lib.ok" is outside the project

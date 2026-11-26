@@ -2082,6 +2082,10 @@ copy of each trusted version used for diffs. Writes are atomic.
 In project mode every project file and every import must resolve, after
 following symlinks, inside the project root. An import or a namespace file
 that escapes the root is a load-time error, whether by `..` or by a symlink.
+It is found whenever the project is loaded, so listing, `ok self check`,
+`ok trust` and running a task all refuse the project, and nothing is
+fingerprinted or trusted (completions offer no project names). Imports of
+imports are followed the same way.
 
 ## 17. Built-in commands (`ok self ...`)
 

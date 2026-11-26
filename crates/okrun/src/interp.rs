@@ -504,17 +504,7 @@ impl Interp {
             // symlink (SPEC.md 16.6).
             let root = crate::path::canonical(root).unwrap_or_else(|_| root.clone());
             if !full.starts_with(&root) {
-                return Err(OkError::at(
-                    ErrKind::Trust,
-                    span,
-                    format!("\"{raw}\" is outside the project"),
-                )
-                .with_note(format!(
-                    "it resolves to {}",
-                    OkPath::from_native(&full).display()
-                ))
-                .with_help("project files may only import files inside the project root")
-                .into());
+                return Err(import_outside_project(raw, span, &full).into());
             }
         }
         let importer = self.sources.file(file).name.clone();
@@ -2407,4 +2397,19 @@ pub(crate) fn started_by_ok<T>(result: R<T>, name: &str, span: Span) -> R<T> {
         }
         other => other,
     })
+}
+
+/// The error for an import of `raw` that resolves to `full`, outside the
+/// project root (SPEC.md 16.6).
+pub(crate) fn import_outside_project(raw: &str, span: Span, full: &Path) -> OkError {
+    OkError::at(
+        ErrKind::Trust,
+        span,
+        format!("\"{raw}\" is outside the project"),
+    )
+    .with_note(format!(
+        "it resolves to {}",
+        OkPath::from_native(full).display()
+    ))
+    .with_help("project files may only import files inside the project root")
 }

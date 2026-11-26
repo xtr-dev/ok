@@ -417,6 +417,11 @@ impl Interp {
         namespaces.dedup();
 
         // Trust covers every file the project consists of, imports included.
+        // An import that leaves the root is a load-time error (SPEC.md
+        // 16.6), found here before anything is listed, checked, trusted or
+        // fingerprinted, so the fingerprint can never leave out code that a
+        // task would run. Imports that cannot be read or are not relative
+        // paths are reported where they are used (running, `ok self check`).
         let mut trust_files: Vec<(String, PathBuf)> = files
             .iter()
             .map(|f| (f.rel.clone(), f.path.clone()))
@@ -433,11 +438,33 @@ impl Interp {
             };
             let dir = p.parent().map(Path::to_path_buf).unwrap_or_default();
             for stmt in &prog.stmts {
-                if let StmtKind::Import { path, .. } = &stmt.kind
-                    && let Ok(c) = crate::path::canonical(&dir.join(OkPath::parse(path).native()))
-                    && c.starts_with(&root)
-                    && seen.insert(c.clone())
+                let StmtKind::Import {
+                    path, path_span, ..
+                } = &stmt.kind
+                else {
+                    continue;
+                };
+                let as_path = OkPath::parse(path);
+                if as_path.is_abs()
+                    || path.starts_with('/')
+                    || path.starts_with('\\')
+                    || path.contains("://")
                 {
+                    continue;
+                }
+                let Ok(c) = crate::path::canonical(&dir.join(as_path.native())) else {
+                    continue;
+                };
+                if !c.starts_with(&root) {
+                    // The walk parsed without a file id; register the file
+                    // so the error shows its snippet.
+                    let id =
+                        self.sources
+                            .add(rel_of(&root, &p), Some(p.clone()), text.clone().into());
+                    let span = Span::new(id, path_span.start as usize, path_span.end as usize);
+                    return Err(crate::interp::import_outside_project(path, span, &c).into());
+                }
+                if seen.insert(c.clone()) {
                     trust_files.push((rel_of(&root, &c), c.clone()));
                     queue.push(c);
                 }
