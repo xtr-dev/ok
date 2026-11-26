@@ -1,0 +1,6 @@
+# A misspelled function of an imported namespace names the namespace
+# (SPEC.md 11).
+
+import "./lib/math.ok" as math
+
+print(math.squaer(3))

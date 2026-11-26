@@ -1256,7 +1256,9 @@ import "frontend/ok.ok" as fe # in project mode: mount a sub-project (15.8)
   `_`.
 - `import` without `as` brings every exported name into scope; a clash with a
   local declaration or another import is a load-time error. With `as`, the
-  module is a namespace value; `lib.f(x)` calls its function.
+  module is a namespace value; `lib.f(x)` calls its function, and a name
+  the library does not export is a `name` error (``"`lib` has no function
+  `f`"``, with a did-you-mean among its exports).
 - Each file is loaded once per run. Import cycles are a load-time error that
   shows the cycle.
 - In project mode, imports may not resolve outside the project root (16.6).

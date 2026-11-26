@@ -1155,7 +1155,7 @@ impl Interp {
             } => {
                 let rv = self.eval_lazy(recv, scope)?;
                 let args = self.eval_args(args, scope, e.span)?;
-                self.method_call(rv, name, *name_span, args, scope)
+                self.method_call(rv, name, *name_span, args, scope, Some(recv))
             }
             ExprKind::Field {
                 expr,
@@ -1163,6 +1163,12 @@ impl Interp {
                 name_span,
             } => {
                 let v = self.eval(expr, scope)?;
+                if let Some(ns) = self.namespace_name(Some(expr), &v)
+                    && let Value::Record(r) = &v
+                    && r.get(name).is_none()
+                {
+                    return Err(self.namespace_miss(ns, r, name, *name_span, "").into());
+                }
                 self.field(&v, name, *name_span)
             }
             ExprKind::Index { expr, index } => {
@@ -1721,6 +1727,33 @@ impl Interp {
         format!("{}:{l}:{c}", f.name)
     }
 
+    /// The name of an imported namespace (`import "x.ok" as ns`) when `recv`
+    /// is that name and `v` its exports, for errors that name the namespace.
+    fn namespace_name<'e>(&self, recv: Option<&'e Expr>, v: &Value) -> Option<&'e str> {
+        let Some(Expr {
+            kind: ExprKind::Ident(ns),
+            ..
+        }) = recv
+        else {
+            return None;
+        };
+        let Value::Record(r) = v else {
+            return None;
+        };
+        self.modules
+            .values()
+            .any(|m| matches!(m, Value::Record(m) if Rc::ptr_eq(m, r)))
+            .then_some(ns.as_str())
+    }
+
+    /// "`ns` has no function `name`", with a did-you-mean among its exports.
+    fn namespace_miss(&self, ns: &str, exports: &Record, name: &str, span: Span, what: &str) -> OkError {
+        let help = suggest(name, exports.keys().map(|k| &**k)).map(|s| format!("did you mean `{ns}.{s}`?"));
+        OkError::at(ErrKind::Name, span, format!("`{ns}` has no {what}`{name}`"))
+            .with_label("not exported by the library")
+            .maybe_help(help)
+    }
+
     fn method_call(
         &mut self,
         rv: Value,
@@ -1728,6 +1761,7 @@ impl Interp {
         name_span: Span,
         mut args: Args,
         scope: &Rc<Scope>,
+        recv: Option<&Expr>,
     ) -> R<Value> {
         if let Value::Env = rv {
             return crate::system::env_method(self, name, name_span, args);
@@ -1750,6 +1784,13 @@ impl Interp {
                 format!("`{name}` is {}, not a function", other.a_type()),
             ),
             None => {
+                // `ns.name()` on an imported namespace (`import "x.ok" as ns`)
+                // can only mean a function of that library.
+                if let Some(ns) = self.namespace_name(recv, &rv)
+                    && let Value::Record(r) = &rv
+                {
+                    return Err(self.namespace_miss(ns, r, name, name_span, "function ").into());
+                }
                 let mut names = Vec::new();
                 scope.all_names(&mut names);
                 if let Value::Record(r) = &rv {

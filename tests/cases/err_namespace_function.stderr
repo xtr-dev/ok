@@ -1,0 +1,7 @@
+error[name]: `math` has no function `squaer`
+ --> err_namespace_function.ok:6:12
+  |
+6 | print(math.squaer(3))
+  |            ^^^^^^ not exported by the library
+  |
+  = help: did you mean `math.square`?
