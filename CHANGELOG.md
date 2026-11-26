@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-Some of these changes can stop a project or script from loading: source files may no longer contain raw control or bidirectional characters, env files may no longer set `OK_`, `LD_` or `DYLD_` variables, a root `ok.ok` may not link outside the project, and projects with env files must be trusted again.
+Some of these changes can stop a project or script from loading: source files may no longer contain raw control or bidirectional characters, env files may no longer set `OK_`, `LD_` or `DYLD_` variables, a root `ok.ok` may not link outside the project, and projects with env files must be trusted again. Data and archives that used to be accepted can now be errors: archive members with names that are not portable, CSV files whose header repeats a column, TOML date-times after 2262, and data beyond the new size limits.
 
 ### Security
 
@@ -24,16 +24,33 @@ Some of these changes can stop a project or script from loading: source files ma
 - The `./ok` and `ok.ps1` wrappers cache the binary under its version and checksum, so a binary cached for another pin is never reused; `ok.ps1` downloads to a unique file name, and `ok.cmd` starts PowerShell by its full path instead of searching the current directory. Run `ok self init` again to get the new wrappers.
 - Traces, dry runs and fetch errors show a URL's password as `***`.
 - `install.sh` and `install.ps1` run nothing until the whole script has been downloaded.
+- `untar` no longer creates links that lead outside the destination through other links (`d -> .`, `e -> d/d/../..`): links are created after every other member, with their target normalised and checked to stay inside. Hard links become copies of a file extracted earlier.
+- `unzip` and `untar` never write through a symbolic link already in the destination: a link where a member's directory would go is an error, and a link at a member's own path is replaced instead of followed.
+- Archive member names must be portable on every OS: a name with `:`, `\` or a control character, one ending in a dot or space, or a Windows device name (`NUL`, `con.txt`, `COM1`) is refused. On Windows, `a/C:evil.txt` could write anywhere.
+- Extracted files get the permissions of any new file (the umask applies) plus the execute bit of executable members; setuid, setgid, sticky and world-writable modes are no longer restored.
+- `unzip` and `untar` stop at 4 GiB of file content or 1,000,000 members; change the limits with `max_size:` and `max_entries:`, or pass `null`.
+- `read` and `stdin` limit whole documents to 1 GiB (after decompression, so a small `.json.gz` cannot exhaust memory) and lines and CSV records to 64 MiB; change them with `max_size:` and `max_line:`.
+- YAML aliases are also limited by the text they copy (64 MiB), so one large string aliased many times is refused.
+- `fetch` follows redirects itself: never from https to http, only to http(s) URLs, and a redirect to another host drops every header you passed (before, `x-api-key`, `private-token` and similar headers were sent on). The timeout now covers all redirects.
+- `fetch` limits a response body to 1 GiB by default (`max_size:`); downloads with `to:` have no default limit but take one.
+- The regex cache is bounded, so patterns built from data no longer grow memory.
+- Member names in archive errors are escaped like other untrusted text.
 
 ### Changed
 
 - `--trace` and `--dry-run` quote the paths of file operations and fetch like command arguments: `~ copy "my notes.txt" backup/`.
 - `ok --env NAME trust` trusts a project together with the env files of `--env NAME`.
+- A TOML offset date-time outside 1677-09-21 to 2262-04-11 is a `format` error instead of a wrong time (or a crash in debug builds).
+- A CSV or TSV header that names a column twice is a `format` error naming it, instead of silently losing a column; read such files with `header: false`.
+- `fetch` keeps repeated response headers: values are joined with `, `, and `set-cookie` is always a list of strings.
+- `fetch(..., to:)` asks for the body without content encoding, so files are saved as the server stores them.
+- `untar` skips devices and pipes, and refuses a member below a link of the same archive.
 
 ### Documentation
 
 - SECURITY.md and the guide say plainly that `./ok` is a script from the repository that runs before any trust check, so in a repository you have not reviewed, run your installed `ok`.
 - The commands guide warns that an interpolated value starting with `-` is read as an option by most programs, and shows `--`.
+- The spec and the data guide say that JSON and YAML integers beyond the signed 64-bit range become floats, and the spec states the range of `time` (1677 to 2262).
 
 ## [0.3.0] - 2026-11-26
 
