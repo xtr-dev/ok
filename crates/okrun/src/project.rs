@@ -678,7 +678,9 @@ impl Project {
         if self.tasks.iter().filter(visible).count() == 0 {
             out.push_str("\n  no tasks yet: add one to ok.ok, like\n\n    # Say hello\n    task hello {\n      print(\"hello\")\n    }\n");
         }
-        out
+        // The listing needs no trust, so doc comments and directory names
+        // of a fresh clone must not reach the terminal raw.
+        crate::error::terminal_safe(&out).into_owned()
     }
 
     /// Completion candidates for the words after `ok` (SPEC.md 17).
@@ -856,7 +858,7 @@ impl Interp {
                 if let Some(c) = &task.decl.confirm {
                     text.push_str(&format!("Asks first: {c}\n"));
                 }
-                print!("{text}");
+                print!("{}", crate::error::terminal_safe(&text));
                 return Ok(Value::Null);
             }
             sig::Outcome::Run(p) => p,

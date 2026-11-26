@@ -1219,6 +1219,18 @@ produced by recursion, are shown once with `(repeated)`. Notes are prefixed
 `note:` and the help line `help:`. Colors are used on terminals
 (2.2). Golden tests render without color.
 
+Error messages, file names, snippets, notes, help and details often quote
+text ok did not write (source lines, data, file names, a command's stderr).
+In everything ok prints about a program, rather than for it (errors and
+warnings, task listings, `--help`, the trust prompt and `--trace` /
+`--dry-run` lines), control characters (C0 and C1, DEL), bidirectional
+controls (U+061C, U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069) and
+invisible characters (U+200B to U+200D, U+2028, U+2029, U+2060 to U+2064,
+U+FEFF) are shown as the escape a string literal would use for them: `\r`,
+`\0`, `\u{1b}`. Newline and tab are kept where the text spans lines. This
+holds with and without a terminal. What a program prints itself (`print`,
+a child's output) is passed through unchanged.
+
 ### 10.2 Error records
 
 A caught error `e` is a record:
@@ -2104,7 +2116,10 @@ Tasks are code that runs with your permissions. Trust is not a sandbox.
 [v]iew files, [t]rust and run, [n]o:
 ```
 
-`v` prints the files, then asks again. If an earlier version of this root was
+`v` prints the files, then asks again. The files are shown with the
+characters of 10.1 escaped (a leading byte order mark is left out), as are
+file names and the diff, so that no carriage return, escape sequence or
+bidirectional control can make the code look different from what runs. If an earlier version of this root was
 trusted, the first line reads `The project files changed since you trusted
 them.` and a `[d]iff` choice shows a unified diff against the trusted copy.
 `t` records trust and runs; `n` exits with code 1.

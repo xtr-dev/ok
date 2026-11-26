@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use sha2::Digest;
 
-use crate::error::{ErrKind, OkError};
+use crate::error::{ErrKind, OkError, terminal_safe, terminal_safe_line};
 use crate::interp::{Flow, R, io_reason};
 use crate::path::OkPath;
 use crate::project::Project;
@@ -223,11 +223,7 @@ pub fn ensure_trusted(project: &Project, skip: bool) -> R<()> {
     if !std::io::stdin().is_terminal() {
         return Err(not_trusted(&store, &root, previous.as_deref(), project).into());
     }
-    let names: Vec<&str> = project
-        .trust_files
-        .iter()
-        .map(|(r, _)| r.as_str())
-        .collect();
+    let names = file_list(&project.trust_files);
     let mut err = std::io::stderr();
     let headline = if previous.is_some() {
         "The project files changed since you trusted them."
@@ -236,8 +232,8 @@ pub fn ensure_trusted(project: &Project, skip: bool) -> R<()> {
     };
     let _ = writeln!(
         err,
-        "{headline}\n\n  root:   {root}\n  files:  {}\n  sha256: {fp}\n\nTasks are code that runs with your permissions. Trust is not a sandbox.",
-        names.join(", ")
+        "{headline}\n\n  root:   {}\n  files:  {names}\n  sha256: {fp}\n\nTasks are code that runs with your permissions. Trust is not a sandbox.",
+        terminal_safe_line(&root)
     );
     loop {
         let question = if previous.is_some() {
@@ -254,8 +250,12 @@ pub fn ensure_trusted(project: &Project, skip: bool) -> R<()> {
         match line.trim().to_ascii_lowercase().as_str() {
             "v" | "view" => {
                 for (rel, path) in &project.trust_files {
-                    let text = std::fs::read_to_string(path).unwrap_or_default();
-                    let _ = writeln!(err, "\n==> {rel} <==\n{text}");
+                    let _ = writeln!(
+                        err,
+                        "\n==> {} <==\n{}",
+                        terminal_safe_line(rel),
+                        view_text(path)
+                    );
                 }
             }
             "d" | "diff" if previous.is_some() => {
@@ -273,6 +273,27 @@ pub fn ensure_trusted(project: &Project, skip: bool) -> R<()> {
             _ => {}
         }
     }
+}
+
+/// The file names of a trust review, joined with commas and safe to show.
+fn file_list(files: &[(String, PathBuf)]) -> String {
+    files
+        .iter()
+        .map(|(r, _)| terminal_safe_line(r).into_owned())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// A project file as `[v]iew` shows it. The review is what the user agrees
+/// to, so the text must look exactly like what ok will run: control,
+/// bidirectional and zero-width characters are shown as escapes (a `\r`
+/// or an ANSI sequence could otherwise hide a line of code), and a leading
+/// byte order mark, which ok ignores, is left out.
+fn view_text(path: &Path) -> String {
+    let bytes = std::fs::read(path).unwrap_or_default();
+    let text = String::from_utf8_lossy(&bytes);
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    terminal_safe(text).into_owned()
 }
 
 /// The refusal to run without a terminal (SPEC.md 16.4). When an earlier
@@ -362,6 +383,7 @@ pub fn unified_diff(name: &str, old: &str, new: &str) -> String {
     let b: Vec<&str> = new.lines().collect();
     let (n, m) = (a.len(), b.len());
     if n * m > 25_000_000 {
+        let name = terminal_safe_line(name);
         return format!(
             "--- trusted/{name}\n+++ current/{name}\n(the file is too large to diff: {n} and {m} lines)\n"
         );
@@ -393,6 +415,9 @@ pub fn unified_diff(name: &str, old: &str, new: &str) -> String {
             j += 1;
         }
     }
+    // Names and lines are shown with unsafe characters escaped, for the
+    // same reason as the file view.
+    let name = terminal_safe_line(name);
     let mut out = format!("--- trusted/{name}\n+++ current/{name}\n");
     let changed: Vec<usize> = ops
         .iter()
@@ -415,7 +440,7 @@ pub fn unified_diff(name: &str, old: &str, new: &str) -> String {
         }
         for (c, line) in &ops[start..end] {
             out.push(*c);
-            out.push_str(line);
+            out.push_str(&terminal_safe_line(line));
             out.push('\n');
         }
         shown_until = end;
@@ -468,10 +493,14 @@ pub fn command(
         }
         for e in &store.entries {
             match e.mode.as_str() {
-                "dir" => println!("{}  directory, any content  ({})", e.root, e.at),
+                "dir" => println!(
+                    "{}  directory, any content  ({})",
+                    terminal_safe_line(&e.root),
+                    e.at
+                ),
                 _ => println!(
                     "{}  sha256 {}  ({})",
-                    e.root,
+                    terminal_safe_line(&e.root),
                     e.fingerprint.as_deref().unwrap_or("?"),
                     e.at
                 ),
@@ -500,29 +529,28 @@ pub fn command(
         store.entries.retain(|e| e.root != key);
         store.save()?;
         if store.entries.len() == before {
-            println!("{key} was not trusted");
+            println!("{} was not trusted", terminal_safe_line(&key));
         } else {
-            println!("no longer trusting {key}");
+            println!("no longer trusting {}", terminal_safe_line(&key));
         }
         return Ok(());
     }
     if dir_mode {
         store.add(&key, "dir", None);
         store.save()?;
-        println!("trusting {key} whatever its content (for your own projects)");
+        println!(
+            "trusting {} whatever its content (for your own projects)",
+            terminal_safe_line(&key)
+        );
         return Ok(());
     }
     let project = interp.load_project(&root)?;
     let fp = fingerprint(&project.trust_files)?;
     now_trusting(&mut store, &key, &fp, &project.trust_files)?;
     println!(
-        "trusted {key}\n  files:  {}\n  sha256: {fp}",
-        project
-            .trust_files
-            .iter()
-            .map(|(r, _)| r.as_str())
-            .collect::<Vec<_>>()
-            .join(", ")
+        "trusted {}\n  files:  {}\n  sha256: {fp}",
+        terminal_safe_line(&key),
+        file_list(&project.trust_files)
     );
     Ok(())
 }
@@ -541,6 +569,25 @@ mod tests {
         assert!(d.contains("-d\n+D\n"), "{d}");
         assert!(d.contains(" c\n"));
         assert!(!d.contains(" h\n"), "only three lines of context: {d}");
+    }
+
+    #[test]
+    fn diff_and_view_show_hidden_characters_as_escapes() {
+        // A carriage return can put a harmless-looking text over the code
+        // that runs; the review must show it.
+        let d = unified_diff(
+            "ok\x1b[8m.ok",
+            "task a {}\n",
+            "task a { run evil } # \r task a {}\n",
+        );
+        assert!(d.contains("+task a { run evil } # \\r task a {}\n"), "{d}");
+        assert!(d.contains("--- trusted/ok\\u{1b}[8m.ok"), "{d}");
+        let dir = std::env::temp_dir().join(format!("ok-view-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("ok.ok"), "\u{feff}a\u{202e}b\tc\n").unwrap();
+        let shown = view_text(&dir.join("ok.ok"));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(shown, "a\\u{202e}b\tc\n");
     }
 
     #[test]

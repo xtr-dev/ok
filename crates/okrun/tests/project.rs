@@ -935,3 +935,20 @@ fn positional_parameters_are_named_in_needs() {
     let o = p.run_trusted(&["d"]);
     assert_eq!(out(&o), "hello bas\n", "{}", err(&o));
 }
+
+#[test]
+fn listings_and_help_show_hidden_characters_as_escapes() {
+    // Listing and `--help` need no trust, so text from a fresh clone must
+    // not reach the terminal raw.
+    let p = Proj::new(
+        "invisible",
+        &[(
+            "ok.ok",
+            "# Build \u{200b}it\u{2060}\ntask build(--fast: bool) {\n  print(\"x\")\n}\n",
+        )],
+    );
+    let listing = out(&p.run(&[]));
+    assert!(listing.contains("Build \\u{200b}it\\u{2060}"), "{listing}");
+    let help = out(&p.run(&["build", "--help"]));
+    assert!(help.starts_with("Build \\u{200b}it\\u{2060}"), "{help}");
+}

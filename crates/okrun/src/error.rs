@@ -5,6 +5,7 @@
 //! same way: kind, message, `file:line:col`, the source line with the span
 //! underlined, then notes, help and a short call trace.
 
+use std::borrow::Cow;
 use std::fmt::Write as _;
 
 use crate::source::{SourceMap, Span};
@@ -251,7 +252,14 @@ pub fn render(err: &OkError, sources: &SourceMap, color: Color) -> String {
     } else {
         p.error(&head)
     };
-    let _ = writeln!(out, "{head}{}", p.bold(&format!(": {}", err.message)));
+    // Everything shown below can quote project files, data or file names,
+    // so each part goes through `terminal_safe` (an error must not be able
+    // to send escape sequences to the terminal).
+    let _ = writeln!(
+        out,
+        "{head}{}",
+        p.bold(&format!(": {}", terminal_safe(&err.message)))
+    );
 
     let mut gutter_width = 1;
     if let Some(span) = err.span {
@@ -260,39 +268,42 @@ pub fn render(err: &OkError, sources: &SourceMap, color: Color) -> String {
         let line_str = line.to_string();
         gutter_width = line_str.len();
         let pad = " ".repeat(gutter_width);
-        let _ = writeln!(out, "{pad}{} {}:{line}:{col}", p.gutter("-->"), file.name);
+        let _ = writeln!(
+            out,
+            "{pad}{} {}:{line}:{col}",
+            p.gutter("-->"),
+            terminal_safe_line(&file.name)
+        );
         let _ = writeln!(out, "{pad} {}", p.gutter("|"));
 
         let text = file.line_text(line);
         let line_start = file.line_start(line);
-        // Columns are computed on the displayed text, where tabs become 4 spaces.
+        // Columns are computed on the displayed text, where tabs become 4
+        // spaces and unsafe characters their escapes.
         let start_in_line = (span.start as usize)
             .saturating_sub(line_start)
             .min(text.len());
         let end_in_line = (span.end as usize)
             .saturating_sub(line_start)
             .min(text.len());
-        let display_width = |s: &str| {
-            s.chars()
-                .map(|c| if c == '\t' { 4 } else { 1 })
-                .sum::<usize>()
-        };
+        let display_width = |s: &str| s.chars().map(shown_width).sum::<usize>();
         let before = safe_slice(text, 0, start_in_line);
         let inside = safe_slice(text, start_in_line, end_in_line.max(start_in_line));
         let caret_pad = display_width(before);
         let carets = display_width(inside).max(1);
-        let shown = text.replace('\t', "    ");
+        let shown = terminal_safe(text).replace('\t', "    ");
         let _ = writeln!(out, "{} {} {shown}", p.gutter(&line_str), p.gutter("|"));
         let mut underline = format!("{}{}", " ".repeat(caret_pad), "^".repeat(carets));
         if let Some(label) = &err.label {
             underline.push(' ');
-            underline.push_str(label);
+            underline.push_str(&terminal_safe_line(label));
         }
         let _ = writeln!(out, "{pad} {} {}", p.gutter("|"), p.error(&underline));
     }
 
     let pad = " ".repeat(gutter_width);
     for detail in &err.details {
+        let detail = terminal_safe(detail);
         let mut lines = detail.lines();
         if let Some(first) = lines.next() {
             let _ = writeln!(out, "{pad} {} {first}", p.gutter("="));
@@ -306,7 +317,13 @@ pub fn render(err: &OkError, sources: &SourceMap, color: Color) -> String {
         let _ = writeln!(out, "{pad} {}", p.gutter("|"));
     }
     for note in &err.notes {
-        let _ = writeln!(out, "{pad} {} {}{note}", p.gutter("="), p.bold("note: "));
+        let _ = writeln!(
+            out,
+            "{pad} {} {}{}",
+            p.gutter("="),
+            p.bold("note: "),
+            terminal_safe(note)
+        );
     }
     let frames: Vec<&Frame> = err.trace.iter().take(MAX_TRACE).collect();
     let mut i = 0;
@@ -325,7 +342,7 @@ pub fn render(err: &OkError, sources: &SourceMap, color: Color) -> String {
             Some(span) => {
                 let file = sources.file(span.file);
                 let (line, col) = file.line_col(span.start as usize);
-                format!("called at {}:{line}:{col}", file.name)
+                format!("called at {}:{line}:{col}", terminal_safe_line(&file.name))
             }
             None => "started by ok".to_string(),
         };
@@ -333,17 +350,100 @@ pub fn render(err: &OkError, sources: &SourceMap, color: Color) -> String {
             out,
             "{pad} {} in `{}`, {site}{repeat}",
             p.gutter("="),
-            frame.function,
+            terminal_safe_line(&frame.function),
         );
         i += run;
     }
     if let Some(help) = &err.help {
-        let _ = writeln!(out, "{pad} {} {}{help}", p.gutter("="), p.help("help: "));
+        let _ = writeln!(
+            out,
+            "{pad} {} {}{}",
+            p.gutter("="),
+            p.help("help: "),
+            terminal_safe(help)
+        );
     }
     if let Some(t) = &err.trailer {
-        let _ = writeln!(out, "{t}");
+        let _ = writeln!(out, "{}", terminal_safe(t));
     }
     out
+}
+
+/// Whether a character must not reach a terminal as it is: it could move
+/// the cursor, rewrite earlier output, change colors or the clipboard
+/// (C0 and C1 controls, DEL, which start ANSI and OSC sequences), reorder
+/// what is shown (bidirectional controls, as in "Trojan Source" attacks),
+/// or hide text (zero-width characters, line and paragraph separators).
+/// Tab and newline are included; callers that keep them decide so.
+pub fn is_unsafe_char(c: char) -> bool {
+    matches!(
+        c,
+        '\u{0}'..='\u{1f}'
+            | '\u{7f}'..='\u{9f}'
+            | '\u{61c}'
+            | '\u{200b}'..='\u{200f}'
+            | '\u{2028}'..='\u{202e}'
+            | '\u{2060}'..='\u{2069}'
+            | '\u{feff}'
+    )
+}
+
+/// How an unsafe character is shown: the escape an ok string literal would
+/// use for it (`\r`, `\u{1b}`).
+pub fn escape_char(c: char, out: &mut String) {
+    match c {
+        '\n' => out.push_str("\\n"),
+        '\r' => out.push_str("\\r"),
+        '\t' => out.push_str("\\t"),
+        '\0' => out.push_str("\\0"),
+        c => {
+            let _ = write!(out, "\\u{{{:x}}}", c as u32);
+        }
+    }
+}
+
+fn make_safe(s: &str, keep: impl Fn(char) -> bool) -> Cow<'_, str> {
+    if !s.chars().any(|c| is_unsafe_char(c) && !keep(c)) {
+        return Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        if is_unsafe_char(c) && !keep(c) {
+            escape_char(c, &mut out);
+        } else {
+            out.push(c);
+        }
+    }
+    Cow::Owned(out)
+}
+
+/// Text that did not come from ok itself (project and data files, file
+/// names, messages that quote them) made safe to print on a terminal:
+/// every character of [`is_unsafe_char`] except newline and tab is shown
+/// as an escape. Used for diagnostics, listings, help and the trust
+/// review, never for a program's own output (`print`, child processes).
+pub fn terminal_safe(s: &str) -> Cow<'_, str> {
+    make_safe(s, |c| c == '\n' || c == '\t')
+}
+
+/// Like [`terminal_safe`] for text that must stay on one line (a file
+/// name, a task summary): newline and tab are escaped too.
+pub fn terminal_safe_line(s: &str) -> Cow<'_, str> {
+    make_safe(s, |_| false)
+}
+
+/// How many columns `c` takes in a rendered snippet line: tabs become four
+/// spaces and unsafe characters their escape.
+fn shown_width(c: char) -> usize {
+    if c == '\t' {
+        4
+    } else if is_unsafe_char(c) {
+        let mut s = String::new();
+        escape_char(c, &mut s);
+        s.len()
+    } else {
+        1
+    }
 }
 
 /// Slice `s[a..b]`, moving the bounds back to character boundaries.
@@ -439,6 +539,55 @@ mod tests {
         assert_eq!(suggest("payed", ["paid"]), Some("paid".into()));
         assert_eq!(suggest("lne", ["len"]), Some("len".into()));
         assert_eq!(suggest("pirnt", ["print"]), Some("print".into()));
+    }
+
+    #[test]
+    fn terminal_safe_escapes_controls_bidi_and_invisible_characters() {
+        assert_eq!(terminal_safe("plain\ttext\nok"), "plain\ttext\nok");
+        assert!(matches!(terminal_safe("plain"), Cow::Borrowed(_)));
+        assert_eq!(
+            terminal_safe("a\x1b]52;c;eA==\x07b"),
+            "a\\u{1b}]52;c;eA==\\u{7}b"
+        );
+        assert_eq!(terminal_safe("x\r y\0"), "x\\r y\\0");
+        assert_eq!(terminal_safe("\u{9b}\u{7f}"), "\\u{9b}\\u{7f}");
+        assert_eq!(
+            terminal_safe("a\u{202e}b\u{2066}c\u{200b}d\u{feff}"),
+            "a\\u{202e}b\\u{2066}c\\u{200b}d\\u{feff}"
+        );
+        assert_eq!(terminal_safe("é ü 日本 😀"), "é ü 日本 😀");
+        assert_eq!(terminal_safe_line("a\tb\nc"), "a\\tb\\nc");
+    }
+
+    #[test]
+    fn rendered_errors_never_contain_raw_control_characters() {
+        let mut sources = SourceMap::default();
+        let id = sources.add(
+            "dir\x1b[2J/ok.ok".into(),
+            None,
+            "let x = \"\u{202e}\" + y\n".to_string().into(),
+        );
+        let e = OkError::at(
+            ErrKind::Name,
+            Span::new(id, 16, 17),
+            "unknown \x1b]8;;x\x07",
+        )
+        .with_label("not \r defined")
+        .with_note("note \x1b")
+        .with_help("help \u{2067}");
+        let shown = render(&e, &sources, Color::Never);
+        assert!(
+            !shown.chars().any(|c| is_unsafe_char(c) && c != '\n'),
+            "{shown:?}"
+        );
+        // The caret stays under `y` although the escape before it is wider
+        // than the character it stands for.
+        let lines: Vec<&str> = shown.lines().collect();
+        let code = lines.iter().find(|l| l.contains("let x")).unwrap();
+        let carets = lines.iter().find(|l| l.contains('^')).unwrap();
+        assert_eq!(code.find('y'), carets.find('^'), "{shown}");
+        assert!(code.contains("\"\\u{202e}\""), "{shown}");
+        assert!(carets.ends_with("^ not \\r defined"), "{shown}");
     }
 
     #[test]

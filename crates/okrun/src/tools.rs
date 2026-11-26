@@ -243,13 +243,13 @@ pub fn fmt(interp: &mut Interp, args: &[String], start: &Path) -> R<Value> {
                         format!("cannot write {shown}: {}", crate::interp::io_reason(&e)),
                     )
                 })?;
-                println!("formatted {shown}");
+                println!("formatted {}", crate::error::terminal_safe_line(&shown));
             }
         }
     }
     if check_only {
         for c in &changed {
-            println!("would reformat {c}");
+            println!("would reformat {}", crate::error::terminal_safe_line(c));
         }
     }
     if failed > 0 || (check_only && !changed.is_empty()) {

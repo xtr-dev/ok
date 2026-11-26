@@ -233,7 +233,9 @@ pub fn help(t: &Target, sources: &SourceMap) -> String {
     };
     section(&mut out, "Arguments", &args);
     section(&mut out, "Options", &opts);
-    out
+    // Doc comments and defaults come from the file, which may be a project
+    // nobody has reviewed yet (`--help` needs no trust).
+    crate::error::terminal_safe(&out).into_owned()
 }
 
 /// An argument error: message, optional help, and the usage line, exit 2.
