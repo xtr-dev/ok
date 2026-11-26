@@ -1,0 +1,7 @@
+cannot pad a string to 3000000000 characters: the result would be over 1 GiB
+cannot pad a string to 600000000 characters: the result would be over 1 GiB
+cannot repeat a string 600000000 times
+10
+true true false
+25.6% 0% 1200% -50.000000%
+100026

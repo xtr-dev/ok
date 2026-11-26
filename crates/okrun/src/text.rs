@@ -204,6 +204,11 @@ fn chars(_: &mut Interp, mut args: Args) -> R<Value> {
     ))
 }
 
+/// The largest string, in bytes, that `repeat` and `pad` build. A script
+/// asking for more almost certainly has a wrong count, and an allocation
+/// that large would abort the program instead of raising an error.
+const MAX_BUILT_STRING: u128 = 1 << 30;
+
 fn repeat(_: &mut Interp, mut args: Args) -> R<Value> {
     named(&mut args, "repeat", &[])?;
     count_args(&args, "repeat", 2, 2)?;
@@ -214,7 +219,7 @@ fn repeat(_: &mut Interp, mut args: Args) -> R<Value> {
             format!("`repeat` needs a count, got {}", args.pos[1].a_type()),
         );
     };
-    if n < 0 || (n as u128) * (s.len() as u128) > 1 << 30 {
+    if n < 0 || (n as u128) * (s.len() as u128) > MAX_BUILT_STRING {
         return arg_err(&args, format!("cannot repeat a string {n} times"));
     }
     Ok(Value::str(s.repeat(n as usize)))
@@ -275,6 +280,12 @@ fn pad(_: &mut Interp, mut args: Args) -> R<Value> {
         return Ok(Value::str(s));
     }
     let n = width - len;
+    if (n as u128) * (fill.len_utf8() as u128) + s.len() as u128 > MAX_BUILT_STRING {
+        return arg_err(
+            &args,
+            format!("cannot pad a string to {width} characters: the result would be over 1 GiB"),
+        );
+    }
     let f = |k: usize| fill.to_string().repeat(k);
     Ok(Value::str(match align.as_str() {
         "right" => format!("{}{s}", f(n)),

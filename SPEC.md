@@ -1508,8 +1508,8 @@ of `env`; read a variable with such a name through `env.get("get")`.
 | `contains(x, item)` | `bool` | Substring for strings, membership for lists, key for records. |
 | `starts_with(s, prefix)`, `ends_with(s, suffix)` | `bool` | |
 | `upper(s)`, `lower(s)` | `string` | Unicode. |
-| `repeat(s, n: int)` | `string` | |
-| `pad(x, width: int, --fill: string = " ", --align: string = "left")` | `string` | `align` is `"left"`, `"right"` or `"center"`; another string is an `arg` error. `x` is converted with `str`. |
+| `repeat(s, n: int)` | `string` | A result over 1 GiB is an `arg` error. |
+| `pad(x, width: int, --fill: string = " ", --align: string = "left")` | `string` | `align` is `"left"`, `"right"` or `"center"`; another string is an `arg` error. `x` is converted with `str`. A result over 1 GiB is an `arg` error. |
 | `fmt(x, spec: string)` | `string` | 12.6 |
 | `str(x)` | `string` | Display form (5.1). |
 | `int(x)`, `float(x)` | number | From strings (error if malformed), numbers (`int` truncates), bools. |
@@ -1570,6 +1570,9 @@ type   = "d" | "f" | "e" | "x" | "X" | "o" | "b" | "%"
 
 Strings default to left alignment, numbers to right. Examples: `"{n:>6}"`,
 `"{ratio:.1%}"`, `"{bytes:,}"`, `"{x:08.3f}"`, `"{code:x}"`.
+
+A width is at most 10000 and a precision at most 100. `%` multiplies by 100
+exactly in decimal, so every float formats as digits, never as `inf%`.
 
 ### 12.7 Time
 

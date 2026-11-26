@@ -486,6 +486,9 @@ pub fn edit_distance(a: &str, b: &str) -> usize {
 /// The closest candidate to `name`: a case-only difference, or an edit
 /// distance of at most 2 (at most 1 for names of three characters or fewer,
 /// so that short names do not suggest unrelated ones).
+/// Names longer than this (in characters) only get case-only suggestions.
+const MAX_SUGGEST_LEN: usize = 200;
+
 pub fn suggest<'a>(name: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<String> {
     // At most two edits, and fewer than half the name's length, so that a
     // short name is not "corrected" to an unrelated one (`b` to `a`, `grep`
@@ -500,6 +503,11 @@ pub fn suggest<'a>(name: &str, candidates: impl IntoIterator<Item = &'a str>) ->
         }
         let d = if c.eq_ignore_ascii_case(name) {
             0
+        } else if len.abs_diff(c.chars().count()) > limit || len > MAX_SUGGEST_LEN {
+            // Too different in length to be within the limit, or long
+            // enough that the quadratic edit distance would cost more than
+            // a suggestion is worth (names built from data can be huge).
+            continue;
         } else {
             edit_distance(name, c)
         };

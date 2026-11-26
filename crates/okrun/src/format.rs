@@ -113,6 +113,28 @@ fn group_thousands(digits: &str) -> String {
     out + frac
 }
 
+/// `abs` times 100 with `precision` decimals and a `%` sign. The decimal
+/// point is moved in the text rather than multiplying the float, which
+/// would overflow to infinity for values above about 1.8e306 (and print
+/// `inf%`).
+fn percent(abs: f64, precision: usize) -> String {
+    let digits = format!("{:.*}", precision + 2, abs);
+    let (int, frac) = digits.split_once('.').unwrap_or((&digits, "00"));
+    let (moved, rest) = frac.split_at(2);
+    let mut whole = format!("{int}{moved}");
+    let trimmed = whole.trim_start_matches('0');
+    whole = if trimmed.is_empty() {
+        "0".to_string()
+    } else {
+        trimmed.to_string()
+    };
+    if rest.is_empty() {
+        format!("{whole}%")
+    } else {
+        format!("{whole}.{rest}%")
+    }
+}
+
 fn float_body(f: f64, spec: &Spec) -> Result<String, String> {
     if !f.is_finite() {
         return Ok(format_float(f));
@@ -120,7 +142,7 @@ fn float_body(f: f64, spec: &Spec) -> Result<String, String> {
     let abs = f.abs();
     let body = match spec.ty {
         Some('f') => format!("{:.*}", spec.precision.unwrap_or(6), abs),
-        Some('%') => format!("{:.*}%", spec.precision.unwrap_or(6), abs * 100.0),
+        Some('%') => percent(abs, spec.precision.unwrap_or(6)),
         Some('e') => {
             let s = format!("{:.*e}", spec.precision.unwrap_or(6), abs);
             let (m, e) = s.split_once('e').unwrap_or((&s, "0"));
@@ -216,6 +238,15 @@ mod tests {
     fn numbers() {
         assert_eq!(f(Value::Float(1.23456), ".2f"), "1.23");
         assert_eq!(f(Value::Float(0.256), ".1%"), "25.6%");
+        assert_eq!(f(Value::Float(0.004), ".0%"), "0%");
+        assert_eq!(f(Value::Float(0.5), "%"), "50.000000%");
+        assert_eq!(f(Value::Int(12), ".0%"), "1200%");
+        assert_eq!(f(Value::Float(-0.256), ".2%"), "-25.60%");
+        let huge = f(Value::Float(1.7e308), ",.0%");
+        assert!(
+            huge.starts_with("169,999,999,999,999,993,") && huge.ends_with("%"),
+            "{huge}"
+        );
         assert_eq!(f(Value::Int(1234567), ","), "1,234,567");
         assert_eq!(f(Value::Int(1234567), ">14,"), "     1,234,567");
         assert_eq!(f(Value::Float(-3.5), "08.3f"), "-003.500");

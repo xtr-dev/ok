@@ -1,0 +1,17 @@
+# Functions that build a string from a count refuse results over 1 GiB with
+# an error, instead of running out of memory.
+print(try { pad("x", 3000000000) } catch e { e.message })
+print(try { pad("x", 600000000, fill: "é") } catch e { e.message })
+print(try { repeat("ab", 600000000) } catch e { e.message })
+print(len(pad("x", 10, fill: "é")))
+
+# `%` formats every float as digits, even where multiplying by 100 would
+# overflow.
+let p = fmt(1.5e307, ",.1%")
+print(p.starts_with("1,499,999,"), p.ends_with(".0%"), "i" in p)
+print(fmt(0.256, ".1%"), fmt(0.004, ".0%"), fmt(12, ".0%"), fmt(-0.5, "%"))
+
+# A name too long to be a typo of a record key gets no suggestion, quickly.
+var r = {}
+r[repeat("a", 100000)] = 1
+print(try { r[repeat("a", 99999) + "b"] } catch e { e.message.len() })
