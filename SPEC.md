@@ -812,6 +812,12 @@ lines | where .contains("ERROR")            # it => it.contains("ERROR")
 let by_name = .name                         # a function
 ```
 
+`it` is only this specification's name for the implicit argument, used in
+the comments above to show the equivalent closure. It is not a name a script
+can write: `it` in a script is an ordinary identifier, an unknown name unless
+the script declares it. To name the argument, write the closure out
+(`u => u.active`).
+
 `.` alone is not an implicit closure; use `x => x`. Implicit closures do not
 nest: inside the arguments of a call that is itself inside an implicit
 closure, `.x` starts a new closure at the inner boundary.
@@ -1067,9 +1073,10 @@ Stdin is inherited from ok unless given:
 Pipelines of commands, `run a | run b`, connect a's stdout to b's stdin
 directly, without buffering in ok.
 
-If a pipeline stops reading a command's stdout early (`run yes | take 3`),
-ok closes the pipe and terminates the command; its exit status is then
-ignored.
+Piped output is text, not a list: split it with `lines` before list
+stages such as `where` or `take`. If a pipeline stops reading a command's
+stdout early (`run yes | lines | take 3`), ok closes the pipe and terminates
+the command; its exit status is then ignored.
 
 A redirect target is one command-mode word: `> build.log`, `> "my file.txt"`,
 `> {out_dir / "dump.sql"}`. Its value must be a string or path; it is
@@ -1081,7 +1088,7 @@ argument. Combining `>` with piping stdout is an error. The directory of a
 redirects (unlike a shell, `2>&1 > f` and `> f 2>&1` mean the same): to the
 terminal (ok's own stdout) when live, into the captured `out` when captured
 (interleaved as the command wrote it, through one pipe), into the pipeline
-when piped (`run make 2>&1 | where .contains("warning")`), and into the file
+when piped (`run make 2>&1 | lines | where .contains("warning")`), and into the file
 of `>`/`>>`. With `quiet`, merged output is captured and discarded like any
 other output.
 
@@ -1135,14 +1142,21 @@ It still raises when the program cannot be found or started.
 ### 9.8 Tracing
 
 With `--trace`, each command is printed to stderr before it starts, prefixed
-with `+ `, each argument quoted if it contains whitespace or quotes, and with
-the working directory if it is not the default:
+with `+ `, and with the working directory if it is not the default:
 
 ```
 + cargo build --release --target x86_64-unknown-linux-musl
 + (in frontend) npm ci
 + make test < input.txt > build.log 2>&1
++ ls "*.txt" "$HOME" "two words" ""
 ```
+
+An argument is shown as it is when it is not empty and consists only of
+ASCII letters, digits and `-_./=:@%+,^~`. Any other argument (empty, or with
+whitespace, quotes, glob characters, `$`, `\`, non-ASCII text, ...) is shown
+in double quotes, with `\` and `"` escaped by a backslash. So the line shows
+exactly the arguments the program gets: `"*.txt"` was passed as is, not
+expanded.
 
 Redirects are shown after the arguments in the order stdin, stdout,
 stderr, with targets in display form (`/`).
@@ -1217,8 +1231,18 @@ A caught error `e` is a record:
 | `cmd`, `code`, `stderr` | list, int, string | command errors |
 | `status` | int | `net` errors with an HTTP response |
 
-`fail(msg)` raises an error of kind `fail` at the call site. `fail(e)` with an
-error record re-raises it.
+`fail(x)` raises an error at the call site; what it raises depends on `x`:
+
+- the error record of a caught error, unchanged (also when passed on or
+  stored first): that error is re-raised as it was, with its kind, message,
+  location and trace;
+- any other record with a string `kind` and a string `message`, such as a
+  caught record with a changed field or one built by the script: an error
+  of that kind (one of the kinds above; an unknown kind becomes `fail`) with
+  that message. Other fields are ignored;
+- anything else, including a record without both fields: an error of kind
+  `fail` whose message is the display form of `x`, so `fail("no config")`
+  has the message `no config`.
 
 ### 10.3 Suggestions
 
@@ -1279,8 +1303,8 @@ directory (the project root in project mode).
 
 | Function | Returns | Notes |
 |---|---|---|
-| `read(p: path, format: string? = null, --gzip: bool? = null)` | value | Format from the extension or `format` (13); a `.gz` file is decompressed (13.1.1). |
-| `write(value, p: path, format: string? = null, --append: bool, --gzip: bool? = null)` | `null` | Creates parent directories. A `.gz` file is compressed (13.1.1). Writes `\n` line endings. Streams lazy values. When the value is a short string that looks like a file name (`"out.txt"`) and the path has no extension, the arguments are almost certainly swapped, and `write` refuses with a hint; `ok self check` warns about literal arguments that look swapped before the script runs (17.1). A failed `write` leaves an existing file as it was (12.1.2). |
+| `read(p: path, format: string? = null, --delimiter: string = ",", --header: bool = true, --gzip: bool? = null)` | value | Format from the extension or `format` (13); a `.gz` file is decompressed (13.1.1). `delimiter` and `header` apply to CSV and TSV (13.4). |
+| `write(value, p: path, format: string? = null, --append: bool, --compact: bool, --delimiter: string = ",", --header: bool = true, --gzip: bool? = null)` | `null` | Creates parent directories. `compact` applies to JSON (13.1), `delimiter` and `header` to CSV and TSV (13.4). A `.gz` file is compressed (13.1.1). Writes `\n` line endings. Streams lazy values. When the value is a short string that looks like a file name (`"out.txt"`) and the path has no extension, the arguments are almost certainly swapped, and `write` refuses with a hint; `ok self check` warns about literal arguments that look swapped before the script runs (17.1). A failed `write` leaves an existing file as it was (12.1.2). |
 | `copy(src: path, dst: path)` | `null` | Files or directories (recursive). `dst` is the exact destination, never "into". Overwrites files. Copying a file onto an existing directory, or a directory onto an existing file, is an error. Copying a directory onto an existing directory merges the two: files from `src` replace files with the same name, everything else in `dst` stays. Copying a path onto itself or a directory into itself is an error. |
 | `move(src: path, dst: path)` | `null` | Rename; falls back to copy and remove across file systems. Moving a directory into itself is an error. |
 | `remove(p: path)` | `bool` | File or directory tree; a symlink is removed itself, not what it points to. `false` if nothing existed. Refuses, before deleting anything, the file-system root, the home directory, the project root, the working directory and any directory that contains the working directory (as in `remove(".")` or `remove("..")`); paths are compared after making them absolute and resolving `..` and symlinks. |
@@ -1294,7 +1318,9 @@ directory (the project root in project mode).
 | `tempdir()` | `path` | A new directory in the system's temporary directory (19 for WebAssembly), removed when the script exits (also on error). |
 | `tempfile(--ext: string = "")` | `path` | A new empty file, removed at exit. |
 | `chmod(p: path, mode: int)` | `null` | Sets Unix permission bits, `chmod(p, 0o755)`. On Windows there are no permission bits, and `chmod` does nothing and succeeds. |
-| `stdin(format: string? = null)` | value | ok's own stdin, lazily, parsed as `format` (default `text`). |
+| `stdin(format: string? = null, --delimiter: string = ",", --header: bool = true)` | value | ok's own stdin, lazily, parsed as `format` (default `text`). |
+| `parse(text: string, format: string, --delimiter: string = ",", --header: bool = true)` | value | `read` without the file (13.1); also accepts `"yaml_all"` (13.6). |
+| `to(value, format: string, --compact: bool, --delimiter: string = ",", --header: bool = true)` | `string` or `bytes` | `write` without the file (13.1). |
 
 The mutating functions `write`, `copy`, `move`, `remove`, `mkdir`, `touch`,
 `chmod`, `zip`, `unzip`, `tar` and `untar` are printed by `--trace` and
@@ -1389,6 +1415,7 @@ of `env`; read a variable with such a name through `env.get("get")`.
 | `fmt(x, spec: string)` | `string` | 12.6 |
 | `str(x)` | `string` | Display form (5.1). |
 | `int(x)`, `float(x)` | number | From strings (error if malformed), numbers (`int` truncates), bools. |
+| `floor(x)`, `ceil(x)`, `round(x)` | `int` | From numbers; an `int` is returned unchanged. `round` rounds halves away from zero (5.5). A result outside the `int` range is an error. |
 | `bytes(s: string)`, `text(b: bytes)` | | UTF-8 encode / decode (error on invalid UTF-8). |
 | `type(x)` | `string` | |
 
