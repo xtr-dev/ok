@@ -14,8 +14,8 @@ Its rules are kept below, and the language it described is now `SPEC.md`.
 
 ## Current state
 
-- All milestones M0 to M7 are implemented; `v0.1.0` is released
-  (2026-11-25).
+- Milestones M0 to M10 are implemented. Released: `v0.1.0` (2026-11-25),
+  `v0.2.0` (2026-11-26).
 - GitHub: public repo `xtr-dev/ok`. Publishing a release and publishing to
   crates.io are done by hand by a project owner; never do either yourself.
   CI runs on every push to `main` and every pull request (Linux, macOS,
@@ -84,8 +84,9 @@ site/                   landing page, playground (playground.js, playground-work
                         and install.sh / install.ps1, published to
                         https://okrun.dev/ by pages.yml (after the install
                         scripts pass on Linux, macOS and Windows); pages.yml
-                        adds ok.wasm, built from the commit, and three
-                        examples/ folders the playground loads
+                        adds ok.wasm and three examples/ folders from the
+                        latest release, and names it in the badge; publishing
+                        a release redeploys the site
 .cargo/config.toml      stack size for the WebAssembly build
 tests/wasm/smoke.mjs    runs the WebAssembly build under Node (CI job `wasm`)
 SPEC.md                 normative language spec

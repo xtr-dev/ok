@@ -1,21 +1,17 @@
 # Publishes site/ (the landing page, the playground and the install scripts)
 # to GitHub Pages at https://okrun.dev/. The install scripts are first run on
 # Linux, macOS and Windows against the latest release, so a broken script is
-# never published. The playground's ok.wasm is built from this commit, and
-# the examples it shows are copied from examples/.
+# never published. The playground's ok.wasm and the examples it shows come
+# from the latest release, so the page runs the same ok the install scripts
+# install; publishing a release redeploys the site.
 name: Pages
 
 on:
   push:
     branches: [main]
-    paths:
-      - "site/**"
-      - ".github/workflows/pages.yml"
-      # the playground runs ok.wasm built from the crate and shows examples
-      - "crates/okrun/**"
-      - "Cargo.lock"
-      - ".cargo/**"
-      - "examples/**"
+    paths: ["site/**", ".github/workflows/pages.yml"]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -62,19 +58,36 @@ jobs:
       pages: read        # configure-pages reads the site's settings
     steps:
       - uses: actions/checkout@v4
+      - id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.latest.outputs.tag }}
+          path: release
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.100.0"
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: release
+      # Built inside release/ so its .cargo/config.toml (the stack size) applies.
       - run: cargo build -p okrun --release --target wasm32-wasip1 --locked
-      # The site as published: site/, the playground's ok.wasm, and the
-      # example folders playground.js loads.
-      - run: |
+        working-directory: release
+      # The site as published: site/ from this commit with the badge naming
+      # the latest release, the playground's ok.wasm, and the example folders
+      # playground.js loads.
+      - env:
+          TAG: ${{ steps.latest.outputs.tag }}
+        run: |
           mkdir -p _site/examples
           cp -r site/. _site/
-          cp target/wasm32-wasip1/release/ok.wasm _site/
-          cp -r examples/log-summary examples/csv-to-json examples/config-render _site/examples/
+          sed -i -E "s/>v[0-9][0-9.]* is out</>$TAG is out</" _site/index.html
+          grep -q ">$TAG is out<" _site/index.html
+          cp release/target/wasm32-wasip1/release/ok.wasm _site/
+          cp -r release/examples/log-summary release/examples/csv-to-json release/examples/config-render _site/examples/
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

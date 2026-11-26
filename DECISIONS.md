@@ -887,3 +887,10 @@ services) stay far below it. The other parsers were checked at the same
 time: JSON, YAML and TOML stop deep nesting with an error (128, 256 and
 TOML's own limit), and gzip data that expands beyond available memory ends
 in an `out of memory` error rather than a crash.
+
+**The playground runs the latest release.** Since v0.2.0 has the
+WebAssembly build, the Pages workflow builds `ok.wasm` and copies the
+examples from the latest release's tag instead of `main`, fills the
+release name into the page's badge, and runs again when a release is
+published. The page then shows the same ok that the install scripts
+install, and unreleased changes never reach it early.
