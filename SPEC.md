@@ -557,6 +557,11 @@ out-of-range index is an error (`xs[i]?` gives `null`). `+` concatenates two
 lists. Spread `...xs` inserts the elements into a list literal or the
 arguments of a call.
 
+Lists and records nest at most 1000 levels deep (a list of numbers is one
+level); building a deeper value, as `x = [x]` in a long loop would, is a
+`value` error. Displaying, comparing and freeing a value work through every
+level, and the limit keeps them from exhausting the stack.
+
 Records map string keys to values and preserve insertion order. `r.key` and
 `r["key"]` read a field; a missing key is an error that lists close matches
 (`r.key?` gives `null`). In a record literal, `{name}` is short for
@@ -1713,6 +1718,11 @@ an explicit `format` argument overrides it. `parse(text, format)` and
 `read(p, "bytes")`. `to(v, "json", compact: true)` and `write(..., compact:
 true)` write JSON on one line with no spaces (`{"a":[1,2]}`), as `jsonl`
 writes each value.
+
+Readers limit nesting: JSON and JSON Lines values nest at most 127 lists or
+records deep, YAML 255, and TOML 81 (the top-level table counts as one). The
+writers apply the same limits, so a written file can be read back; deeper
+data is a `format` error.
 
 #### 13.1.1 Compressed files
 

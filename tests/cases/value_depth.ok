@@ -1,0 +1,44 @@
+# Lists and records nest at most 1000 levels; building deeper values in a
+# loop is an error rather than a stack overflow when they are displayed,
+# compared, serialised or freed.
+var x = []
+print(try { for i in range(1000000) { x = [x] } } catch e { e.message })
+var r = {}
+print(try { for i in range(1000000) { r.a = r } } catch e { e.message })
+var y = []
+print(try { for i in range(1000000) { y = range(1) | map(fn(_) { y }) } } catch e { e.message })
+var z = [0]
+print(try { for i in range(1000000) { z[0] = z } } catch e { e.message })
+
+# Values at the limit still work everywhere.
+print(
+  len(str(x)),
+  x == x,
+  x < [x[0], 1],
+  len(uniq([x[0], x[0]])),
+  len(sort([x[0], x[0]])),
+  x[0] in [x[0]],
+)
+
+# Writers refuse what the readers would refuse, so files round-trip.
+fn nest(n) {
+  var v = []
+  for i in range(n - 1) { v = [v] }
+  return v
+}
+for f in ["json", "yaml"] {
+  for n in [127, 128, 255, 256] {
+    print(f, n, try { parse(to(nest(n), f), f) == nest(n) } catch e { e.message })
+  }
+}
+print(
+  try { len(to([nest(127)], "jsonl")) } catch e { e.message },
+  try { to([nest(128)], "jsonl") } catch e { e.message },
+)
+for n in [80, 81] {
+  print(
+    "toml",
+    n,
+    try { parse(to({a: nest(n)}, "toml"), "toml") == {a: nest(n)} } catch e { e.message },
+  )
+}

@@ -639,6 +639,7 @@ fn serialize(
         "jsonl" => {
             let mut src = lazy::cursor(interp, value, span, "JSON Lines output")?;
             while let Some(v) = at_span(src.next(interp), span)? {
+                check_writable_depth(&v, "json", args)?;
                 let mut s = String::new();
                 to_json(&v, &mut s, None, 0).map_err(|m| format_err(args, m))?;
                 s.push('\n');
@@ -663,6 +664,7 @@ fn serialize(
         },
         doc => {
             let value = lazy::force(interp, value, span)?;
+            check_writable_depth(&value, doc, args)?;
             let compact = bool_named(opts, "compact", args)?;
             let text = match doc {
                 "json" => {
@@ -680,6 +682,36 @@ fn serialize(
             out.write_all(text.as_bytes()).map_err(|e| io_err(span, e))
         }
     }
+}
+
+/// The deepest value ok's own reader accepts for each nested format
+/// (`Value::depth`: 1 for a list of scalars). Writing deeper data would
+/// produce a file that `read` then refuses, so the writer refuses it
+/// first; this also bounds the writers' recursion and the indentation of
+/// pretty-printed JSON, which grows with the square of the depth.
+fn max_writable_depth(fmt: &str) -> Option<(u32, &'static str)> {
+    match fmt {
+        "json" | "jsonl" => Some((127, "JSON")),
+        "yaml" => Some((255, "YAML")),
+        // The top-level table counts as one level.
+        "toml" => Some((81, "TOML")),
+        _ => None,
+    }
+}
+
+fn check_writable_depth(value: &Value, fmt: &str, args: &Args) -> R<()> {
+    if let Some((max, name)) = max_writable_depth(fmt)
+        && value.depth() > max
+    {
+        return Err(format_err(
+            args,
+            format!(
+                "cannot write {name} nested more than {max} levels deep (this value nests {}); ok could not read it back",
+                value.depth()
+            ),
+        ));
+    }
+    Ok(())
 }
 
 fn unreachable_format(f: &str) -> String {

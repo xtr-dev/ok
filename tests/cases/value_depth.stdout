@@ -1,0 +1,16 @@
+value is nested too deeply: lists and records nest at most 1000 levels
+value is nested too deeply: lists and records nest at most 1000 levels
+value is nested too deeply: lists and records nest at most 1000 levels
+value is nested too deeply: lists and records nest at most 1000 levels
+2000 true true 1 2 true
+json 127 true
+json 128 cannot write JSON nested more than 127 levels deep (this value nests 128); ok could not read it back
+json 255 cannot write JSON nested more than 127 levels deep (this value nests 255); ok could not read it back
+json 256 cannot write JSON nested more than 127 levels deep (this value nests 256); ok could not read it back
+yaml 127 true
+yaml 128 true
+yaml 255 true
+yaml 256 cannot write YAML nested more than 255 levels deep (this value nests 256); ok could not read it back
+255 cannot write JSON nested more than 127 levels deep (this value nests 128); ok could not read it back
+toml 80 true
+toml 81 cannot write TOML nested more than 81 levels deep (this value nests 82); ok could not read it back

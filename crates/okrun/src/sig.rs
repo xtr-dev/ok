@@ -517,7 +517,7 @@ fn is_short_arg(a: &str) -> bool {
 fn store(p: &Param, v: Value, named: &mut Vec<(String, Value)>, lists: &mut Record) {
     if is_list(p) {
         let mut items = match lists.get(&p.name) {
-            Some(Value::List(l)) => (**l).clone(),
+            Some(Value::List(l)) => l.to_vec(),
             _ => Vec::new(),
         };
         items.push(v);

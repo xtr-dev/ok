@@ -21,7 +21,7 @@ pub enum Value {
     Float(f64),
     Str(Rc<str>),
     Bytes(Rc<[u8]>),
-    List(Rc<Vec<Value>>),
+    List(Rc<List>),
     Record(Rc<Record>),
     Path(Rc<OkPath>),
     /// Nanoseconds.
@@ -50,12 +50,55 @@ impl Func {
     }
 }
 
+/// How deeply lists and records may nest (SPEC.md 5.7). Displaying,
+/// comparing, serialising and even freeing a value recurse once per level,
+/// so a value built by wrapping itself in a loop (`x = [x]`) would
+/// otherwise overflow the stack. 1000 levels is far beyond real data (the
+/// JSON reader allows 128, YAML 256) and well inside the stack of the
+/// WebAssembly build.
+pub const MAX_VALUE_DEPTH: u32 = 1000;
+
+/// The elements of a list, with the list's nesting depth cached so that
+/// checking a new value against [`MAX_VALUE_DEPTH`] costs O(1). It
+/// dereferences to the `Vec` for reading; changes go through methods that
+/// keep the depth an upper bound.
+#[derive(Clone, Default)]
+pub struct List {
+    items: Vec<Value>,
+    depth: u32,
+}
+
+impl List {
+    pub fn new(items: Vec<Value>) -> List {
+        let depth = 1 + items.iter().map(Value::depth).max().unwrap_or(0);
+        List { items, depth }
+    }
+
+    /// Changes element `i` (which must exist) with `f`, then raises the
+    /// cached depth if the element got deeper.
+    pub fn update<T>(&mut self, i: usize, f: impl FnOnce(&mut Value) -> T) -> T {
+        let r = f(&mut self.items[i]);
+        self.depth = self.depth.max(1 + self.items[i].depth());
+        r
+    }
+}
+
+impl std::ops::Deref for List {
+    type Target = Vec<Value>;
+    fn deref(&self) -> &Vec<Value> {
+        &self.items
+    }
+}
+
 /// An insertion-ordered map from string keys to values.
 #[derive(Clone, Default)]
 pub struct Record {
     keys: Vec<Rc<str>>,
     values: Vec<Value>,
     index: HashMap<Rc<str>, usize>,
+    /// An upper bound of the nesting depth of the record's values, plus
+    /// one; see [`List`].
+    depth: u32,
 }
 
 impl Record {
@@ -67,9 +110,19 @@ impl Record {
         self.index.get(key).map(|&i| &self.values[i])
     }
 
-    pub fn get_mut(&mut self, key: &str) -> Option<&mut Value> {
+    /// Changes the value of `key` with `f`, if the key exists, then raises
+    /// the cached depth if the value got deeper.
+    pub fn update<T>(&mut self, key: &str, f: impl FnOnce(&mut Value) -> T) -> Option<T> {
         let i = *self.index.get(key)?;
-        Some(&mut self.values[i])
+        let r = f(&mut self.values[i]);
+        self.depth = self.depth.max(1 + self.values[i].depth());
+        Some(r)
+    }
+
+    /// The nesting depth: 1 plus the deepest value (an upper bound after
+    /// values were replaced by shallower ones).
+    pub fn depth(&self) -> u32 {
+        self.depth.max(1)
     }
 
     pub fn contains(&self, key: &str) -> bool {
@@ -78,6 +131,7 @@ impl Record {
 
     /// Insert or replace. A replaced key keeps its position.
     pub fn insert(&mut self, key: impl Into<Rc<str>>, value: Value) {
+        self.depth = self.depth.max(1 + value.depth());
         let key = key.into();
         if let Some(&i) = self.index.get(&key) {
             self.values[i] = value;
@@ -111,7 +165,17 @@ impl Value {
     }
 
     pub fn list(items: Vec<Value>) -> Value {
-        Value::List(Rc::new(items))
+        Value::List(Rc::new(List::new(items)))
+    }
+
+    /// How deeply lists and records nest in this value: 0 for a scalar, 1
+    /// for a list or record of scalars. O(1): containers cache it.
+    pub fn depth(&self) -> u32 {
+        match self {
+            Value::List(l) => l.depth,
+            Value::Record(r) => r.depth(),
+            _ => 0,
+        }
     }
 
     pub fn record(r: Record) -> Value {

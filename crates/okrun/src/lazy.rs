@@ -190,7 +190,7 @@ pub fn adapt(
 // ----- basic sources ----------------------------------------------------------
 
 pub struct VecSource {
-    items: Rc<Vec<Value>>,
+    items: Rc<crate::value::List>,
     i: usize,
 }
 
@@ -445,7 +445,7 @@ pub fn text_cursor(interp: &mut Interp, v: Value, span: Span) -> R<Box<dyn Sourc
             }
         }
         Value::Str(s) => Ok(Box::new(VecSource {
-            items: Rc::new(vec![Value::Str(s)]),
+            items: Rc::new(crate::value::List::new(vec![Value::Str(s)])),
             i: 0,
         })),
         other => {

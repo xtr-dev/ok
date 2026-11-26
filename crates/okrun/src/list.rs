@@ -683,7 +683,7 @@ fn join(interp: &mut Interp, mut args: Args) -> R<Value> {
 
 // ----- materialising functions -------------------------------------------------
 
-fn list_arg(args: &Args, fname: &str) -> R<Rc<Vec<Value>>> {
+fn list_arg(args: &Args, fname: &str) -> R<Rc<crate::value::List>> {
     match args.pos.first() {
         Some(Value::List(items)) => Ok(items.clone()),
         Some(other) => type_err(

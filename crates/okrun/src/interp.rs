@@ -21,7 +21,7 @@ use crate::parser;
 use crate::path::OkPath;
 use crate::sig;
 use crate::source::{SourceMap, Span};
-use crate::value::{Func, Record, Value, compare, equal};
+use crate::value::{Func, MAX_VALUE_DEPTH, Record, Value, compare, equal};
 
 /// Maximum depth of nested ok function calls.
 const MAX_CALL_DEPTH: usize = 2000;
@@ -921,6 +921,9 @@ impl Interp {
             };
             self.binop(bop, cur, rhs, value.span)?
         };
+        // The rest of the binding was within the limit already, so only the
+        // assigned path can make it too deep.
+        check_depth(keys.len() as u32 + new_value.depth(), value.span)?;
         // Take the value out of its binding so copy-on-write does not copy it.
         let mut root = {
             let mut vars = owner.vars.borrow_mut();
@@ -1089,6 +1092,13 @@ impl Interp {
         self.eval_depth += 1;
         let r = self.eval_lazy_inner(e, scope);
         self.eval_depth -= 1;
+        // Every value a script builds passes through here, so checking the
+        // (cached) depth of each result keeps all values within
+        // MAX_VALUE_DEPTH, give or take the few levels a builtin adds
+        // before its result is checked.
+        if let Ok(v) = &r {
+            check_depth(v.depth(), e.span)?;
+        }
         r
     }
 
@@ -2399,6 +2409,19 @@ pub fn check_type(v: Value, ty: &TypeAnn) -> Result<Value, String> {
     if ok { Ok(v) } else { Err(v.a_type()) }
 }
 
+/// Rejects a value nested deeper than [`MAX_VALUE_DEPTH`] (SPEC.md 5.7).
+fn check_depth(depth: u32, span: Span) -> R<()> {
+    if depth > MAX_VALUE_DEPTH {
+        return Err(OkError::at(
+            ErrKind::Value,
+            span,
+            format!("value is nested too deeply: lists and records nest at most {MAX_VALUE_DEPTH} levels"),
+        )
+        .into());
+    }
+    Ok(())
+}
+
 fn set_path(target: &mut Value, keys: &[(Value, Span, bool)], new_value: Value) -> R<()> {
     let Some(((key, span, is_field), rest)) = keys.split_first() else {
         *target = new_value;
@@ -2411,8 +2434,8 @@ fn set_path(target: &mut Value, keys: &[(Value, Span, bool)], new_value: Value) 
                 r.insert(k.clone(), new_value);
                 return Ok(());
             }
-            match r.get_mut(k) {
-                Some(inner) => set_path(inner, rest, new_value),
+            match r.update(k, |inner| set_path(inner, rest, new_value)) {
+                Some(result) => result,
                 None => err(
                     ErrKind::Key,
                     *span,
@@ -2425,7 +2448,7 @@ fn set_path(target: &mut Value, keys: &[(Value, Span, bool)], new_value: Value) 
             let Some(i) = resolve_index(*n, len) else {
                 return index_error(*n, len, "list", *span).map(|_| ());
             };
-            set_path(&mut Rc::make_mut(items)[i], rest, new_value)
+            Rc::make_mut(items).update(i, |item| set_path(item, rest, new_value))
         }
         (t, k) => {
             if *is_field {
