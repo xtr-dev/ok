@@ -38,6 +38,31 @@ Options (before the script or task name):
   --version       print the version
 ";
 
+/// `ok self --help` (SPEC.md 17).
+const SELF_USAGE: &str = "\
+ok self: ok's built-in tools
+
+Usage:
+  ok self init [--checksums FILE]      write a starter ok.ok and the ./ok wrappers
+  ok self completions SHELL            print a completion script: bash, zsh, fish or powershell
+  ok self complete -- WORDS...         print completion candidates (for completion scripts)
+  ok self fmt [--check] [FILES...]     format files in the canonical layout
+  ok self check [--strict] [FILES...]  check files without running them
+  ok self tasks [--all]                list the tasks; --all includes hidden ones
+  ok self version                      print the version
+";
+
+/// `ok trust --help` and `ok untrust --help` (SPEC.md 16.5).
+pub(crate) const TRUST_USAGE: &str = "\
+ok trust: manage which projects may run tasks
+
+Usage:
+  ok trust [DIR]          trust the current content of the project at DIR (default: discovered)
+  ok trust --dir [DIR]    trust the directory, whatever its content (for your own projects)
+  ok trust --list         list trusted directories and fingerprints
+  ok untrust [DIR]        remove trust for the project at DIR
+";
+
 /// Global options (SPEC.md 2.2). Several only take effect in later
 /// milestones; they are parsed now so the command line is stable.
 #[derive(Default)]
@@ -288,6 +313,10 @@ fn self_command(args: &[String], opts: &Opts, start: &Path, color: Color) -> i32
     let rest = args.get(1..).unwrap_or(&[]);
     let mut interp = new_interp(Vec::new(), opts);
     let result: Result<Value, Flow> = match args.first().map(String::as_str) {
+        Some("-h" | "--help") => {
+            print!("{SELF_USAGE}");
+            return 0;
+        }
         Some("version") => {
             println!("ok {}", crate::VERSION);
             Ok(Value::Null)

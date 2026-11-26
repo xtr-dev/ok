@@ -2109,6 +2109,9 @@ The only reserved first arguments are `trust`, `untrust` and `self`.
 | `ok self tasks [--all]` | The task listing; `--all` includes hidden tasks. |
 | `ok self version` | Print `ok X.Y.Z`. |
 
+`ok self --help` (or `-h`) prints these commands, and `ok trust --help` and
+`ok untrust --help` print the commands of 16.5, on stdout with exit code 0.
+
 ### 17.1 `ok self check`
 
 `ok self check` parses and checks files without running any of their code.

@@ -434,6 +434,10 @@ pub fn command(
     let mut dir_mode = false;
     let mut list = false;
     let mut target: Option<String> = None;
+    if args.iter().any(|a| a == "-h" || a == "--help") {
+        print!("{}", crate::cli::TRUST_USAGE);
+        return Ok(());
+    }
     for a in args {
         match a.as_str() {
             "--dir" if !untrust => dir_mode = true,

@@ -133,3 +133,23 @@ fn dry_run_shows_every_redirect() {
         "~ tool a < in.txt > out.txt 2>&1\n~ tool b >> log 2>> errors.log\n~ tool c 2> logs/err.txt\n"
     );
 }
+
+#[test]
+fn self_and_trust_print_their_help() {
+    for args in [&["self", "--help"][..], &["self", "-h"]] {
+        let out = ok(args);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert!(stdout(&out).starts_with("ok self: "), "{}", stdout(&out));
+        assert!(stdout(&out).contains("  ok self check [--strict] [FILES...]"));
+    }
+    for args in [
+        &["trust", "--help"][..],
+        &["trust", "-h"],
+        &["untrust", "--help"],
+    ] {
+        let out = ok(args);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert!(stdout(&out).starts_with("ok trust: "), "{}", stdout(&out));
+        assert!(stdout(&out).contains("  ok untrust [DIR]"));
+    }
+}
