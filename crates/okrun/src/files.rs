@@ -88,9 +88,7 @@ impl Replacement {
     /// cannot be written.
     pub(crate) fn create(target: &Path) -> std::io::Result<(Replacement, std::fs::File)> {
         let target = match std::fs::symlink_metadata(target) {
-            Ok(m) if m.file_type().is_symlink() => {
-                crate::path::canonical(target).unwrap_or_else(|_| target.to_path_buf())
-            }
+            Ok(m) if m.file_type().is_symlink() => link_destination(target)?,
             _ => target.to_path_buf(),
         };
         if let Ok(meta) = std::fs::metadata(&target) {
@@ -173,6 +171,27 @@ impl Drop for Replacement {
             let _ = std::fs::remove_file(tmp);
         }
     }
+}
+
+/// The file a symlink leads to, following a chain of links, also when the
+/// last one dangles: writing through a link to a missing file creates that
+/// file and keeps the link, as a shell's `>` does (SPEC.md 12.1.2).
+fn link_destination(link: &Path) -> std::io::Result<PathBuf> {
+    let mut cur = link.to_path_buf();
+    // The limit most systems put on a chain of links (ELOOP).
+    for _ in 0..40 {
+        match std::fs::symlink_metadata(&cur) {
+            Ok(m) if m.file_type().is_symlink() => {
+                let to = std::fs::read_link(&cur)?;
+                cur = match cur.parent() {
+                    Some(dir) => dir.join(to),
+                    None => to,
+                };
+            }
+            _ => return Ok(crate::path::canonical(&cur).unwrap_or(cur)),
+        }
+    }
+    Err(std::io::Error::other("too many levels of symbolic links"))
 }
 
 /// A name part that other users cannot predict, so they cannot claim the
@@ -1466,6 +1485,31 @@ mod tests {
             run(format!("glob(\"*.txt\", root: {d}).map(.name)")),
             "[\"b.txt\"]"
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn writing_through_a_dangling_link_creates_its_target() {
+        let dir = scratch("dangling");
+        std::os::unix::fs::symlink("data/new.txt", dir.join("link")).unwrap();
+        std::fs::create_dir_all(dir.join("data")).unwrap();
+        let (pending, mut file) = Replacement::create(&dir.join("link")).unwrap();
+        file.write_all(b"through").unwrap();
+        drop(file);
+        pending.commit().unwrap();
+        assert!(
+            std::fs::symlink_metadata(dir.join("link"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("data/new.txt")).unwrap(),
+            "through"
+        );
+        std::os::unix::fs::symlink("loop", dir.join("loop")).unwrap();
+        assert!(Replacement::create(&dir.join("loop")).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
