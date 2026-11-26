@@ -690,14 +690,16 @@ print(hash(bytes("abc"), "md5"))
 
 ### fetch
 
-`fetch(url: string, --method: string = "GET", --headers: record = {}, --body = null, --json = null, --timeout: duration = 30s, --to: path? = null, --check: bool = true, --bytes: bool = false)` returns a record `{status, ok, headers, body, url}`. It makes an HTTP or HTTPS request (TLS with the operating system's certificates), follows up to 10 redirects and honours `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`.
+`fetch(url: string, --method: string = "GET", --headers: record = {}, --body = null, --json = null, --timeout: duration = 30s, --to: path? = null, --check: bool = true, --bytes: bool = false, --max_size: int? = 1_073_741_824)` returns a record `{status, ok, headers, body, url}`. It makes an HTTP or HTTPS request (TLS with the operating system's certificates), follows up to 10 redirects and honours `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`. `timeout` covers the whole call, redirects included.
 
 - `method` is `GET`, `HEAD`, `POST`, `PUT`, `PATCH` or `DELETE`.
 - `body` is a string or bytes; `json` serialises a value as the body and sets `content-type: application/json`. Passing both is an `arg` error.
-- `to` streams the response body into a file, and `body` is then `null`.
+- `to` streams the response body into a file, and `body` is then `null`. The file is saved as the server stores it (the request asks for no content encoding).
+- `max_size` limits the body in bytes: 1 GiB by default, and no limit for a download with `to` unless you pass one. A larger body is a `net` error; `null` lifts the limit.
 - `bytes: true` returns the body as bytes; otherwise a body that is not UTF-8 is an error.
 - With `check: true`, a status of 400 or more is a `net` error that shows the status and the start of the body. Pass `check: false` to get the response record instead, and look at `ok` and `status`.
-- `headers` in the result has lowercase names, and `url` is the final URL after redirects.
+- `headers` in the result has lowercase names; a header sent several times has its values joined with `, `, except `set-cookie`, which is always a list. `url` is the final URL after redirects.
+- Redirects go only to `http://` and `https://` URLs and never from `https` to plain `http`. A redirect to another host, scheme or port drops the `headers` you passed, so a token such as `authorization` or `x-api-key` is only sent where you sent it.
 
 A connection failure or timeout is a `net` error. A request that is not `GET` or `HEAD`, and any download with `to`, is skipped by `ok --dry-run`.
 

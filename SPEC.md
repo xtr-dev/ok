@@ -1527,7 +1527,7 @@ Strings default to left alignment, numbers to right. Examples: `"{n:>6}"`,
 | Function | Returns | Notes |
 |---|---|---|
 | `hash(x: path \| bytes, algo: string = "sha256")` | `string` | Lowercase hex. `algo`: `sha256`, `sha512`, `sha1`, `md5`. A string argument is an error asking for `path(s)` or `bytes(s)`, because it is ambiguous. Files are hashed streaming. |
-| `fetch(url: string, --method = "GET", --headers: record = {}, --body = null, --json = null, --timeout: duration = 30s, --to: path? = null, --check: bool = true, --bytes: bool)` | record | 12.9.1 |
+| `fetch(url: string, --method = "GET", --headers: record = {}, --body = null, --json = null, --timeout: duration = 30s, --to: path? = null, --check: bool = true, --bytes: bool, --max_size: int? = 1_073_741_824)` | record | 12.9.1 |
 | `zip(src: path \| list[path], dst: path)` | `null` | |
 | `unzip(archive: path, dst: path, --max_size: int? = 4_294_967_296, --max_entries: int? = 1_000_000)` | `null` | |
 | `tar(src: path \| list[path], dst: path)` | `null` | gzip-compressed when `dst` ends in `.gz` or `.tgz` |
@@ -1580,8 +1580,26 @@ certificate store, follows up to 10 redirects, and honours `HTTPS_PROXY`,
 {status: int, ok: bool, headers: record, body: string | bytes | null, url: string}
 ```
 
-Header names are lowercase. `body` is a string, or bytes with `bytes: true`,
-or `null` when `to:` streamed it to a file. `json:` serialises a value as the
+Header names are lowercase. A header the response repeats has its values
+joined with `, `, except `set-cookie`, which is always a list of strings
+(cookie values contain commas). `timeout` covers the whole call, redirects
+included. `body` is a string, or bytes with `bytes: true`, or `null` when
+`to:` streamed it to a file.
+
+Redirects (301, 302, 303, 307, 308) are followed only to `http://` and
+`https://` URLs, and never from `https` to plain `http`, which is a `net`
+error. A redirect to another origin (scheme, host or port) drops every
+header passed in `headers:`, since any of them may carry credentials
+(`authorization`, `x-api-key`, ...); only the `content-type` of a body sent
+again is kept. 303, and 301 or 302 after a `POST`, continue as a `GET`
+without a body; 307 and 308 repeat the method and body.
+
+`max_size` limits the response body in bytes, after decompression: by
+default 1 GiB when the body is returned, and no limit for a `to:`
+download unless `max_size` is passed. Going over it is a `net` error;
+`null` removes the limit. A `to:` download asks for the body without
+content encoding (`accept-encoding: identity`, unless `headers:` sets
+it), so the file is saved as the server stores it. `json:` serialises a value as the
 request body and sets `content-type: application/json`. With `check: true`
 (the default), a status of 400 or more raises a `net` error carrying the
 status and the start of the body. A request that is not `GET` or `HEAD`, and
