@@ -698,7 +698,8 @@ impl Interp {
                 // The help repeats the condition as written when it is short
                 // and has no spaces (`files`, `opts.items`), so it can be
                 // pasted back; otherwise it uses a placeholder name.
-                let text = &self.sources.file(span.file).text[span.start as usize..span.end as usize];
+                let text =
+                    &self.sources.file(span.file).text[span.start as usize..span.end as usize];
                 let simple = !text.is_empty()
                     && text.chars().count() <= 30
                     && !text.chars().any(char::is_whitespace);
@@ -711,16 +712,24 @@ impl Interp {
                 let help = match other {
                     Value::List(_) => {
                         let x = name("xs");
-                        format!("to test for an empty list use `{kw}len({x}) > 0` or `{kw}{x} != []`")
+                        format!(
+                            "to test for an empty list use `{kw}len({x}) > 0` or `{kw}{x} != []`"
+                        )
                     }
-                    Value::Str(_) => format!("to test for an empty string use `{kw}{} != \"\"`", name("s")),
+                    Value::Str(_) => format!(
+                        "to test for an empty string use `{kw}{} != \"\"`",
+                        name("s")
+                    ),
                     Value::Null => format!("to test for null use `{kw}{} != null`", name("x")),
                     Value::Int(_) | Value::Float(_) => {
                         let n = name("n");
                         format!("compare explicitly, like `{kw}{n} > 0` or `{kw}{n} != 0`")
                     }
                     Value::Record(_) => {
-                        format!("to test for an empty record use `{kw}len({}) > 0`", name("r"))
+                        format!(
+                            "to test for an empty record use `{kw}len({}) > 0`",
+                            name("r")
+                        )
                     }
                     _ => "use a comparison that gives true or false".to_string(),
                 };
@@ -1761,8 +1770,16 @@ impl Interp {
     }
 
     /// "`ns` has no function `name`", with a did-you-mean among its exports.
-    fn namespace_miss(&self, ns: &str, exports: &Record, name: &str, span: Span, what: &str) -> OkError {
-        let help = suggest(name, exports.keys().map(|k| &**k)).map(|s| format!("did you mean `{ns}.{s}`?"));
+    fn namespace_miss(
+        &self,
+        ns: &str,
+        exports: &Record,
+        name: &str,
+        span: Span,
+        what: &str,
+    ) -> OkError {
+        let help = suggest(name, exports.keys().map(|k| &**k))
+            .map(|s| format!("did you mean `{ns}.{s}`?"));
         OkError::at(ErrKind::Name, span, format!("`{ns}` has no {what}`{name}`"))
             .with_label("not exported by the library")
             .maybe_help(help)
@@ -1803,7 +1820,9 @@ impl Interp {
                 if let Some(ns) = self.namespace_name(recv, &rv)
                     && let Value::Record(r) = &rv
                 {
-                    return Err(self.namespace_miss(ns, r, name, name_span, "function ").into());
+                    return Err(self
+                        .namespace_miss(ns, r, name, name_span, "function ")
+                        .into());
                 }
                 let mut names = Vec::new();
                 scope.all_names(&mut names);
@@ -2208,7 +2227,11 @@ pub(crate) fn brace_hint(e: &mut OkError, expr: &Expr, has_spec: bool, span: Spa
         && !has_spec
         && expr.span.start == span.start + 1
         && expr.span.end + 1 == span.end;
-    if bare_name && e.help.as_deref().is_some_and(|h| h.starts_with("did you mean")) {
+    if bare_name
+        && e.help
+            .as_deref()
+            .is_some_and(|h| h.starts_with("did you mean"))
+    {
         return;
     }
     e.help = Some(

@@ -1411,7 +1411,10 @@ fn write_table(
             (other, false) => {
                 return type_err(
                     args,
-                    format!("with header: false, {name} rows must be lists, got {}", other.a_type()),
+                    format!(
+                        "with header: false, {name} rows must be lists, got {}",
+                        other.a_type()
+                    ),
                 );
             }
         };

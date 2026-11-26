@@ -205,7 +205,9 @@ mod tests {
         let rebuild = |p: &OkPath| {
             p.parts_with_root()
                 .iter()
-                .fold(OkPath::parse_with(".", false), |acc, x| acc.join(&OkPath::parse_with(x, true)))
+                .fold(OkPath::parse_with(".", false), |acc, x| {
+                    acc.join(&OkPath::parse_with(x, true))
+                })
         };
         for (s, parts) in [
             ("/a/b", vec!["/", "a", "b"]),
