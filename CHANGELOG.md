@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-Some of these changes can stop a project or script from loading: source files may no longer contain raw control or bidirectional characters, env files may no longer set `OK_`, `LD_` or `DYLD_` variables, a root `ok.ok` may not link outside the project, and projects with env files must be trusted again. Data and archives that used to be accepted can now be errors: archive members with names that are not portable, CSV files whose header repeats a column, TOML date-times after 2262, and data beyond the new size limits.
+Some of these changes can stop a project or script from loading: source files may no longer contain raw control or bidirectional characters, env files may no longer set `OK_`, `LD_` or `DYLD_` variables, a root `ok.ok` may not link outside the project, and projects with env files must be trusted again. Data and archives that used to be accepted can now be errors: archive members with names that are not portable, CSV files whose header repeats a column, TOML date-times after 2262, and data beyond the new size limits. Scripts can also fail where they used to go on: `run a | run b` now fails when `a` does, environment variable names with `=` are refused, `.` in `PATH` is no longer searched, file names that are not UTF-8 are errors in `list_dir` and `glob`, and `copy` copies symlinks inside a directory as links.
 
 ### Security
 
@@ -35,6 +35,18 @@ Some of these changes can stop a project or script from loading: source files ma
 - `fetch` limits a response body to 1 GiB by default (`max_size:`); downloads with `to:` have no default limit but take one.
 - The regex cache is bounded, so patterns built from data no longer grow memory.
 - Member names in archive errors are escaped like other untrusted text.
+- A command's `timeout` stops the command together with every process it started (a process group on Unix, a job object on Windows) and also covers reading its output, so `run sh -c "sleep 60 & ..." with {timeout: 1s}` no longer runs on, or keeps ok waiting, past the deadline. A piped command's timeout is enforced while ok reads it, and reports the right duration.
+- Once a script has started a command with a timeout or made a temporary file, Ctrl-C, SIGTERM and SIGHUP make ok pass SIGTERM on to those commands' process groups, remove the files of `tempdir()` and `tempfile()`, and exit with 130.
+- `tempdir()` and `tempfile()` use unpredictable names, never reuse an existing entry, and are private to the user (0700 and 0600 on Unix).
+- The temporary file `write`, `zip`, `tar` and `fetch(to:)` write before renaming is private to the user (0600) until it is complete, has an unpredictable name, and is retried under another name when one is taken. The finished file keeps the old file's permission bits without setuid, setgid and sticky.
+- `copy` (and the cross-device fallback of `move`) copies symlinks inside a directory as links instead of copying what they point to, and never writes through a symlink in the destination: one where a file goes is replaced, one where a directory goes is an error.
+- File names that are not valid UTF-8 are refused with an error (in `list_dir`, in `glob` when the pattern selects them, in `zip` and `tar`) instead of being converted into the name of another file, which a later `remove` could have deleted.
+- Environment variable names that are empty or contain `=` or NUL are refused in `with {env}`, `env.set` and `env.remove`, as are values containing NUL; `"FOO=BAR"` used to set `FOO`.
+- On Unix only the variable named exactly `PATH` is the search path; `with {env: {path: "bin"}}` no longer makes ok run `bin/ls`.
+- Empty and `.` entries of `PATH` are skipped, and relative entries are resolved against ok's working directory, also for a command with a `cwd` option; the program found is started by its absolute path, so the file that was checked is the file that runs.
+- `remove` refuses a directory that contains the home directory (`remove("/home")`), as it does for the working directory.
+- Every project file and env file is read once per run: the bytes trust fingerprints, shows and snapshots are the ones parsed, imported and loaded, so a file replaced while ok starts cannot run unreviewed.
+- A parallel task's output lines are forwarded in pieces of at most 64 KiB, so a worker printing endless text without newlines cannot exhaust ok's memory.
 
 ### Changed
 
@@ -45,6 +57,9 @@ Some of these changes can stop a project or script from loading: source files ma
 - `fetch` keeps repeated response headers: values are joined with `, `, and `set-cookie` is always a list of strings.
 - `fetch(..., to:)` asks for the body without content encoding, so files are saved as the server stores them.
 - `untar` skips devices and pipes, and refuses a member below a link of the same archive.
+- In a pipeline of commands, `run a | run b`, a failure of `a` is raised once `b` has finished, like `set -o pipefail`; with several failures the leftmost is raised, a command ended because the next one stopped reading is not a failure, and `run!` applies to the command it is written on.
+- `write` through a symlink to a missing file creates that file and keeps the link, instead of replacing the link with a regular file.
+- A NUL character in a command argument is reported as such, instead of as a problem with batch files.
 
 ### Documentation
 
