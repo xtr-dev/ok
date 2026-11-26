@@ -135,12 +135,12 @@ fn remove_path(p: &Path) -> std::io::Result<()> {
 
 /// Paths `remove` refuses to delete (SPEC.md 12.1).
 fn is_protected(interp: &Interp, p: &Path) -> Option<&'static str> {
-    let canon = std::fs::canonicalize(p).ok()?;
+    let canon = crate::path::canonical(p).ok()?;
     if canon.parent().is_none() {
         return Some("the root of the file system");
     }
     if home_dir()
-        .and_then(|h| std::fs::canonicalize(h).ok())
+        .and_then(|h| crate::path::canonical(&h).ok())
         .is_some_and(|h| h == canon)
     {
         return Some("your home directory");
@@ -148,7 +148,7 @@ fn is_protected(interp: &Interp, p: &Path) -> Option<&'static str> {
     if interp
         .project_root
         .as_ref()
-        .and_then(|r| std::fs::canonicalize(r).ok())
+        .and_then(|r| crate::path::canonical(r).ok())
         .is_some_and(|r| r == canon)
     {
         return Some("the project root");
@@ -277,15 +277,26 @@ fn touch(interp: &mut Interp, mut args: Args) -> R<Value> {
         return Ok(Value::Null);
     }
     let native = p.native();
+    let existed = std::fs::symlink_metadata(&native).is_ok();
     ensure_parent(&native).map_err(|e| io_fail(&args, "touch", &p, &e))?;
     let f = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&native)
         .map_err(|e| io_fail(&args, "touch", &p, &e))?;
-    f.set_modified(std::time::SystemTime::now())
-        .map_err(|e| io_fail(&args, "touch", &p, &e))?;
-    Ok(Value::Null)
+    if !existed {
+        // A file that was just created already has the current time.
+        return Ok(Value::Null);
+    }
+    match f.set_modified(std::time::SystemTime::now()) {
+        Ok(()) => Ok(Value::Null),
+        // Browser WASI hosts cannot set file times; there `touch` of an
+        // existing file leaves its time unchanged (SPEC.md 19).
+        Err(e) if cfg!(target_os = "wasi") && e.kind() == std::io::ErrorKind::Unsupported => {
+            Ok(Value::Null)
+        }
+        Err(e) => Err(io_fail(&args, "touch", &p, &e)),
+    }
 }
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -296,23 +307,70 @@ fn temp_name(prefix: &str, ext: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.subsec_nanos())
         .unwrap_or(0);
-    std::env::temp_dir().join(format!(
-        "{prefix}-{}-{nanos:08x}-{n}{ext}",
+    temp_root().join(format!("{prefix}-{}-{nanos:08x}-{n}{ext}", process_id()))
+}
+
+/// The id of this process, for unique temporary names. WASI has no process
+/// ids (`std::process::id` panics there) and runs one ok per instance, so
+/// the WebAssembly build uses 0.
+pub(crate) fn process_id() -> u32 {
+    if cfg!(target_os = "wasi") {
+        0
+    } else {
         std::process::id()
-    ))
+    }
+}
+
+/// The directory `tempdir()` and `tempfile()` create their entries in.
+///
+/// WASI has no system temporary directory (`std::env::temp_dir` panics
+/// there), so the WebAssembly build uses `TMPDIR` when it is set and
+/// otherwise `.ok-tmp` in the working directory (SPEC.md 19).
+fn temp_root() -> PathBuf {
+    if cfg!(target_os = "wasi") {
+        match std::env::var_os("TMPDIR").filter(|v| !v.is_empty()) {
+            Some(dir) => PathBuf::from(dir),
+            None => crate::path::lexical_absolute(Path::new(WASI_TEMP)),
+        }
+    } else {
+        std::env::temp_dir()
+    }
+}
+
+/// The temporary directory of the WebAssembly build when `TMPDIR` is unset.
+const WASI_TEMP: &str = ".ok-tmp";
+
+/// Create the parent of a new temporary entry. When that parent is the
+/// WebAssembly build's own `.ok-tmp` and did not exist yet, it is registered
+/// for removal at exit, so a script leaves no trace in the working directory.
+fn prepare_temp_parent(interp: &mut Interp, p: &Path) -> std::io::Result<()> {
+    let Some(parent) = p.parent() else {
+        return Ok(());
+    };
+    if parent.is_dir() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(parent)?;
+    if cfg!(target_os = "wasi") && parent.file_name().is_some_and(|n| n == WASI_TEMP) {
+        // `cleanup` removes entries in reverse order, so this goes last.
+        interp.temps.insert(0, parent.to_path_buf());
+    }
+    Ok(())
 }
 
 fn tempdir(interp: &mut Interp, mut args: Args) -> R<Value> {
     named(&mut args, "tempdir", &[])?;
     count_args(&args, "tempdir", 0, 0)?;
     let p = temp_name("ok", "");
-    std::fs::create_dir_all(&p).map_err(|e| {
-        OkError::at(
-            ErrKind::Io,
-            args.span,
-            format!("cannot create a temporary directory: {}", io_reason(&e)),
-        )
-    })?;
+    prepare_temp_parent(interp, &p)
+        .and_then(|()| std::fs::create_dir(&p))
+        .map_err(|e| {
+            OkError::at(
+                ErrKind::Io,
+                args.span,
+                format!("cannot create a temporary directory: {}", io_reason(&e)),
+            )
+        })?;
     interp.temps.push(p.clone());
     Ok(Value::path(OkPath::from_native(&p)))
 }
@@ -332,13 +390,15 @@ fn tempfile(interp: &mut Interp, mut args: Args) -> R<Value> {
         }
     };
     let p = temp_name("ok", &ext);
-    std::fs::File::create(&p).map_err(|e| {
-        OkError::at(
-            ErrKind::Io,
-            args.span,
-            format!("cannot create a temporary file: {}", io_reason(&e)),
-        )
-    })?;
+    prepare_temp_parent(interp, &p)
+        .and_then(|()| std::fs::File::create(&p).map(drop))
+        .map_err(|e| {
+            OkError::at(
+                ErrKind::Io,
+                args.span,
+                format!("cannot create a temporary file: {}", io_reason(&e)),
+            )
+        })?;
     interp.temps.push(p.clone());
     Ok(Value::path(OkPath::from_native(&p)))
 }

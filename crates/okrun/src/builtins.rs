@@ -190,7 +190,14 @@ pub fn install(globals: &Rc<Scope>, script_args: Vec<String>) {
     };
     os.insert("name", Value::str(os_name));
     os.insert("arch", Value::str(std::env::consts::ARCH));
-    os.insert("exe", Value::str(std::env::consts::EXE_SUFFIX));
+    // `EXE_SUFFIX` is ".wasm" on WASI, but `os.exe` names the suffix of the
+    // programs `run` starts (SPEC.md 12.3), and those are never WebAssembly.
+    let exe = if cfg!(target_os = "wasi") {
+        ""
+    } else {
+        std::env::consts::EXE_SUFFIX
+    };
+    os.insert("exe", Value::str(exe));
     globals.declare("os", Value::record(os), false);
     globals.declare("env", Value::Env, false);
     let cwd = std::env::current_dir().unwrap_or_default();

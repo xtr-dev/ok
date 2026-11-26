@@ -160,6 +160,34 @@ impl OkPath {
     }
 }
 
+/// `p` made absolute against the working directory, with `.` and `..`
+/// resolved by their names alone (symlinks are not followed).
+pub fn lexical_absolute(p: &std::path::Path) -> PathBuf {
+    let ok = OkPath::from_native(p);
+    if ok.is_abs() {
+        return ok.native();
+    }
+    let cwd = std::env::current_dir().unwrap_or_default();
+    OkPath::from_native(&cwd).join(&ok).native()
+}
+
+/// The absolute form of an existing path, used to compare paths (import
+/// keys, project confinement, `remove` protections).
+///
+/// Native builds use `fs::canonicalize`, which also resolves symlinks. The
+/// WebAssembly build resolves the path lexically instead: browser WASI hosts
+/// implement no realpath (canonicalize fails with "not supported"), and the
+/// host's preopened directories already confine every file the script can
+/// reach. Both report a missing path as `NotFound`.
+pub fn canonical(p: &std::path::Path) -> std::io::Result<PathBuf> {
+    if cfg!(target_os = "wasi") {
+        std::fs::metadata(p)?;
+        Ok(lexical_absolute(p))
+    } else {
+        std::fs::canonicalize(p)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

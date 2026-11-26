@@ -15,6 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - `THIRD_PARTY.md` no longer lists `ok-fixture`, a test helper that is not part of the binary.
+- WebAssembly build: `import` and project mounts work in the browser playground (they failed with "Not supported"), and a missing import says "no such file".
+- WebAssembly build: `touch` works in the browser; for an existing file where the host cannot set file times, the time is left unchanged.
+- WebAssembly build: `tempdir()` and `tempfile()` no longer crash; they use `TMPDIR`, or `.ok-tmp` in the working directory, removed at exit.
+- WebAssembly build: `tar` no longer crashes, and `untar` works in the browser; `os.exe` is `""` instead of `".wasm"`.
 
 ## [0.2.0] - 2026-11-26
 

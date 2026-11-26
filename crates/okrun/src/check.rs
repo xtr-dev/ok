@@ -252,7 +252,7 @@ fn load_library(dir: &Path, raw: &str) -> Result<(PathBuf, Program, String), Loa
     let text = std::fs::read_to_string(&full)
         .map_err(|e| LoadError::Missing(crate::interp::io_reason(&e)))?;
     let prog = crate::parser::parse(0, &text).map_err(|_| LoadError::Other)?;
-    let full = std::fs::canonicalize(&full).unwrap_or(full);
+    let full = crate::path::canonical(&full).unwrap_or(full);
     Ok((full, prog, text))
 }
 

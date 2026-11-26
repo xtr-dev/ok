@@ -333,11 +333,7 @@ fn tar(interp: &mut Interp, mut args: Args) -> R<Value> {
             )
         })?;
         for (path, member, is_dir) in list {
-            let r = if is_dir {
-                b.append_dir(&member, &path)
-            } else {
-                b.append_path_with_name(&path, &member)
-            };
+            let r = append_member(&mut b, &path, &member, is_dir);
             r.map_err(|e| {
                 fail(
                     &args,
@@ -359,6 +355,102 @@ fn tar(interp: &mut Interp, mut args: Args) -> R<Value> {
     })?;
     drop(inner);
     Ok(Value::Null)
+}
+
+/// Extract one checked entry to `out`, its place inside `root`. Returns
+/// false when the tar crate finds it would land outside `root`.
+#[cfg(not(target_os = "wasi"))]
+fn unpack_entry<R: Read>(
+    entry: &mut tar::Entry<R>,
+    root: &Path,
+    _out: &Path,
+) -> std::io::Result<bool> {
+    entry.unpack_in(root)
+}
+
+/// Extract one checked entry to `out`, its place inside `root`.
+///
+/// The tar crate's unpacking canonicalizes paths and sets file times and
+/// permissions, none of which browser WASI hosts support (on WASI setting
+/// permissions always fails), so the WebAssembly build writes directories
+/// and regular files itself, to the path `safe_join` already checked; the
+/// host's preopened directories confine them. Links cannot be created there
+/// and are refused; other special entries are skipped.
+#[cfg(target_os = "wasi")]
+fn unpack_entry<R: Read>(
+    entry: &mut tar::Entry<R>,
+    _root: &Path,
+    out: &Path,
+) -> std::io::Result<bool> {
+    use tar::EntryType;
+    match entry.header().entry_type() {
+        EntryType::Directory => std::fs::create_dir_all(out)?,
+        EntryType::Regular | EntryType::Continuous => {
+            ensure_parent(out)?;
+            let mut f = File::create(out)?;
+            std::io::copy(entry, &mut f)?;
+        }
+        EntryType::Symlink | EntryType::Link => {
+            return Err(std::io::Error::other(
+                "the WebAssembly build of ok cannot create links",
+            ));
+        }
+        _ => {}
+    }
+    Ok(true)
+}
+
+/// Add one file system entry to a tar archive.
+#[cfg(not(target_os = "wasi"))]
+fn append_member<W: Write>(
+    b: &mut tar::Builder<W>,
+    path: &Path,
+    member: &str,
+    is_dir: bool,
+) -> std::io::Result<()> {
+    if is_dir {
+        b.append_dir(member, path)
+    } else {
+        b.append_path_with_name(path, member)
+    }
+}
+
+/// Add one file system entry to a tar archive. The tar crate reads header
+/// metadata only on Unix and Windows (elsewhere it panics), so on WASI the
+/// header is filled in here: the modification time from the file system,
+/// and the usual modes 0o755 for directories and 0o644 for files, since
+/// WASI has no permission bits.
+#[cfg(target_os = "wasi")]
+fn append_member<W: Write>(
+    b: &mut tar::Builder<W>,
+    path: &Path,
+    member: &str,
+    is_dir: bool,
+) -> std::io::Result<()> {
+    let meta = std::fs::symlink_metadata(path)?;
+    let mut h = tar::Header::new_gnu();
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_secs());
+    h.set_mtime(mtime);
+    if is_dir {
+        h.set_entry_type(tar::EntryType::Directory);
+        h.set_mode(0o755);
+        h.set_size(0);
+        b.append_data(&mut h, member, std::io::empty())
+    } else if meta.file_type().is_symlink() {
+        h.set_entry_type(tar::EntryType::Symlink);
+        h.set_mode(0o777);
+        h.set_size(0);
+        b.append_link(&mut h, member, std::fs::read_link(path)?)
+    } else {
+        h.set_entry_type(tar::EntryType::Regular);
+        h.set_mode(0o644);
+        h.set_size(meta.len());
+        b.append_data(&mut h, member, File::open(path)?)
+    }
 }
 
 fn untar(interp: &mut Interp, mut args: Args) -> R<Value> {
@@ -411,7 +503,7 @@ fn untar(interp: &mut Interp, mut args: Args) -> R<Value> {
             .path()
             .map(|p| p.to_string_lossy().replace('\\', "/"))
             .unwrap_or_default();
-        if safe_join(&root, &name).is_none() {
+        let Some(out) = safe_join(&root, &name) else {
             return Err(fail(
                 &args,
                 format!(
@@ -420,7 +512,7 @@ fn untar(interp: &mut Interp, mut args: Args) -> R<Value> {
                     dst.display()
                 ),
             ));
-        }
+        };
         let kind = entry.header().entry_type();
         if kind.is_symlink() || kind.is_hard_link() {
             let target = entry
@@ -449,8 +541,7 @@ fn untar(interp: &mut Interp, mut args: Args) -> R<Value> {
                 ));
             }
         }
-        let ok = entry
-            .unpack_in(&root)
+        let ok = unpack_entry(&mut entry, &root, &out)
             .map_err(|e| fail(&args, format!("cannot extract {name}: {e}")))?;
         if !ok {
             return Err(fail(

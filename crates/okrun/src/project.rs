@@ -82,7 +82,7 @@ pub struct Project {
 
 /// The nearest directory at or above `start` that holds an `ok.ok`.
 pub fn discover(start: &Path) -> Option<PathBuf> {
-    let mut dir = std::fs::canonicalize(start).ok()?;
+    let mut dir = crate::path::canonical(start).ok()?;
     loop {
         if dir.join("ok.ok").is_file() {
             return Some(dir);
@@ -147,7 +147,7 @@ impl Interp {
 
     /// Load the project at `root` without running any of its code.
     pub fn load_project(&mut self, root: &Path) -> R<Project> {
-        let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+        let root = crate::path::canonical(root).unwrap_or_else(|_| root.to_path_buf());
         let mut files: Vec<PFile> = Vec::new();
         let mut file_ns: Vec<Option<String>> = Vec::new();
 
@@ -219,7 +219,7 @@ impl Interp {
                 .collect();
             entries.sort();
             for p in entries {
-                let canon = std::fs::canonicalize(&p).unwrap_or_else(|_| p.clone());
+                let canon = crate::path::canonical(&p).unwrap_or_else(|_| p.clone());
                 let rel = rel_of(&root, &p);
                 if !canon.starts_with(&root) {
                     return Err(OkError::new(
@@ -269,7 +269,7 @@ impl Interp {
         // Mounted sub-projects: their root tasks become a namespace.
         for (path, alias, span) in mounts {
             let target = root.join(OkPath::parse(&path).native());
-            let canon = std::fs::canonicalize(&target).map_err(|e| {
+            let canon = crate::path::canonical(&target).map_err(|e| {
                 OkError::at(
                     ErrKind::Io,
                     span,
@@ -434,7 +434,7 @@ impl Interp {
             let dir = p.parent().map(Path::to_path_buf).unwrap_or_default();
             for stmt in &prog.stmts {
                 if let StmtKind::Import { path, .. } = &stmt.kind
-                    && let Ok(c) = std::fs::canonicalize(dir.join(OkPath::parse(path).native()))
+                    && let Ok(c) = crate::path::canonical(&dir.join(OkPath::parse(path).native()))
                     && c.starts_with(&root)
                     && seen.insert(c.clone())
                 {

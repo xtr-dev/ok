@@ -491,7 +491,7 @@ impl Interp {
             );
         }
         let native = dir.join(as_path.native());
-        let full = std::fs::canonicalize(&native).map_err(|e| {
+        let full = crate::path::canonical(&native).map_err(|e| {
             OkError::at(
                 ErrKind::Io,
                 span,
@@ -501,7 +501,7 @@ impl Interp {
         if let Some(root) = &self.project_root {
             // Imports may not leave the project, whether by `..` or a
             // symlink (SPEC.md 16.6).
-            let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.clone());
+            let root = crate::path::canonical(root).unwrap_or_else(|_| root.clone());
             if !full.starts_with(&root) {
                 return Err(OkError::at(
                     ErrKind::Trust,

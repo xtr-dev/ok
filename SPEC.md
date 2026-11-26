@@ -1264,8 +1264,8 @@ directory (the project root in project mode).
 | `glob(pattern: string, --root: path = cwd, --hidden: bool, --exclude: list[string] = [])` | `list[path]` | 12.1.1. |
 | `list_dir(p: path = cwd)` | `list[path]` | Entries joined to `p`, sorted by name. |
 | `stat(p: path)` | record | `{size: int, modified: time, created: time?, is_file, is_dir, is_symlink: bool, mode: int?}`; `mode` is `null` on Windows. |
-| `touch(p: path)` | `null` | Create empty or update the modification time. |
-| `tempdir()` | `path` | A new directory, removed when the script exits (also on error). |
+| `touch(p: path)` | `null` | Create empty or update the modification time (19 for WebAssembly). |
+| `tempdir()` | `path` | A new directory in the system's temporary directory (19 for WebAssembly), removed when the script exits (also on error). |
 | `tempfile(--ext: string = "")` | `path` | A new empty file, removed at exit. |
 | `chmod(p: path, mode: int)` | `null` | Sets Unix permission bits, `chmod(p, 0o755)`. On Windows there are no permission bits, and `chmod` does nothing and succeeds. |
 | `stdin(format: string? = null)` | value | ok's own stdin, lazily, parsed as `format` (default `text`). |
@@ -2277,8 +2277,17 @@ wrappers are the only shell code in the project and stay short.
   `os.arch` is `"wasm32"`; `run` and `fetch` raise a command or network
   error saying this build cannot start programs or open connections. The
   rest of the language, files included (in whatever directories the host
-  grants), behaves as on any other OS. Recursion depth is limited by the
-  host engine and is much lower than in the native binary.
+  grants), behaves as on any other OS, with these differences:
+  `os.exe` is `""`; `tempdir()` and `tempfile()` create their entries in
+  `TMPDIR` if it is set and otherwise in `.ok-tmp` in the working directory,
+  which is removed again at exit when ok created it; where the host cannot
+  set file times, `touch` of an existing file leaves its time unchanged;
+  `tar` stores mode `0o644` for files and `0o755` for directories, and
+  `untar` does not restore times or permissions and refuses links; imports,
+  mounts and the protections of `remove` compare paths by their names,
+  without resolving symlinks, since the host's directories already confine
+  the script. Recursion depth is limited by the host engine and is much
+  lower than in the native binary.
 
 ## 20. Reserved for later versions
 

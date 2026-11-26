@@ -136,7 +136,7 @@ impl Store {
         // Write to a temporary file and rename, so the store is never half-written.
         let tmp = self
             .dir
-            .join(format!("trust.json.{}.tmp", std::process::id()));
+            .join(format!("trust.json.{}.tmp", crate::files::process_id()));
         std::fs::write(&tmp, text)
             .map_err(|e| store_err(format!("cannot write the trust store: {}", io_reason(&e))))?;
         std::fs::rename(&tmp, self.dir.join("trust.json"))

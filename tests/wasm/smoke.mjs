@@ -1,10 +1,13 @@
 // Runs the WebAssembly build of ok (the one the website playground uses)
 // under Node's WASI and checks that a script can read and write files, that
-// errors render, and that `run` explains it is unavailable.
+// errors render, and that `run` explains it is unavailable. It also covers
+// the file functions whose std implementation differs on WASI: imports and
+// mounts (no canonicalize), `touch`, temporary files (no system temp
+// directory), `tar` (no tar header metadata) and `os.exe`.
 //
 //   node tests/wasm/smoke.mjs target/wasm32-wasip1/release/ok.wasm
 import { WASI } from "node:wasi";
-import { readFile, writeFile, mkdtemp } from "node:fs/promises";
+import { readFile, writeFile, mkdtemp, mkdir, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -18,6 +21,9 @@ if (process.env.OK_WASM_CHILD) {
   const wasi = new WASI({
     version: "preview1",
     args: ["ok", ...JSON.parse(process.env.OK_WASM_CHILD)],
+    // Project mode needs a trust store; keep it inside the test directory
+    // and trust the test project without a prompt.
+    env: { OK_CONFIG_DIR: "/.ok-config", OK_TRUST: "1" },
     preopens: { ".": "." },
     returnOnExit: true,
   });
@@ -35,6 +41,33 @@ if (process.env.OK_WASM_CHILD) {
       "",
     ].join("\n"),
   );
+  await mkdir(join(dir, "lib"));
+  await writeFile(join(dir, "lib", "greet.ok"), 'fn greet(name) { "hello {name}" }\n');
+  await writeFile(join(dir, "imports.ok"), 'import "./lib/greet.ok"\nprint(greet("wasi"))\n');
+  await mkdir(join(dir, "proj", "web"), { recursive: true });
+  await writeFile(
+    join(dir, "proj", "ok.ok"),
+    'import "web/ok.ok" as web\n\n# Build everything\ntask build needs [web.bundle] {\n  print("server built")\n}\n',
+  );
+  await writeFile(join(dir, "proj", "web", "ok.ok"), '# Bundle the frontend\ntask bundle {\n  print("bundle written")\n}\n');
+  await writeFile(
+    join(dir, "files.ok"),
+    [
+      'touch("dist/.keep")',
+      'touch("dist/.keep")',
+      'let t = tempfile(ext: "txt")',
+      'write("temp\\n", t)',
+      'let d = tempdir()',
+      'write("in dir\\n", d / "f.txt")',
+      'write("packed\\n", "src/a.txt")',
+      'tar("src", "out/src.tar.gz")',
+      'tar("src", "out/src.tar")',
+      'untar("out/src.tar.gz", "x")',
+      'untar("out/src.tar", "y")',
+      'print(exists("dist/.keep"), read(t), read(d / "f.txt"), read("x/src/a.txt"), read("y/src/a.txt"), os.exe == "")',
+      "",
+    ].join("\n"),
+  );
   const ok = (...args) => {
     const r = spawnSync(process.execPath, ["--no-warnings", import.meta.filename, join(process.cwd(), wasmPath)], {
       cwd: dir,
@@ -48,7 +81,19 @@ if (process.env.OK_WASM_CHILD) {
     ["error rendering", ok("-e", "print(nope)"), (r) => r.code === 1 && r.err.includes("error[name]: unknown name `nope`")],
     ["run is unavailable", ok("-e", "run git status"), (r) => r.code === 1 && r.err.includes("the WebAssembly build of ok cannot start programs")],
     ["fetch is unavailable", ok("-e", 'fetch("https://example.com")'), (r) => r.code === 1 && r.err.includes("cannot open network connections")],
+    ["import", ok("imports.ok"), (r) => r.code === 0 && r.out === "hello wasi\n"],
+    ["missing import", ok("-e", 'import "./nope.ok"'), (r) => r.code === 1 && r.err.includes('cannot import "./nope.ok": no such file')],
+    ["mount", ok("-C", "proj", "--yes", "build"), (r) => r.code === 0 && r.out === "bundle written\nserver built\n"],
+    [
+      "touch, temp files, tar",
+      ok("files.ok"),
+      (r) => r.code === 0 && r.out === "true temp\n in dir\n packed\n packed\n true\n",
+    ],
   ];
+  // Temporary files live in .ok-tmp in the working directory on WASI and
+  // are removed, with the directory, when the script ends.
+  const tempGone = await access(join(dir, ".ok-tmp")).then(() => false, () => true);
+  checks.push(["temp directory removed", { code: tempGone ? 0 : 1, out: "", err: ".ok-tmp is left behind\n" }, (r) => r.code === 0]);
   let failed = 0;
   for (const [name, result, pass] of checks) {
     if (pass(result)) {
