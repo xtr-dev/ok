@@ -25,9 +25,13 @@ task bless {
 # Each target runs in --forks processes; inputs are kept in fuzz/corpus/ between
 # runs, and crashes land in fuzz/artifacts/TARGET/ with a stop.
 task fuzz(--minutes: int = 30, --forks: int = 4, --target: string? = null) {
-  let targets = if target == null { ["lex", "parse", "fmt", "data", "archive"] } else { [target] }
+  let all = ["lex", "parse", "fmt", "eval", "data", "archive"]
+  let targets = if target == null { all } else { [target] }
   for t in targets {
-    run cargo +nightly fuzz run {t} -- -max_total_time={minutes * 60} -fork={forks} -timeout=10 -rss_limit_mb=4096 -close_fd_mask=3
+    # eval's sandbox keeps every allocation far below 512 MiB; the data
+    # targets may use their 1 GiB limits.
+    let malloc = if t == "eval" { 512 } else { 4096 }
+    run cargo +nightly fuzz run {t} -- -max_total_time={minutes * 60} -fork={forks} -timeout=10 -rss_limit_mb=4096 -malloc_limit_mb={malloc} -close_fd_mask=3
   }
 }
 

@@ -1,4 +1,4 @@
-# Fuzz targets: lexer, parser, formatter and checker, data formats, archives. Not part of the workspace (cargo-fuzz
+# Fuzz targets: lexer, parser, formatter and checker, evaluation, data formats, archives. Not part of the workspace (cargo-fuzz
 # needs a nightly toolchain); run with `cargo +nightly fuzz run parse`.
 [package]
 name = "okrun-fuzz"
@@ -47,6 +47,13 @@ bench = false
 [[bin]]
 name = "archive"
 path = "fuzz_targets/archive.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "eval"
+path = "fuzz_targets/eval.rs"
 test = false
 doc = false
 bench = false

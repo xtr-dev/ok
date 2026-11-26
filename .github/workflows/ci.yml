@@ -114,7 +114,12 @@ jobs:
       # A short run per target on every push catches easy regressions; the
       # long runs happen locally with `ok fuzz` (see ok.ok).
       - run: |
-          for t in lex parse fmt data archive; do
+          # eval also fails on any single allocation over 512 MiB: its
+          # sandbox caps what programs build well below that. The data
+          # targets may legitimately allocate up to their 1 GiB limits.
+          for t in lex parse fmt eval data archive; do
+            limit=""
+            if [ "$t" = eval ]; then limit="-malloc_limit_mb=512"; fi
             cargo +nightly fuzz run "$t" --target x86_64-unknown-linux-gnu -- \
-              -max_total_time=45 -timeout=10 -rss_limit_mb=4096 -close_fd_mask=3
+              -max_total_time=45 -timeout=10 -rss_limit_mb=4096 $limit -close_fd_mask=3
           done

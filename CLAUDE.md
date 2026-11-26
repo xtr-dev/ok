@@ -82,8 +82,12 @@ crates/okrun/           the published package `okrun`
 examples/<name>/        real scripts rewritten in ok, original alongside
 tests/cases/            golden tests (from M1)
 fuzz/                   cargo-fuzz targets: lex, parse, fmt (formatter and
-                        checker), data (every format, gzip), archive
-                        (unzip/untar must stay inside the destination)
+                        checker), eval (programs run in the interpreter's
+                        sandbox, `interp::run_sandboxed`: no files,
+                        commands or network, a step budget; formatting must
+                        not change their output), data (every format,
+                        gzip), archive (unzip/untar must stay inside the
+                        destination)
 ok.ok                   the repo's own tasks (dogfooding)
 site/                   landing page, playground (playground.js, playground-worker.js)
                         and install.sh / install.ps1, published to
@@ -161,7 +165,8 @@ files the cases write go to the ignored `tests/cases/out/`),
 canonical format), `tests/examples_run.rs` (examples with fake tools,
 expectations in `tests/examples/`), `tests/project.rs` (project mode and
 trust), `tests/bootstrap.rs` (`ok self init` and the `./ok` wrapper),
-`tests/no_panic.rs`, `tests/processes.rs` (timeouts, process trees,
+`tests/no_panic.rs` (lexing, parsing and sandboxed evaluation of mutated
+programs), `tests/processes.rs` (timeouts, process trees,
 interrupts and pipeline failures, which depend on timing),
 `tests/format_repo.rs` (formatting every `.ok` file of
 the repository keeps its syntax tree and comments and is idempotent, also
