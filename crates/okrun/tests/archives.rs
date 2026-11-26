@@ -32,6 +32,8 @@ fn run_ok(dir: &Path, code: &str) -> (bool, String) {
 
 enum M<'a> {
     File(&'a str, &'a str, u32),
+    /// Only the Unix-only test of modes uses directory members.
+    #[cfg_attr(not(unix), allow(dead_code))]
     Dir(&'a str),
     Sym(&'a str, &'a str),
     Hard(&'a str, &'a str),
