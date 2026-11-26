@@ -1,0 +1,8 @@
+# A failure inside `main` is traced to main, which ok itself started.
+fn check(n: int) {
+  if n > 3 { fail("too many: {n}") }
+}
+
+fn main(--count: int = 5) {
+  check(count)
+}

@@ -77,7 +77,10 @@ impl ErrKind {
 #[derive(Clone, Debug)]
 pub struct Frame {
     pub function: String,
-    pub call_site: Span,
+    /// Where the function was called; `None` when ok itself started it (a
+    /// script's `main`, or the task named on the command line), which has
+    /// no call site in the source.
+    pub call_site: Option<Span>,
 }
 
 /// Maximum number of call-trace frames shown under an error.
@@ -314,15 +317,20 @@ pub fn render(err: &OkError, sources: &SourceMap, color: Color) -> String {
         {
             run += 1;
         }
-        let file = sources.file(frame.call_site.file);
-        let (line, col) = file.line_col(frame.call_site.start as usize);
         let repeat = if run > 1 { " (repeated)" } else { "" };
+        let site = match frame.call_site {
+            Some(span) => {
+                let file = sources.file(span.file);
+                let (line, col) = file.line_col(span.start as usize);
+                format!("called at {}:{line}:{col}", file.name)
+            }
+            None => "started by ok".to_string(),
+        };
         let _ = writeln!(
             out,
-            "{pad} {} in `{}`, called at {}:{line}:{col}{repeat}",
+            "{pad} {} in `{}`, {site}{repeat}",
             p.gutter("="),
             frame.function,
-            file.name
         );
         i += run;
     }

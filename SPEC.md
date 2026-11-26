@@ -1186,7 +1186,11 @@ error[command]: command failed with exit code 101
 
 When an error passes through function calls, a short call trace (innermost
 first, at most 8 frames) follows the snippet, one line per frame:
-`= in \`check\`, called at deploy.ok:12:3`. Identical consecutive frames, as
+`= in \`check\`, called at deploy.ok:12:3`. A function that ok itself starts,
+a script's `main` (14) or the task named on the command line, has no call
+site; its frame reads `= in \`main\`, started by ok`. A dependency is called
+at its `needs` entry, whether it runs in ok's process or in parallel (15.5).
+Identical consecutive frames, as
 produced by recursion, are shown once with `(repeated)`. Notes are prefixed
 `note:` and the help line `help:`. Colors are used on terminals
 (2.2). Golden tests render without color.

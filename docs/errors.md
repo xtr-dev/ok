@@ -274,7 +274,7 @@ error[fail]: unknown environment qa; expected one of dev, staging, production
 4 |     fail("unknown environment {env}; expected one of {join(known, ", ")}")
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   |
-  = in `main`, called at fail.ok:1:4
+  = in `main`, started by ok
 ```
 
 For a fixed set of values like this one, a choice type does the check for you before the script starts; see [Command-line scripts](script-cli.md#choices).

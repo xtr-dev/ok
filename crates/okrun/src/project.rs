@@ -944,7 +944,11 @@ impl Interp {
             eprintln!("{}: up to date", t.qualified());
             return Ok(());
         }
-        self.call_user(&t.func, &scopes[&t.file], args)?;
+        // The task named on the command line is called with its own name
+        // as the call span (a dependency with its `needs` entry); it was
+        // started by ok, not called from source.
+        let result = self.call_user(&t.func, &scopes[&t.file], args);
+        crate::interp::started_by_ok(result, &t.func.name, t.decl.name_span)?;
         Ok(())
     }
 

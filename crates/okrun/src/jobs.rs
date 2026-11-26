@@ -379,15 +379,14 @@ impl Interp {
     ) -> R<()> {
         let inst = &plan.insts[i];
         let task = project.tasks[inst.task].qualified();
-        let spec = if inst.args.is_empty() {
-            format!("{fingerprint}:{task}")
-        } else {
-            let (from, k) = inst.edge;
-            format!(
-                "{fingerprint}:{task}:{}:{k}",
-                project.tasks[from].qualified()
-            )
-        };
+        // The `needs` entry is always passed so the worker calls the task
+        // from that entry, as a sequential run does: its arguments and its
+        // span (the "called at" note of an error) come from there.
+        let (from, k) = inst.edge;
+        let spec = format!(
+            "{fingerprint}:{task}:{}:{k}",
+            project.tasks[from].qualified()
+        );
         let exe = std::env::current_exe().map_err(|e| {
             OkError::new(
                 ErrKind::Io,
@@ -475,13 +474,8 @@ impl Interp {
             )
         };
         let parts: Vec<&str> = spec.split(':').collect();
-        let (fp, task, edge) = match parts.as_slice() {
-            [fp, task] => (*fp, *task, None),
-            [fp, task, from, k] => (
-                *fp,
-                *task,
-                Some((*from, k.parse::<usize>().map_err(|_| bad())?)),
-            ),
+        let (fp, task, from, k) = match parts.as_slice() {
+            [fp, task, from, k] => (*fp, *task, *from, k.parse::<usize>().map_err(|_| bad())?),
             _ => return Err(bad().into()),
         };
         crate::trust::ensure_trusted(project, opts.trust)?;
@@ -497,28 +491,19 @@ impl Interp {
         let ti = find(task).ok_or_else(bad)?;
         self.run_opts.parallel = true;
         let scopes = self.enter_project(project, opts)?;
-        let args = match edge {
-            None => Args {
-                pos: Vec::new(),
-                named: Vec::new(),
-                span: project.tasks[ti].decl.name_span,
-            },
-            Some((from, k)) => {
-                let from = find(from).ok_or_else(bad)?;
-                if project.tasks[from].needs.get(k) != Some(&ti) {
-                    return Err(bad().into());
-                }
-                let args = self.need_args(project, &scopes, from, k)?;
-                let inst = Inst {
-                    task: ti,
-                    label: String::new(),
-                    args,
-                    edge: (from, k),
-                    deps: Vec::new(),
-                };
-                self.bind_need_args(project, &scopes, &inst)?
-            }
+        let from = find(from).ok_or_else(bad)?;
+        if project.tasks[from].needs.get(k) != Some(&ti) {
+            return Err(bad().into());
+        }
+        let args = self.need_args(project, &scopes, from, k)?;
+        let inst = Inst {
+            task: ti,
+            label: String::new(),
+            args,
+            edge: (from, k),
+            deps: Vec::new(),
         };
+        let args = self.bind_need_args(project, &scopes, &inst)?;
         self.run_one(project, &scopes, ti, args, false)?;
         let _ = std::env::set_current_dir(&project.root);
         Ok(Value::Null)

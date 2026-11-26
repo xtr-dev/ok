@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Unsafe: a failed `write` (for example a function written as JSON, or a string written as CSV) emptied the existing file. `write`, `zip`, `tar` and `fetch(to:)` now write to a temporary file and replace the target only when complete, and a failed `append` adds nothing. As a result `read(p) | ... | write(p)` rewrites a file in place.
 - Unsafe: `copy(p, p)` emptied the file, and copying or moving a directory into itself never ended or deleted the source; both are now errors.
 - Copying a file onto an existing directory gives a portable error with a hint instead of the OS message; copying a directory onto an existing one merges them, as now documented. Messages for "is a directory", "not a directory", "not empty" and "already exists" are the same on every OS.
+- Error traces: a script's `main` and the task named on the command line end with `= in \`main\`, started by ok` instead of pointing at their own declaration, and a dependency that fails in a parallel worker is traced to its `needs` entry, as with `-j1`.
 
 ## [0.2.0] - 2026-11-26
 

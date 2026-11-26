@@ -1,0 +1,8 @@
+error[fail]: too many: 5
+ --> err_main_trace.ok:3:14
+  |
+3 |   if n > 3 { fail("too many: {n}") }
+  |              ^^^^^^^^^^^^^^^^^^^^^
+  |
+  = in `check`, called at err_main_trace.ok:7:3
+  = in `main`, started by ok

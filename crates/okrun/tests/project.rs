@@ -634,7 +634,7 @@ fn independent_dependencies_run_in_parallel_with_prefixed_output() {
 fn workers_need_the_same_trust_as_a_normal_run() {
     let p = Proj::new("parallel-trust", &[("ok.ok", RENDEZVOUS)]);
     // A worker started by hand on an untrusted project refuses to run.
-    let o = p.run(&["--task-worker", "0:a"]);
+    let o = p.run(&["--task-worker", "0:a:both:0"]);
     assert_eq!(o.status.code(), Some(1));
     assert!(
         err(&o).contains("this project is not trusted"),
@@ -646,8 +646,37 @@ fn workers_need_the_same_trust_as_a_normal_run() {
     let o = p.run(&["--jobs", "2", "both"]);
     assert!(o.status.success(), "{}", err(&o));
     // The right trust but a stale fingerprint is refused too.
-    let o = p.run(&["--task-worker", "0:a"]);
+    let o = p.run(&["--task-worker", "0:a:both:0"]);
     assert!(err(&o).contains("the project files changed"), "{}", err(&o));
+}
+
+#[test]
+fn a_failing_dependency_is_traced_to_its_needs_entry_in_every_mode() {
+    let p = Proj::new(
+        "trace-needs",
+        &[(
+            "ok.ok",
+            "task gen {\n  fail(\"boom\")\n}\ntask other { }\ntask build needs [gen, other] { }\ntask top {\n  fail(\"top\")\n}\n",
+        )],
+    );
+    // The needs entry `gen` is at 5:19, whether the dependency runs in ok's
+    // process (-j1) or in a parallel worker.
+    for jobs in ["-j1", "-j4"] {
+        let o = p.run_trusted(&[jobs, "build"]);
+        assert_eq!(o.status.code(), Some(1));
+        assert!(
+            err(&o).contains("= in `gen`, called at ok.ok:5:19\n"),
+            "{jobs}: {}",
+            err(&o)
+        );
+    }
+    // The task named on the command line has no call site in the source.
+    let o = p.run_trusted(&["top"]);
+    assert!(
+        err(&o).contains("= in `top`, started by ok\n"),
+        "{}",
+        err(&o)
+    );
 }
 
 #[test]

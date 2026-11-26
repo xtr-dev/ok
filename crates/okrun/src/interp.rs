@@ -387,7 +387,7 @@ impl Interp {
             };
             let span = d.name_span;
             let named = p.named.into_iter().map(|(n, v)| (n, v, span)).collect();
-            self.call_user(
+            let result = self.call_user(
                 &d,
                 env,
                 Args {
@@ -395,7 +395,8 @@ impl Interp {
                     named,
                     span,
                 },
-            )?;
+            );
+            started_by_ok(result, &d.name, span)?;
             return Ok(Value::Null);
         }
         Ok(last)
@@ -1680,7 +1681,7 @@ impl Interp {
                 if !decl.name.starts_with('<') && e.trace.len() < MAX_TRACE {
                     e.trace.push(Frame {
                         function: decl.name.clone(),
-                        call_site: call_span,
+                        call_site: Some(call_span),
                     });
                 }
                 Err(Flow::Err(e))
@@ -2387,4 +2388,23 @@ pub fn non_const(e: &Expr, known: &HashSet<String>) -> Option<Span> {
 /// Flush stdout, ignoring errors (a closed pipe at exit is not a failure).
 pub fn flush_stdout() {
     let _ = std::io::stdout().flush();
+}
+
+/// Mark the outermost trace frame of a function that ok itself called (a
+/// script's `main`, a task named on the command line) as having no call
+/// site: `span` is the function's own name, which `call_user` recorded in
+/// place of a call. The frame is only touched when it is that call's frame.
+pub(crate) fn started_by_ok<T>(result: R<T>, name: &str, span: Span) -> R<T> {
+    result.map_err(|flow| match flow {
+        Flow::Err(mut e) => {
+            if let Some(f) = e.trace.last_mut()
+                && f.function == name
+                && f.call_site == Some(span)
+            {
+                f.call_site = None;
+            }
+            Flow::Err(e)
+        }
+        other => other,
+    })
 }
