@@ -161,7 +161,9 @@ files the cases write go to the ignored `tests/cases/out/`),
 canonical format), `tests/examples_run.rs` (examples with fake tools,
 expectations in `tests/examples/`), `tests/project.rs` (project mode and
 trust), `tests/bootstrap.rs` (`ok self init` and the `./ok` wrapper),
-`tests/no_panic.rs`, `tests/format_repo.rs` (formatting every `.ok` file of
+`tests/no_panic.rs`, `tests/processes.rs` (timeouts, process trees,
+interrupts and pipeline failures, which depend on timing),
+`tests/format_repo.rs` (formatting every `.ok` file of
 the repository keeps its syntax tree and comments and is idempotent, also
 at narrow widths) and `tests/check_repo.rs` (`ok self check` finds nothing
 in valid code). `golden.rs` also runs `ok self check` on `tests/check/`
