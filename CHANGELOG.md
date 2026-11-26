@@ -37,6 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the inner extension, `write(v, "x.json.gz")` compresses (identical
   bytes on every OS), line formats stream, `append: true` adds a gzip
   member, and `gzip: true/false` overrides the name.
+- `ok self check` finds unknown names (with did-you-mean help), calls with
+  the wrong number of arguments or unknown named arguments (builtins, `fn`s,
+  imports), missing imports, and warns about `write` arguments that look
+  swapped. It checks every file of a project and reports all findings;
+  warnings fail the check only with `--strict`.
+- `ok self fmt` normalises spacing inside lines (operators, commas, colons,
+  brackets, records and one-line blocks) and breaks lines longer than 100
+  columns: before each `|` of a pipeline, or one element per line with a
+  trailing comma. It refuses to write a result whose syntax tree or comments
+  differ from the original.
 
 ### Changed
 
@@ -50,6 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The alternatives of a `match` arm (`p1 | p2`) must bind the same names.
 - A script or task argument that starts with `-` and a letter is a short
   flag; pass such values after `--` (`-5` and `-` are still values).
+- `ok self fmt` indents lines once per opening line instead of once per
+  bracket, so `print(match x {` indents its arms one level; end-of-line
+  comments keep their column; it needs files that parse, reports every
+  file that cannot be formatted and continues with the others.
+- `ok self check` and `ok self fmt` reject unknown options with exit code 2.
+- `examples/largest-files/largest-files.ok` is reformatted (one long call
+  split by the new line width).
 
 ## [0.1.0] - 2026-11-25
 

@@ -124,7 +124,8 @@ from `lazy::cursor`.
 | `project.rs` | project loading, namespaces, mounts, `needs`, running tasks, listing, completions |
 | `jobs.rs` | dependency plan (task instances with arguments), sequential and parallel runs, `--task-worker` processes |
 | `trust.rs` | fingerprints, trust store, prompt, diff, `ok trust`/`untrust` |
-| `fmt.rs` | `ok self fmt` (whitespace-only layout) |
+| `fmt.rs` | `ok self fmt`: token layout guided by the syntax tree, line breaking, self-check of tree and comments |
+| `check.rs` | static checks of `ok self check`: scope model, unknown names, argument counts, lints |
 | `tools.rs` | `ok self check`, `fmt`, `init` and the bootstrap wrapper templates |
 | `cli.rs` | `ok` command line |
 
@@ -136,7 +137,15 @@ files the cases write go to the ignored `tests/cases/out/`),
 canonical format), `tests/examples_run.rs` (examples with fake tools,
 expectations in `tests/examples/`), `tests/project.rs` (project mode and
 trust), `tests/bootstrap.rs` (`ok self init` and the `./ok` wrapper),
-`tests/no_panic.rs`. `crates/ok-fixture` is the test-only program behind
+`tests/no_panic.rs`, `tests/format_repo.rs` (formatting every `.ok` file of
+the repository keeps its syntax tree and comments and is idempotent, also
+at narrow widths) and `tests/check_repo.rs` (`ok self check` finds nothing
+in valid code). `golden.rs` also runs `ok self check` on `tests/check/`
+(libraries in `tests/check/lib/`) and the formatter on `tests/fmt/NAME.ok`
+against `NAME.formatted`.
+
+Builtin signatures for `ok self check` live in `builtins::SIGNATURES`; a
+new builtin needs an entry there (a test calls every builtin to compare). `crates/ok-fixture` is the test-only program behind
 `run` tests and the fake tools. Bless everything with `OK_BLESS=1 cargo
 test --workspace` and review the diff.
 
