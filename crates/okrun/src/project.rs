@@ -69,6 +69,45 @@ impl Task {
     }
 }
 
+/// The bytes of a project's files and env files, each read from disk once,
+/// so that what trust hashes, shows and snapshots is exactly what is parsed,
+/// imported and loaded (SPEC.md 16.2). A file replaced after ok read it
+/// cannot run unreviewed. A failed read is remembered too, so a file that
+/// was missing when the project was trusted stays missing for the run.
+#[derive(Default)]
+pub struct FileStore {
+    files: std::cell::RefCell<HashMap<PathBuf, Read>>,
+}
+
+/// A file's bytes, or why they could not be read.
+type Read = Result<Rc<[u8]>, std::io::ErrorKind>;
+
+impl FileStore {
+    /// The file's bytes, read from disk on the first call only.
+    pub fn read(&self, p: &Path) -> std::io::Result<Rc<[u8]>> {
+        if let Some(r) = self.cached(p) {
+            return r;
+        }
+        let r = std::fs::read(p).map(Rc::from).map_err(|e| e.kind());
+        self.files.borrow_mut().insert(p.to_path_buf(), r.clone());
+        r.map_err(Into::into)
+    }
+
+    /// The file's text, read from disk on the first call only.
+    pub fn read_text(&self, p: &Path) -> std::io::Result<String> {
+        let bytes = self.read(p)?;
+        String::from_utf8(bytes.to_vec()).map_err(|_| std::io::ErrorKind::InvalidData.into())
+    }
+
+    /// The result of an earlier read of `p`, if there was one.
+    pub fn cached(&self, p: &Path) -> Option<std::io::Result<Rc<[u8]>>> {
+        self.files
+            .borrow()
+            .get(p)
+            .map(|r| r.clone().map_err(Into::into))
+    }
+}
+
 pub struct Project {
     pub root: PathBuf,
     pub files: Vec<PFile>,
@@ -78,6 +117,8 @@ pub struct Project {
     pub env_files: Vec<String>,
     /// Every project file for trust: root, `ok/*.ok`, mounts and imports.
     pub trust_files: Vec<(String, PathBuf)>,
+    /// The content of those files and of the env files, as first read.
+    pub store: Rc<FileStore>,
 }
 
 /// The nearest directory at or above `start` that holds an `ok.ok`.
@@ -126,12 +167,13 @@ fn version_ok(required: &str) -> Option<bool> {
 impl Interp {
     fn parse_project_file(
         &mut self,
+        store: &FileStore,
         root: &Path,
         path: &Path,
         kind: FileKind,
     ) -> R<(FileId, Program)> {
         let rel = rel_of(root, path);
-        let text = std::fs::read_to_string(path).map_err(|e| {
+        let text = store.read_text(path).map_err(|e| {
             OkError::new(
                 ErrKind::Io,
                 format!("cannot read {rel}: {}", crate::interp::io_reason(&e)),
@@ -148,6 +190,7 @@ impl Interp {
     /// Load the project at `root` without running any of its code.
     pub fn load_project(&mut self, root: &Path) -> R<Project> {
         let root = crate::path::canonical(root).unwrap_or_else(|_| root.to_path_buf());
+        let store = Rc::new(FileStore::default());
         let mut files: Vec<PFile> = Vec::new();
         let mut file_ns: Vec<Option<String>> = Vec::new();
 
@@ -166,7 +209,7 @@ impl Interp {
             .into());
         }
         let (id, prog) =
-            self.parse_project_file(&root, &root_path, FileKind::Project { root: true })?;
+            self.parse_project_file(&store, &root, &root_path, FileKind::Project { root: true })?;
         let mut env_files = Vec::new();
         let mut mounts: Vec<(String, String, Span)> = Vec::new();
         for stmt in &prog.stmts {
@@ -266,8 +309,12 @@ impl Interp {
                     .with_help("rename the file")
                     .into());
                 }
-                let (id, prog) =
-                    self.parse_project_file(&root, &canon, FileKind::Project { root: false })?;
+                let (id, prog) = self.parse_project_file(
+                    &store,
+                    &root,
+                    &canon,
+                    FileKind::Project { root: false },
+                )?;
                 files.push(PFile {
                     rel,
                     path: canon,
@@ -306,7 +353,7 @@ impl Interp {
                 .into());
             }
             let (id, prog) =
-                self.parse_project_file(&root, &canon, FileKind::Project { root: true })?;
+                self.parse_project_file(&store, &root, &canon, FileKind::Project { root: true })?;
             let run_dir = canon
                 .parent()
                 .map(Path::to_path_buf)
@@ -443,7 +490,7 @@ impl Interp {
         let mut queue: Vec<PathBuf> = trust_files.iter().map(|(_, p)| p.clone()).collect();
         let mut seen: HashSet<PathBuf> = queue.iter().cloned().collect();
         while let Some(p) = queue.pop() {
-            let Ok(text) = std::fs::read_to_string(&p) else {
+            let Ok(text) = store.read_text(&p) else {
                 continue;
             };
             let Ok(prog) = crate::parser::parse(0, &text) else {
@@ -492,6 +539,7 @@ impl Interp {
             namespaces,
             env_files,
             trust_files,
+            store,
         })
     }
 }
@@ -665,7 +713,7 @@ impl Project {
     pub fn existing_env_files(&self, env: Option<&str>) -> Vec<(String, PathBuf)> {
         self.env_paths(env)
             .into_iter()
-            .filter(|(p, _)| p.is_file())
+            .filter(|(p, _)| self.store.read(p).is_ok())
             .map(|(p, _)| (rel_of(&self.root, &p), p))
             .collect()
     }
@@ -989,6 +1037,8 @@ impl Interp {
     ) -> R<HashMap<usize, Rc<Scope>>> {
         self.load_env_files(project, opts)?;
         self.project_root = Some(project.root.clone());
+        // Libraries are imported from the bytes trust covered.
+        self.project_files = Some(project.store.clone());
         std::env::set_current_dir(&project.root).map_err(|e| {
             OkError::new(ErrKind::Io, format!("cannot enter the project root: {e}"))
         })?;
@@ -1048,7 +1098,7 @@ impl Interp {
         let mut merged: Vec<(String, String)> = Vec::new();
         for (path, required) in files {
             let rel = rel_of(&project.root, &path);
-            let text = match std::fs::read_to_string(&path) {
+            let text = match project.store.read_text(&path) {
                 Ok(t) => t,
                 Err(_) if !required => continue,
                 Err(e) => {
@@ -1194,4 +1244,31 @@ Register-ArgumentCompleter -Native -CommandName ok -ScriptBlock {\n\
         }
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod store_tests {
+    use super::*;
+
+    /// What trust saw is what runs: a file changed or created after the
+    /// first read is not seen by the rest of the run.
+    #[test]
+    fn the_store_reads_each_file_once() {
+        let dir = std::env::temp_dir().join(format!("ok-store-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (a, b) = (dir.join("a.ok"), dir.join("b.ok"));
+        std::fs::write(&a, "trusted").unwrap();
+        let store = FileStore::default();
+        assert_eq!(&*store.read(&a).unwrap(), b"trusted");
+        assert!(store.read(&b).is_err());
+        std::fs::write(&a, "swapped").unwrap();
+        std::fs::write(&b, "planted").unwrap();
+        assert_eq!(store.read_text(&a).unwrap(), "trusted");
+        assert_eq!(
+            store.read(&b).unwrap_err().kind(),
+            std::io::ErrorKind::NotFound
+        );
+        assert!(store.cached(&dir.join("c.ok")).is_none());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

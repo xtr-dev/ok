@@ -8,6 +8,7 @@
 
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use sha2::Digest;
 
@@ -37,49 +38,57 @@ pub fn store_dir() -> Option<PathBuf> {
 }
 
 /// SHA-256 over every file: path, NUL, length, NUL, content (SPEC.md 16.2).
-pub fn fingerprint(files: &[(String, PathBuf)]) -> Result<String, OkError> {
-    let mut sorted: Vec<&(String, PathBuf)> = files.iter().collect();
+pub fn fingerprint(files: &[(String, Rc<[u8]>)]) -> String {
+    let mut sorted: Vec<&(String, Rc<[u8]>)> = files.iter().collect();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
     let mut h = sha2::Sha256::new();
-    for (rel, path) in sorted {
-        let content = std::fs::read(path).map_err(|e| {
-            OkError::new(ErrKind::Io, format!("cannot read {rel}: {}", io_reason(&e)))
-        })?;
+    for (rel, content) in sorted {
         h.update(rel.as_bytes());
         h.update([0]);
         h.update(content.len().to_string().as_bytes());
         h.update([0]);
-        h.update(&content);
+        h.update(content);
     }
-    Ok(hex::encode(h.finalize()))
+    hex::encode(h.finalize())
 }
 
 /// Everything trust covers for one run (SPEC.md 16.2): the project files,
 /// and the env files the run loads, which can change what every program a
 /// task starts does (`NODE_OPTIONS`, `PATH`), so they are code too.
 pub struct Inputs {
-    /// Project files, as (path relative to the root, path), in path order.
-    pub code: Vec<(String, PathBuf)>,
+    /// Project files, as (path relative to the root, content), in path
+    /// order. The content is the project's [`crate::project::FileStore`]
+    /// copy, the same bytes that are parsed and imported.
+    pub code: Vec<(String, Rc<[u8]>)>,
     /// The env files that exist, in the same form. Reviews show only
     /// their variable names, since values are often secrets.
-    pub env: Vec<(String, PathBuf)>,
+    pub env: Vec<(String, Rc<[u8]>)>,
 }
 
 impl Inputs {
     /// The inputs of a run of `project` with `--env env`.
-    pub fn of(project: &Project, env: Option<&str>) -> Inputs {
-        Inputs {
-            code: project.trust_files.clone(),
-            env: project.existing_env_files(env),
-        }
+    pub fn of(project: &Project, env: Option<&str>) -> Result<Inputs, OkError> {
+        let read = |files: Vec<(String, PathBuf)>| {
+            files
+                .into_iter()
+                .map(|(rel, path)| match project.store.read(&path) {
+                    Ok(bytes) => Ok((rel, bytes)),
+                    Err(e) => Err(OkError::new(
+                        ErrKind::Io,
+                        format!("cannot read {rel}: {}", io_reason(&e)),
+                    )),
+                })
+                .collect::<Result<Vec<_>, OkError>>()
+        };
+        Ok(Inputs {
+            code: read(project.trust_files.clone())?,
+            env: read(project.existing_env_files(env))?,
+        })
     }
 
-    fn all(&self) -> Vec<(String, PathBuf)> {
-        self.code.iter().chain(&self.env).cloned().collect()
-    }
-
-    pub fn fingerprint(&self) -> Result<String, OkError> {
-        fingerprint(&self.all())
+    pub fn fingerprint(&self) -> String {
+        let all: Vec<(String, Rc<[u8]>)> = self.code.iter().chain(&self.env).cloned().collect();
+        fingerprint(&all)
     }
 
     /// The file names for the prompt and `ok trust`, env files marked.
@@ -98,8 +107,11 @@ impl Inputs {
     /// Each file as a review shows it: project files as they are, env
     /// files as their variable names.
     fn shown(&self) -> Vec<(String, String)> {
-        let code = self.code.iter().map(|(r, p)| (r.clone(), read_text(p)));
-        let env = self.env.iter().map(|(r, p)| (r.clone(), env_summary(p)));
+        let code = self
+            .code
+            .iter()
+            .map(|(r, b)| (r.clone(), String::from_utf8_lossy(b).into_owned()));
+        let env = self.env.iter().map(|(r, b)| (r.clone(), env_summary(b)));
         code.chain(env).collect()
     }
 }
@@ -113,10 +125,9 @@ fn read_text(path: &Path) -> String {
 /// What the review shows of an env file: its variable names and a hash of
 /// its content, never the values. The hash makes a changed value visible
 /// in the diff without showing it.
-fn env_summary(path: &Path) -> String {
-    let bytes = std::fs::read(path).unwrap_or_default();
-    let sha = hex::encode(sha2::Sha256::digest(&bytes));
-    let text = String::from_utf8_lossy(&bytes);
+fn env_summary(bytes: &[u8]) -> String {
+    let sha = hex::encode(sha2::Sha256::digest(bytes));
+    let text = String::from_utf8_lossy(bytes);
     let mut out = format!("# variable names only; sha256 of the content: {sha}\n");
     match crate::formats::parse_document("env", &text, "") {
         Ok(crate::value::Value::Record(r)) => {
@@ -366,7 +377,7 @@ impl Store {
             let map: serde_json::Map<String, serde_json::Value> = inputs
                 .env
                 .iter()
-                .map(|(r, p)| (r.clone(), env_summary(p).into()))
+                .map(|(r, b)| (r.clone(), env_summary(b).into()))
                 .collect();
             let text = serde_json::to_string_pretty(&map).unwrap_or_default() + "\n";
             let dst = self.env_snapshot(fp);
@@ -377,12 +388,11 @@ impl Store {
                 })?;
         }
         let files = &inputs.code;
-        for (rel, path) in files {
+        for (rel, content) in files {
             let dst = dir.join(OkPath::parse(rel).native());
             let parent = dst.parent().unwrap_or(&dir);
             private_dir(parent)
-                .and_then(|_| std::fs::read(path))
-                .and_then(|content| private_write(&dst, &content))
+                .and_then(|_| private_write(&dst, content))
                 .map_err(|e| {
                     store_err(format!("cannot save a copy of {rel}: {}", io_reason(&e)))
                 })?;
@@ -445,8 +455,8 @@ pub fn ensure_trusted(project: &Project, skip: bool, env: Option<&str>) -> R<()>
     }
     let mut store = Store::load()?;
     let root = root_key(project);
-    let inputs = Inputs::of(project, env);
-    let fp = inputs.fingerprint()?;
+    let inputs = Inputs::of(project, env)?;
+    let fp = inputs.fingerprint();
     if store.is_trusted(&root, &fp) {
         return Ok(());
     }
@@ -778,8 +788,8 @@ pub fn command(
         return Ok(());
     }
     let project = interp.load_project(&root)?;
-    let inputs = Inputs::of(&project, env);
-    let fp = inputs.fingerprint()?;
+    let inputs = Inputs::of(&project, env)?;
+    let fp = inputs.fingerprint();
     now_trusting(&mut store, &key, &fp, &inputs)?;
     println!(
         "trusted {}\n  files:  {}\n  sha256: {fp}",
@@ -826,14 +836,11 @@ mod tests {
 
     #[test]
     fn fingerprint_depends_on_names_and_content() {
-        let dir = std::env::temp_dir().join(format!("ok-fp-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("a"), "x").unwrap();
-        let f1 = fingerprint(&[("ok.ok".into(), dir.join("a"))]).unwrap();
-        let f2 = fingerprint(&[("ok/x.ok".into(), dir.join("a"))]).unwrap();
-        std::fs::write(dir.join("a"), "y").unwrap();
-        let f3 = fingerprint(&[("ok.ok".into(), dir.join("a"))]).unwrap();
-        let _ = std::fs::remove_dir_all(&dir);
+        let x: Rc<[u8]> = Rc::from(&b"x"[..]);
+        let y: Rc<[u8]> = Rc::from(&b"y"[..]);
+        let f1 = fingerprint(&[("ok.ok".into(), x.clone())]);
+        let f2 = fingerprint(&[("ok/x.ok".into(), x)]);
+        let f3 = fingerprint(&[("ok.ok".into(), y)]);
         assert_ne!(f1, f2);
         assert_ne!(f1, f3);
         assert_eq!(f1.len(), 64);

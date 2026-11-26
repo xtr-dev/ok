@@ -2259,6 +2259,13 @@ file in order of its `/`-separated path relative to the root: the path, a
 NUL byte, the content length in decimal, a NUL byte, and the content. A run
 with `--env NAME` therefore has its own fingerprint.
 
+ok reads each of these files once. The bytes it fingerprints are the bytes
+it shows in the prompt and diff, keeps as the snapshot, parses, imports and
+loads as env files, so a file replaced while ok starts cannot run without
+review: the run uses the content that was checked, an env file that was
+missing at the check stays missing, and an import of a file that was not
+among the project files when they were read is a `trust` error.
+
 Env files often hold secrets, so the prompt, the diff and the snapshots
 show and keep only an env file's variable names and the SHA-256 of its
 content, never its values.

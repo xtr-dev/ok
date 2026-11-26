@@ -152,6 +152,9 @@ pub struct Interp {
     pub invocation_dir: PathBuf,
     /// The project root in project mode; `remove` refuses to delete it.
     pub project_root: Option<PathBuf>,
+    /// In project mode, the files as ok read them for trust: libraries are
+    /// imported from these bytes, never read again (SPEC.md 16.2).
+    pub(crate) project_files: Option<Rc<crate::project::FileStore>>,
     /// Environment changes made by the script (`env.set`, `env.remove`,
     /// `env file`): `None` removes a variable. Applied to every child
     /// process, so ok never mutates its own process environment.
@@ -200,6 +203,7 @@ impl Interp {
             upstream: Vec::new(),
             invocation_dir: std::env::current_dir().unwrap_or_default(),
             project_root: None,
+            project_files: None,
             env_overlay: Vec::new(),
         }
     }
@@ -576,7 +580,26 @@ impl Interp {
     }
 
     fn load_library(&mut self, full: &Path, display: &str, span: Span) -> R<Value> {
-        let text = std::fs::read_to_string(full).map_err(|e| {
+        let read = match &self.project_files {
+            None => std::fs::read_to_string(full),
+            // Every library a project imports was read, hashed and trusted
+            // with it; one that was not there then (or was not a project
+            // file) must not run now.
+            Some(store) => match store.cached(full) {
+                Some(_) => store.read_text(full),
+                None => {
+                    return Err(OkError::at(
+                        ErrKind::Trust,
+                        span,
+                        format!("cannot import {display}: it was not among the project files when ok read and checked them"),
+                    )
+                    .with_note("the file appeared or moved while ok was starting, so trust does not cover it")
+                    .with_help("run the task again")
+                    .into());
+                }
+            },
+        };
+        let text = read.map_err(|e| {
             OkError::at(
                 ErrKind::Io,
                 span,
