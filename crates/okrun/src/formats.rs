@@ -859,7 +859,69 @@ fn to_toml(v: &Value) -> Result<String, String> {
     }
 }
 
+/// The most values that aliases may add to one YAML text (SPEC.md 13.6).
+const YAML_ALIAS_LIMIT: u64 = 1_000_000;
+
+/// Counts, from the parser's events, how many values the aliases in a YAML
+/// text would add once resolved, without building them. `YamlLoader` copies
+/// an anchor's whole value at every alias, so aliases that repeat each other
+/// ("billion laughs") turn a 1 KB file into billions of values and exhaust
+/// memory; this pass lets `parse_yaml` refuse such a file first.
+#[derive(Default)]
+struct AliasCounter {
+    /// Size in values of each anchor seen so far, by the parser's anchor id.
+    anchors: HashMap<usize, u64>,
+    /// Open sequences and mappings: (anchor id, values inside so far).
+    open: Vec<(usize, u64)>,
+    /// Values added by aliases in the whole text.
+    added: u64,
+}
+
+impl AliasCounter {
+    /// Account for a finished value of `size` values (itself included).
+    fn finish(&mut self, anchor: usize, size: u64) {
+        if anchor > 0 {
+            self.anchors.insert(anchor, size);
+        }
+        if let Some((_, count)) = self.open.last_mut() {
+            *count = count.saturating_add(size);
+        }
+    }
+}
+
+impl yaml_rust2::parser::EventReceiver for AliasCounter {
+    fn on_event(&mut self, ev: yaml_rust2::parser::Event) {
+        use yaml_rust2::parser::Event;
+        match ev {
+            Event::Scalar(_, _, anchor, _) => self.finish(anchor, 1),
+            Event::SequenceStart(anchor, _) | Event::MappingStart(anchor, _) => {
+                self.open.push((anchor, 1));
+            }
+            Event::SequenceEnd | Event::MappingEnd => {
+                if let Some((anchor, size)) = self.open.pop() {
+                    self.finish(anchor, size);
+                }
+            }
+            Event::Alias(id) => {
+                let size = self.anchors.get(&id).copied().unwrap_or(1);
+                self.added = self.added.saturating_add(size);
+                self.finish(0, size);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn parse_yaml(text: &str, name: &str) -> Result<Vec<Value>, String> {
+    let mut counter = AliasCounter::default();
+    yaml_rust2::parser::Parser::new_from_str(text)
+        .load(&mut counter, true)
+        .map_err(|e| format!("invalid YAML in {name}: {e}"))?;
+    if counter.added > YAML_ALIAS_LIMIT {
+        return Err(format!(
+            "invalid YAML in {name}: its aliases expand to more than {YAML_ALIAS_LIMIT} values"
+        ));
+    }
     let docs = yaml_rust2::YamlLoader::load_from_str(text)
         .map_err(|e| format!("invalid YAML in {name}: {e}"))?;
     docs.into_iter().map(|d| from_yaml(d, name)).collect()
@@ -1400,6 +1462,32 @@ mod tests {
         assert_eq!(
             run("to({b: 1, a: []}, \"json\", compact: true)"),
             "{\"b\": 1, \"a\": []}\n"
+        );
+    }
+
+    #[test]
+    fn yaml_alias_expansion_is_limited() {
+        // Nine levels of nine aliases each: 9^9 values once resolved. Without
+        // the limit this exhausts memory; with it, it fails before building.
+        let mut lines = vec!["a: &a [x, x, x, x, x, x, x, x, x]".to_string()];
+        for (prev, cur) in "abcdefgh".chars().zip("bcdefghi".chars()) {
+            lines.push(format!(
+                "{cur}: &{cur} [{}]",
+                vec![format!("*{prev}"); 9].join(", ")
+            ));
+        }
+        let text = lines.join("\\n");
+        let started = std::time::Instant::now();
+        let v = run(&format!("parse(\"{text}\", \"yaml\")"));
+        assert_eq!(
+            v,
+            "error: invalid YAML in the text: its aliases expand to more than 1000000 values"
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        // Ordinary aliases and merge keys still resolve.
+        assert_eq!(
+            run(r#"parse("d: &d\n  a: 1\nx: *d\ny:\n  <<: *d\n  b: 2", "yaml")"#),
+            "{d: {a: 1}, x: {a: 1}, y: {b: 2, a: 1}}"
         );
     }
 

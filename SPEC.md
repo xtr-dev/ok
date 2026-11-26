@@ -1581,6 +1581,14 @@ Anchors and aliases are resolved. Merge keys (`<<: *defaults`), common in
 CI and compose files, are applied: the merged mapping's keys are added unless
 the mapping already has them.
 
+Each alias is a full copy of its anchor's value, so a few lines of aliases
+that repeat each other could stand for billions of values. Before building
+anything, ok counts the values aliases would add; when that is more than
+1,000,000 in one file (or `parse` text), reading fails with a `format`
+error: `invalid YAML in NAME: its aliases expand to more than 1000000
+values`. Ordinary files, which alias a few defaults blocks, are far below
+the limit.
+
 ### 13.7 .env
 
 One `KEY=value` per line; blank lines and `#` comments are ignored; an

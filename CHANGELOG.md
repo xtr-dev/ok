@@ -73,6 +73,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Security: reading or parsing YAML whose aliases repeat each other
+  ("billion laughs") could exhaust memory: a 1 KB file expanded to hundreds
+  of millions of values. ok now counts what aliases would add before
+  building anything and fails with a `format` error above 1,000,000 values.
 - The lexer no longer takes exponential time and memory on nested
   triple-quoted strings with interpolations (`"""{"""{...`, found by
   fuzzing); an interpolation that runs past the end of its `"""` string is

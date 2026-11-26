@@ -1,0 +1,3 @@
+# Aliases that repeat each other would expand to 9^9 values (SPEC 13.6).
+let settings = read("data/aliases.yaml")
+print(settings.a)

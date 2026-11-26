@@ -874,3 +874,16 @@ The playground runs ok as built from `main`, not the latest release: the
 release does not have the WebAssembly changes yet. Once a release has them,
 building it from the latest release tag would keep the page and the
 installed binary in step.
+
+**YAML aliases may add at most 1,000,000 values per file.** `yaml-rust2`
+copies an anchor's value at every alias, so a 1 KB file of aliases that
+repeat each other expands to hundreds of millions of values and exhausts
+memory (found while reviewing whether `read` is safe on untrusted files).
+A first pass over the parser's events computes what the aliases would add
+without building it, and `read`/`parse` refuse above the limit. The limit
+counts only alias copies, so large YAML files without aliases are not
+affected, and real files (a few defaults blocks merged into jobs or
+services) stay far below it. The other parsers were checked at the same
+time: JSON, YAML and TOML stop deep nesting with an error (128, 256 and
+TOML's own limit), and gzip data that expands beyond available memory ends
+in an `out of memory` error rather than a crash.
