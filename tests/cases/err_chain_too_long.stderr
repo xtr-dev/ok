@@ -1,0 +1,7 @@
+error[syntax]: expression is too long or nested too deeply (more than 1000 levels)
+    --> err_chain_too_long.ok:1003:3
+     |
+1003 |   1 +
+     |   ^
+     |
+     = help: split it into steps with `let`, or use a list, a loop or `match` instead of a long chain

@@ -1,0 +1,8 @@
+error[value]: too much recursion: expressions and calls nest too deeply
+ --> err_eval_depth.ok:6:10
+  |
+6 |   return f(
+  |          ^^
+  |
+  = in `f`, called at err_eval_depth.ok:6:10 (repeated)
+  = help: make the recursion shallower, or use a loop

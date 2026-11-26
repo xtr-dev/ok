@@ -445,6 +445,13 @@ after `=>` of an arm, `{` starts a block.
 A call's `(` must follow the callee with no whitespace: `f(x)` is a call,
 `f (x)` is not (and in a pipeline stage it is a juxtaposed argument).
 
+Size limits keep hostile or generated input from exhausting the stack:
+expressions and blocks nest at most 150 deep, and an expression's syntax
+tree is at most 1000 levels tall, where every link of a chain counts as a
+level: each operator in `a + b + c`, each stage in `x | f | g`, each `.name`,
+`[i]` or call in `r.a.b()`, and each `else if` branch. Exceeding either is a
+syntax error.
+
 ## 5. Values and types
 
 ### 5.1 Kinds
@@ -598,7 +605,9 @@ time). `t.format(pattern, utc: false)` formats with strftime-style patterns
 
 ### 5.10 Functions
 
-Calls nest at most 2000 deep; deeper recursion is an error, not a crash.
+Calls nest at most 2000 deep, and evaluation (expressions inside calls
+inside expressions, counted across calls) at most 50000 levels; deeper
+recursion is an error, not a crash.
 
 Functions are values. `fn name(...) { }` declares a named function; inside a
 block it is visible in the whole block (declarations are hoisted), at the top

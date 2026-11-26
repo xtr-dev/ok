@@ -1,0 +1,10 @@
+# A recursive call deep inside an expression nests evaluation faster than
+# the call limit counts; the evaluation depth limit still ends it with an
+# error instead of a stack overflow.
+fn f(n) {
+  if n == 0 { return 0 }
+  return f(
+    n - 1,
+  ) + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0
+}
+print(f(1990))

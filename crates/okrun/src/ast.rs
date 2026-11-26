@@ -88,6 +88,19 @@ pub enum PlaceSeg {
 pub struct Block {
     pub stmts: Vec<Stmt>,
     pub span: Span,
+    /// The block's [`Expr::height`]: 1 plus the tallest statement.
+    pub height: u32,
+}
+
+impl Block {
+    pub fn new(stmts: Vec<Stmt>, span: Span) -> Block {
+        let height = 1 + stmts.iter().map(stmt_height).max().unwrap_or(0);
+        Block {
+            stmts,
+            span,
+            height,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -253,6 +266,13 @@ pub struct Need {
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Span,
+    /// The height of the tree rooted here: 1 for a leaf, otherwise 1 plus
+    /// the tallest child (blocks and closure bodies included). The
+    /// evaluator, the checker and the formatter recurse once (or a few
+    /// times) per level, so the parser rejects programs whose trees are
+    /// taller than its limit; computing it at construction keeps that check
+    /// O(1) per node, also for long chains like `a + b + c ...`.
+    pub height: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -534,7 +554,176 @@ pub enum ExprKind {
 
 impl Expr {
     pub fn new(kind: ExprKind, span: Span) -> Expr {
-        Expr { kind, span }
+        let height = kind_height(&kind).saturating_add(1);
+        Expr { kind, span, height }
+    }
+}
+
+/// The height of the tallest direct child of an expression (0 for none).
+fn kind_height(kind: &ExprKind) -> u32 {
+    fn args(a: &[Arg]) -> u32 {
+        a.iter()
+            .map(|a| match a {
+                Arg::Pos(e) | Arg::Spread(e) | Arg::Named { value: e, .. } => e.height,
+            })
+            .max()
+            .unwrap_or(0)
+    }
+    fn pieces(p: &[StrPiece]) -> u32 {
+        p.iter()
+            .map(|p| match p {
+                StrPiece::Interp { expr, .. } => expr.height,
+                StrPiece::Lit(_) => 0,
+            })
+            .max()
+            .unwrap_or(0)
+    }
+    fn pat(p: &MatchPat) -> u32 {
+        match p {
+            MatchPat::Lit(e) => e.height,
+            MatchPat::Wildcard(_) | MatchPat::Bind(..) => 0,
+            MatchPat::List { items, .. } | MatchPat::Alt(items, _) => {
+                items.iter().map(pat).max().unwrap_or(0) + 1
+            }
+            MatchPat::Record { fields, .. } => {
+                fields.iter().map(|(_, p)| pat(p)).max().unwrap_or(0) + 1
+            }
+        }
+    }
+    let opt = |e: &Option<Box<Expr>>| e.as_ref().map_or(0, |e| e.height);
+    let block = |b: &Option<Block>| b.as_ref().map_or(0, |b| b.height);
+    match kind {
+        ExprKind::Null
+        | ExprKind::Bool(_)
+        | ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Duration(_)
+        | ExprKind::Ident(_)
+        | ExprKind::It => 0,
+        ExprKind::Str(p) => pieces(p),
+        ExprKind::List(elems) => elems
+            .iter()
+            .map(|e| match e {
+                Elem::Item(e) | Elem::Spread(e) => e.height,
+            })
+            .max()
+            .unwrap_or(0),
+        ExprKind::Record(entries) => entries
+            .iter()
+            .map(|e| match e {
+                Entry::Field { value: e, .. } | Entry::Spread(e) => e.height,
+            })
+            .max()
+            .unwrap_or(0),
+        ExprKind::Group(e) | ExprKind::Unary(_, e) | ExprKind::Catch(e) => e.height,
+        ExprKind::Binary(_, a, b) => a.height.max(b.height),
+        ExprKind::Call { callee, args: a } => callee.height.max(args(a)),
+        ExprKind::MethodCall { recv, args: a, .. } => recv.height.max(args(a)),
+        ExprKind::Field { expr, .. } => expr.height,
+        ExprKind::Index { expr, index } => expr.height.max(index.height),
+        ExprKind::If {
+            cond,
+            then,
+            otherwise,
+        } => cond.height.max(then.height).max(opt(otherwise)),
+        ExprKind::Block(b) => b.height,
+        ExprKind::Match { subject, arms } => arms
+            .iter()
+            .map(|a| {
+                let pats = a.pats.iter().map(pat).max().unwrap_or(0);
+                let guard = a.guard.as_ref().map_or(0, |g| g.height);
+                pats.max(guard).max(a.body.height)
+            })
+            .max()
+            .unwrap_or(0)
+            .max(subject.height),
+        ExprKind::Try {
+            body,
+            handler,
+            finally,
+            ..
+        } => body.height.max(block(handler)).max(block(finally)),
+        ExprKind::Lambda(decl) => fn_height(decl),
+        ExprKind::Pipe { lhs, stage } => lhs.height.max(match stage {
+            Stage::Call { callee, args: a } => callee.height.max(args(a)),
+            Stage::Method { recv, args: a, .. } => recv.height.max(args(a)),
+            Stage::Value(e) | Stage::Run(e) => e.height,
+        }),
+        ExprKind::Run(cmd) => {
+            let word = |w: &CmdWord| {
+                w.parts
+                    .iter()
+                    .map(|p| match p {
+                        CmdPart::Lit(_) => 0,
+                        CmdPart::Interp { expr, .. } | CmdPart::Spread(expr) => expr.height,
+                    })
+                    .max()
+                    .unwrap_or(0)
+            };
+            let words = cmd.words.iter().map(word).max().unwrap_or(0);
+            let redirects = cmd
+                .redirects
+                .iter()
+                .map(|(_, w)| word(w))
+                .max()
+                .unwrap_or(0);
+            words.max(redirects).max(opt(&cmd.options))
+        }
+        ExprKind::RunFn { args: a, .. } => args(a),
+    }
+}
+
+fn params_height(params: &[Param]) -> u32 {
+    params
+        .iter()
+        .filter_map(|p| p.default.as_ref().map(|d| d.height))
+        .max()
+        .unwrap_or(0)
+}
+
+fn fn_height(decl: &FnDecl) -> u32 {
+    decl.body.height.max(params_height(&decl.params))
+}
+
+/// The height of a statement: that of its tallest expression or block.
+pub fn stmt_height(s: &Stmt) -> u32 {
+    match &s.kind {
+        StmtKind::Let { value, .. } => value.height,
+        StmtKind::Fn(decl) => fn_height(decl),
+        StmtKind::Task(t) => {
+            let opt = |e: &Option<Expr>| e.as_ref().map_or(0, |e| e.height);
+            let needs = t
+                .needs
+                .iter()
+                .flat_map(|n| n.args.iter().map(|(_, _, e)| e.height))
+                .max()
+                .unwrap_or(0);
+            t.body
+                .height
+                .max(params_height(&t.params))
+                .max(opt(&t.sources))
+                .max(opt(&t.outputs))
+                .max(needs)
+        }
+        StmtKind::Import { .. }
+        | StmtKind::Requires { .. }
+        | StmtKind::EnvFile { .. }
+        | StmtKind::Break
+        | StmtKind::Continue
+        | StmtKind::Return(None) => 0,
+        StmtKind::Assign { target, value, .. } => target
+            .path
+            .iter()
+            .map(|seg| match seg {
+                PlaceSeg::Index(e) => e.height,
+                PlaceSeg::Field(..) => 0,
+            })
+            .max()
+            .unwrap_or(0)
+            .max(value.height),
+        StmtKind::For { iter, body, .. } => iter.height.max(body.height),
+        StmtKind::While { cond, body } => cond.height.max(body.height),
+        StmtKind::Return(Some(e)) | StmtKind::Expr(e) => e.height,
     }
 }
 

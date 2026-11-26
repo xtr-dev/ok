@@ -17,6 +17,14 @@ use crate::source::{FileId, Span};
 /// Maximum nesting of expressions and blocks.
 const MAX_DEPTH: usize = 150;
 
+/// Maximum height of an expression tree ([`Expr::height`]). Nesting is
+/// limited by [`MAX_DEPTH`], but chains like `a + b + c`, `x | f | g`,
+/// `r.a.b.c` and `else if` branches build a tree as tall as they are long
+/// without nesting the parser, and the evaluator, checker and formatter
+/// recurse once per level. 1000 levels stay well inside the stack of the
+/// WebAssembly build (which overflows at about 3000 levels of `+`).
+const MAX_HEIGHT: u32 = 1000;
+
 /// Parse a whole file.
 pub fn parse(file: FileId, src: &str) -> Result<Program, OkError> {
     let lexed = lexer::lex(file, src)?;
@@ -265,6 +273,20 @@ impl Parser {
 
     fn leave(&mut self) {
         self.depth -= 1;
+    }
+
+    /// Rejects a tree taller than [`MAX_HEIGHT`]. Called as chains grow, so
+    /// that a hostile chain stops at the limit instead of being built (and
+    /// later dropped, which also recurses) to full length first.
+    fn check_height(&self, e: &Expr) -> PResult<()> {
+        if e.height > MAX_HEIGHT {
+            return Err(syntax(
+                self.prev_span(),
+                format!("expression is too long or nested too deeply (more than {MAX_HEIGHT} levels)"),
+            )
+            .with_help("split it into steps with `let`, or use a list, a loop or `match` instead of a long chain"));
+        }
+        Ok(())
     }
 
     fn with_nostruct<T>(
@@ -671,10 +693,7 @@ impl Parser {
         }
         let close = self.bump();
         self.leave();
-        Ok(Block {
-            stmts,
-            span: open.span.to(close.span),
-        })
+        Ok(Block::new(stmts, open.span.to(close.span)))
     }
 
     // ----- declarations -------------------------------------------------------
@@ -1197,7 +1216,9 @@ impl Parser {
         self.enter()?;
         let r = self.pipeline();
         self.leave();
-        r
+        let e = r?;
+        self.check_height(&e)?;
+        Ok(e)
     }
 
     fn pipeline(&mut self) -> PResult<Expr> {
@@ -1213,6 +1234,7 @@ impl Parser {
                 },
                 span,
             );
+            self.check_height(&lhs)?;
         }
         Ok(lhs)
     }
@@ -1307,6 +1329,7 @@ impl Parser {
                     },
                     span,
                 );
+                self.check_height(&callee)?;
             }
             let mut args = Vec::new();
             if self.at(&Tok::LParen) && !self.peek_token().space_before {
@@ -1428,6 +1451,7 @@ impl Parser {
                 ExprKind::Binary(BinOp::Coalesce, Box::new(left), Box::new(right)),
                 span,
             );
+            self.check_height(&left)?;
         }
         Ok(left)
     }
@@ -1441,6 +1465,7 @@ impl Parser {
                 ExprKind::Binary(BinOp::Or, Box::new(left), Box::new(right)),
                 span,
             );
+            self.check_height(&left)?;
         }
         Ok(left)
     }
@@ -1454,6 +1479,7 @@ impl Parser {
                 ExprKind::Binary(BinOp::And, Box::new(left), Box::new(right)),
                 span,
             );
+            self.check_height(&left)?;
         }
         Ok(left)
     }
@@ -1517,6 +1543,7 @@ impl Parser {
             let right = self.term()?;
             let span = left.span.to(right.span);
             left = Expr::new(ExprKind::Binary(op, Box::new(left), Box::new(right)), span);
+            self.check_height(&left)?;
         }
         Ok(left)
     }
@@ -1534,6 +1561,7 @@ impl Parser {
             let right = self.unary()?;
             let span = left.span.to(right.span);
             left = Expr::new(ExprKind::Binary(op, Box::new(left), Box::new(right)), span);
+            self.check_height(&left)?;
         }
         Ok(left)
     }
@@ -1589,6 +1617,7 @@ impl Parser {
                             },
                             span,
                         );
+                        self.check_height(&e)?;
                     } else {
                         let span = e.span.to(n.span);
                         e = Expr::new(
@@ -1599,6 +1628,7 @@ impl Parser {
                             },
                             span,
                         );
+                        self.check_height(&e)?;
                     }
                 }
                 Tok::LParen if !self.peek_token().space_before => {
@@ -1612,6 +1642,7 @@ impl Parser {
                         },
                         span,
                     );
+                    self.check_height(&e)?;
                 }
                 Tok::LBracket if !self.peek_token().space_before => {
                     self.bump();
@@ -1625,11 +1656,13 @@ impl Parser {
                         },
                         span,
                     );
+                    self.check_height(&e)?;
                 }
                 Tok::Question => {
                     let q = self.bump();
                     let span = e.span.to(q.span);
                     e = Expr::new(ExprKind::Catch(Box::new(e)), span);
+                    self.check_height(&e)?;
                     let continues = match self.peek() {
                         Tok::Dot => matches!(self.peek_at(1).tok, Tok::Ident(_)),
                         Tok::LParen | Tok::LBracket => !self.peek_token().space_before,
@@ -1672,6 +1705,7 @@ impl Parser {
         self.fn_depth -= 1;
         self.loop_depth = saved_loop;
         let body = body?;
+        let body_span = body.span;
         let span = start.to(body.span);
         let params = params
             .into_iter()
@@ -1691,13 +1725,13 @@ impl Parser {
             name: "<closure>".into(),
             name_span: start,
             params,
-            body: Block {
-                span: body.span,
-                stmts: vec![Stmt {
-                    span: body.span,
+            body: Block::new(
+                vec![Stmt {
+                    span: body_span,
                     kind: StmtKind::Expr(body),
                 }],
-            },
+                body_span,
+            ),
             doc: None,
             span,
         };
@@ -1966,32 +2000,50 @@ impl Parser {
     }
 
     fn if_expr(&mut self) -> PResult<Expr> {
-        let start = self.bump().span;
-        let cond = self.with_nostruct(true, |p| p.expr())?;
-        let then = self.block()?;
-        let mut end = then.span;
-        let otherwise = if self.at(&Tok::Kw(Kw::Else)) {
+        // `else if` chains are collected in a loop rather than by recursion,
+        // so a long chain neither nests the parser nor grows past
+        // MAX_HEIGHT before it is rejected.
+        let mut branches: Vec<(Span, Expr, Block)> = Vec::new();
+        let mut last: Option<Box<Expr>> = None;
+        loop {
+            let start = self.bump().span;
+            let cond = self.with_nostruct(true, |p| p.expr())?;
+            let then = self.block()?;
+            branches.push((start, cond, then));
+            if branches.len() as u32 > MAX_HEIGHT {
+                return Err(syntax(
+                    self.prev_span(),
+                    format!("this `if` has more than {MAX_HEIGHT} `else if` branches"),
+                )
+                .with_help("use `match`, or look the value up in a record"));
+            }
+            if !self.at(&Tok::Kw(Kw::Else)) {
+                break;
+            }
             self.bump();
-            let e = if self.at(&Tok::Kw(Kw::If)) {
-                self.if_expr()?
-            } else {
+            if !self.at(&Tok::Kw(Kw::If)) {
                 let b = self.block()?;
                 let s = b.span;
-                Expr::new(ExprKind::Block(b), s)
-            };
-            end = e.span;
-            Some(Box::new(e))
-        } else {
-            None
-        };
-        Ok(Expr::new(
-            ExprKind::If {
-                cond: Box::new(cond),
-                then,
-                otherwise,
-            },
-            start.to(end),
-        ))
+                last = Some(Box::new(Expr::new(ExprKind::Block(b), s)));
+                break;
+            }
+        }
+        let mut otherwise = last;
+        while let Some((start, cond, then)) = branches.pop() {
+            let end = otherwise.as_ref().map_or(then.span, |e| e.span);
+            let e = Expr::new(
+                ExprKind::If {
+                    cond: Box::new(cond),
+                    then,
+                    otherwise,
+                },
+                start.to(end),
+            );
+            otherwise = Some(Box::new(e));
+        }
+        let e = *otherwise.ok_or_else(internal)?;
+        self.check_height(&e)?;
+        Ok(e)
     }
 
     /// `try { } catch e { } finally { }` (SPEC.md 6.7).
@@ -2381,13 +2433,13 @@ fn wrap_it(e: Expr) -> Expr {
         name: "<shorthand>".into(),
         name_span: span,
         params: vec![param],
-        body: Block {
-            span,
-            stmts: vec![Stmt {
+        body: Block::new(
+            vec![Stmt {
                 span,
                 kind: StmtKind::Expr(e),
             }],
-        },
+            span,
+        ),
         doc: None,
         span,
     };
@@ -2474,6 +2526,48 @@ mod tests {
             Some(StmtKind::Let { value, .. }) => value.kind,
             other => panic!("not an expression: {other:?}"),
         }
+    }
+
+    #[test]
+    fn long_chains_are_rejected_before_they_get_tall() {
+        let n = 150_000;
+        let cases = [
+            format!("let x = 0{}", " + 1".repeat(n)),
+            format!("let x = 1{}", " * 1".repeat(n)),
+            format!("let x = \"a\"{}", " | trim".repeat(n)),
+            format!("let x = true{}", " and true".repeat(n)),
+            format!("let x = true{}", " or true".repeat(n)),
+            format!("let x = null{}", " ?? null".repeat(n)),
+            format!("let x = r{}", ".a".repeat(n)),
+            format!("let x = r{}", "[0]".repeat(n)),
+            format!("let x = s{}", ".trim()".repeat(n)),
+            format!("let x = f{}", "()".repeat(n)),
+            format!("let x = 1 | a{}", ".b".repeat(n)),
+        ];
+        for src in &cases {
+            let e = fails(src);
+            assert!(
+                e.message.contains("too long"),
+                "{}: {}",
+                &src[..20],
+                e.message
+            );
+        }
+        let mut src = String::from("let x = if a { 0 }");
+        for i in 0..n {
+            src.push_str(&format!(" else if b == {i} {{ 1 }}"));
+        }
+        assert!(fails(&src).message.contains("`else if` branches"));
+        // Just under the limit parses, and the tree height is the chain length.
+        let p = ok(&format!("let x = 0{}", " + 1".repeat(990)));
+        match &p.stmts[0].kind {
+            StmtKind::Let { value, .. } => assert_eq!(value.height, 991),
+            _ => unreachable!(),
+        }
+        ok(&format!(
+            "let x = if a {{ 0 }}{} else {{ 2 }}",
+            " else if b { 1 }".repeat(990)
+        ));
     }
 
     #[test]

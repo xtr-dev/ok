@@ -26,6 +26,20 @@ use crate::value::{Func, Record, Value, compare, equal};
 /// Maximum depth of nested ok function calls.
 const MAX_CALL_DEPTH: usize = 2000;
 
+/// Maximum nesting of expression evaluation, counted across calls. The
+/// parser limits one expression's height (1000) and calls are limited to
+/// 2000, but a recursive call inside a tall expression multiplies the two;
+/// each level of the tree-walking evaluator takes about 1.3 KiB of stack
+/// in the release build, so 50000 levels stay well inside the 256 MiB
+/// interpreter thread (src/main.rs) and end with an error, not a crash.
+/// Unoptimised builds (the tests) use about five times as much stack per
+/// level, so they stop sooner.
+pub const MAX_EVAL_DEPTH: usize = if cfg!(debug_assertions) {
+    10_000
+} else {
+    50_000
+};
+
 /// Ways evaluation can leave the normal path.
 pub enum Flow {
     Err(Box<OkError>),
@@ -138,6 +152,11 @@ pub struct Interp {
     /// into: importing the same file there again is a no-op (SPEC.md 11).
     unaliased: Vec<(Weak<Scope>, PathBuf)>,
     depth: usize,
+    /// Current nesting of `eval_lazy`, limited by `max_eval_depth`.
+    eval_depth: usize,
+    /// [`MAX_EVAL_DEPTH`] by default; lower for an interpreter that runs on
+    /// a smaller stack than the `ok` binary's (the fuzz targets).
+    pub max_eval_depth: usize,
     /// Caught error records, so `fail(e)` can re-raise the original error.
     caught: Vec<(Weak<Record>, OkError)>,
     /// The script's command-line arguments, parsed against `main`.
@@ -196,6 +215,8 @@ impl Interp {
             unaliased: Vec::new(),
             loading: Vec::new(),
             depth: 0,
+            eval_depth: 0,
+            max_eval_depth: MAX_EVAL_DEPTH,
             caught: Vec::new(),
             script_argv,
             run_opts: RunOpts::default(),
@@ -1054,6 +1075,24 @@ impl Interp {
     /// pipeline inputs, call arguments (forced again unless the callee
     /// streams) and `for` loops.
     fn eval_lazy(&mut self, e: &Expr, scope: &Rc<Scope>) -> R<Value> {
+        if self.eval_depth >= self.max_eval_depth {
+            // The limit is not in the message: it differs between release
+            // and test builds, and the message should not.
+            return Err(OkError::at(
+                ErrKind::Value,
+                e.span,
+                "too much recursion: expressions and calls nest too deeply",
+            )
+            .with_help("make the recursion shallower, or use a loop")
+            .into());
+        }
+        self.eval_depth += 1;
+        let r = self.eval_lazy_inner(e, scope);
+        self.eval_depth -= 1;
+        r
+    }
+
+    fn eval_lazy_inner(&mut self, e: &Expr, scope: &Rc<Scope>) -> R<Value> {
         match &e.kind {
             ExprKind::Null => Ok(Value::Null),
             ExprKind::Bool(b) => Ok(Value::Bool(*b)),
