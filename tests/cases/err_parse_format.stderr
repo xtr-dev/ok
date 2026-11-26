@@ -1,0 +1,7 @@
+error[arg]: unknown format "xml"
+ --> err_parse_format.ok:3:7
+  |
+3 | print(parse("a", "xml"))
+  |       ^^^^^^^^^^^^^^^^^
+  |
+  = help: the formats are json, jsonl, csv, tsv, lines, text, toml, yaml, env, bytes, yaml_all

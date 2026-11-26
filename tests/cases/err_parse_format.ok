@@ -1,0 +1,3 @@
+# `parse` lists `yaml_all` among its formats (SPEC.md 13.6).
+
+print(parse("a", "xml"))

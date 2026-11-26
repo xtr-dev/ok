@@ -76,9 +76,14 @@ fn check_format(name: &str, args: &Args, extra: &[&'static str]) -> R<&'static s
     let help = aliases
         .map(|a| format!("use \"{a}\""))
         .or_else(|| {
-            suggest(name, FORMATS.iter().copied()).map(|s| format!("did you mean \"{s}\"?"))
+            suggest(name, FORMATS.iter().chain(extra).copied())
+                .map(|s| format!("did you mean \"{s}\"?"))
         })
-        .unwrap_or_else(|| format!("the formats are {}", FORMATS.join(", ")));
+        .unwrap_or_else(|| {
+            // The formats this function accepts: the common table plus its own.
+            let all: Vec<&str> = FORMATS.iter().chain(extra).copied().collect();
+            format!("the formats are {}", all.join(", "))
+        });
     Err(OkError::at(
         ErrKind::Arg,
         args.span,
