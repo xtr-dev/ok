@@ -29,7 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `ok self init` writes `requires` with the running version's major.minor (`"0.2"`) instead of `"0.1"`.
 - `ok self --help`, `ok trust --help` and `ok untrust --help` print their commands instead of failing with an unknown option.
 - `--env NAME` with a missing `.env.NAME` exits with 2, the code for bad usage, instead of 1, and the help line says how to fix it.
-- Error traces: a script's `main` and the task named on the command line end with `= in \`main\`, started by ok` instead of pointing at their own declaration, and a dependency that fails in a parallel worker is traced to its `needs` entry, as with `-j1`.
+- Error traces: a script's `main` and the task named on the command line end with ``= in `main`, started by ok`` instead of pointing at their own declaration, and a dependency that fails in a parallel worker is traced to its `needs` entry, as with `-j1`.
 
 ## [0.2.0] - 2026-11-26
 
