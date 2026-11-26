@@ -54,7 +54,10 @@ for (const figure of document.querySelectorAll(".sample-out")) {
     button.disabled = true;
     status.textContent = "running…";
     const started = performance.now();
-    const result = await runOk({ args: parsed.args, env: { OK_TRUST: "1", ...parsed.env }, files: filesFor(figure) });
+    // The same environment the guide's tests use: projects are trusted, and
+    // the trust store lives in the run's own directory (the browser has no
+    // home directory).
+    const result = await runOk({ args: parsed.args, env: { OK_TRUST: "1", OK_CONFIG_DIR: ".ok-config", ...parsed.env }, files: filesFor(figure) });
     button.disabled = false;
     if (result.busy) {
       status.textContent = "another run is still going";
