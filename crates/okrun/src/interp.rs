@@ -1210,6 +1210,16 @@ impl Interp {
                 if let Stage::Run(_) = stage {
                     return self.eval_run(e, scope, crate::command::Mode::Captured);
                 }
+                if crate::command::is_run(lhs)
+                    && let Stage::Call { callee, .. } = stage
+                    && let ExprKind::Ident(name) = &callee.kind
+                    && scope.lookup(name).is_none()
+                {
+                    // Checked before the command runs: the stage cannot work.
+                    let text = &self.sources.file(e.span.file).text;
+                    let stage_text = &text[callee.span.start as usize..e.span.end as usize];
+                    return Err(program_stage_error(name, stage_text, callee.span).into());
+                }
                 let left = if crate::command::is_run(lhs) {
                     self.eval_run(lhs, scope, crate::command::Mode::Piped)?
                 } else {
@@ -2100,6 +2110,24 @@ fn display_fn_name(name: &str) -> String {
     } else {
         format!("`{name}`")
     }
+}
+
+/// The error for an unknown name used as a pipeline stage after a command,
+/// as in `run ls | grep x`: most likely a second `run` is missing (SPEC.md
+/// 9.5). `stage_text` is the stage's source, shown in the help when short.
+pub(crate) fn program_stage_error(name: &str, stage_text: &str, span: Span) -> OkError {
+    let stage_text = stage_text.trim();
+    let call_syntax = stage_text[name.len()..].starts_with('(');
+    let shown = if call_syntax || stage_text.contains('\n') || stage_text.chars().count() > 40 {
+        format!("{name} ...")
+    } else {
+        stage_text.to_string()
+    };
+    OkError::at(ErrKind::Name, span, format!("unknown name `{name}`"))
+        .with_label("not defined here")
+        .with_help(format!(
+            "to pipe into the program `{name}`, write `| run {shown}`"
+        ))
 }
 
 pub(crate) fn type_phrase(ty: &TypeAnn) -> String {

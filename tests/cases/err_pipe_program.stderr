@@ -1,0 +1,7 @@
+error[name]: unknown name `grep`
+ --> err_pipe_program.ok:4:29
+  |
+4 | run ok-fixture echo a.txt | grep txt
+  |                             ^^^^ not defined here
+  |
+  = help: to pipe into the program `grep`, write `| run grep txt`

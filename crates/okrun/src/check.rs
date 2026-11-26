@@ -951,16 +951,29 @@ impl Checker<'_> {
             ExprKind::Lambda(d) => self.function(d),
             ExprKind::Pipe { lhs, stage } => {
                 self.expr(lhs);
-                self.stage(lhs, stage);
+                self.stage(lhs, stage, e.span);
             }
             _ => walk_children(e, self),
         }
     }
 
-    fn stage(&mut self, lhs: &Expr, stage: &Stage) {
+    fn stage(&mut self, lhs: &Expr, stage: &Stage, pipe: Span) {
         match stage {
             Stage::Call { callee, args } => {
-                self.expr(callee);
+                match &callee.kind {
+                    ExprKind::Ident(name)
+                        if crate::command::is_run(lhs)
+                            && matches!(self.lookup(name), Found::Missing) =>
+                    {
+                        let stage_text = &self.text[callee.span.start as usize..pipe.end as usize];
+                        let e = crate::interp::program_stage_error(name, stage_text, callee.span);
+                        self.report(e);
+                        // The arguments are most likely the program's words, so
+                        // they are not reported as unknown names as well.
+                        return;
+                    }
+                    _ => self.expr(callee),
+                }
                 self.args(args);
                 let a = CallArgs::new(Some(lhs), false, args);
                 match &callee.kind {

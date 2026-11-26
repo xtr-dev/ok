@@ -1,0 +1,4 @@
+# An unknown name piped into after a command is most likely a program
+# missing its own `run` (SPEC.md 9.5).
+
+run ok-fixture echo a.txt | grep txt

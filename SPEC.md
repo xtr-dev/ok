@@ -1225,6 +1225,9 @@ gives it. Required suggestions:
 - habits from other languages: `&&`, `||`, `!x`, `;`, `elif`, `elsif`,
   `function`, `def`, `None`, `nil`, `True`, `False`, `===`;
 - shell habits in command mode (9.2 rules 7, 8, 9, 12);
+- an unknown name as the stage after a command, as in `run ls | grep x`:
+  ``to pipe into the program `grep`, write `| run grep x` `` (reported before
+  the command runs, and without a did-you-mean);
 - string used as a path in `/` (5.8), non-bool condition (5.3), list
   interpolated without spread (9.2), `let` reassigned (5.2), side effect at
   project top level (15.2), ok options after the task name (2.2).
