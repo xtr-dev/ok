@@ -406,7 +406,17 @@ pub fn canonical_key(v: &Value) -> String {
                 .collect::<Vec<_>>()
                 .join(",")
         ),
-        Value::Float(f) if f.fract() == 0.0 && f.abs() < 9.0e15 => format!("{}", *f as i64),
+        // An int and a float are equal exactly when the float is integral
+        // and holds the same number (`value::equal`), so both get the same
+        // key. -2^63 <= f < 2^63 makes the conversion exact.
+        Value::Int(i) => format!("int:{i}"),
+        Value::Float(f)
+            if f.fract() == 0.0
+                && *f >= -9.223_372_036_854_775_808e18
+                && *f < 9.223_372_036_854_775_808e18 =>
+        {
+            format!("int:{}", *f as i64)
+        }
         other => format!("{}:{}", other.type_name(), other.repr()),
     }
 }

@@ -366,7 +366,7 @@ pub fn equal(a: &Value, b: &Value) -> bool {
         (Value::Int(x), Value::Int(y)) => x == y,
         (Value::Float(x), Value::Float(y)) => x == y,
         (Value::Int(x), Value::Float(y)) | (Value::Float(y), Value::Int(x)) => {
-            (*x as f64) == *y && (*y as i64) == *x
+            cmp_int_float(*x, *y) == Some(Ordering::Equal)
         }
         (Value::Str(x), Value::Str(y)) => x == y,
         (Value::Bytes(x), Value::Bytes(y)) => x == y,
@@ -393,8 +393,8 @@ pub fn compare(a: &Value, b: &Value) -> Option<Ordering> {
     match (a, b) {
         (Value::Int(x), Value::Int(y)) => Some(x.cmp(y)),
         (Value::Float(x), Value::Float(y)) => x.partial_cmp(y),
-        (Value::Int(x), Value::Float(y)) => (*x as f64).partial_cmp(y),
-        (Value::Float(x), Value::Int(y)) => x.partial_cmp(&(*y as f64)),
+        (Value::Int(x), Value::Float(y)) => cmp_int_float(*x, *y),
+        (Value::Float(x), Value::Int(y)) => cmp_int_float(*y, *x).map(Ordering::reverse),
         (Value::Str(x), Value::Str(y)) => Some(x.cmp(y)),
         (Value::Bool(x), Value::Bool(y)) => Some(x.cmp(y)),
         (Value::Duration(x), Value::Duration(y)) => Some(x.cmp(y)),
@@ -411,6 +411,116 @@ pub fn compare(a: &Value, b: &Value) -> Option<Ordering> {
         }
         _ => None,
     }
+}
+
+/// Compares an int with a float by their exact mathematical values. Going
+/// through `x as f64` would round ints above 2^53, so `2^53 + 1` would equal
+/// the float `2^53` while still differing from the int `2^53`, and sorting a
+/// mix of such numbers would not be a consistent order. `None` only for NaN.
+pub fn cmp_int_float(x: i64, y: f64) -> Option<Ordering> {
+    if y.is_nan() {
+        return None;
+    }
+    // 2^63 is exactly representable; every float at or above it is larger
+    // than any i64, every float below -2^63 smaller.
+    const TWO_63: f64 = 9_223_372_036_854_775_808.0;
+    if y >= TWO_63 {
+        return Some(Ordering::Less);
+    }
+    if y < -TWO_63 {
+        return Some(Ordering::Greater);
+    }
+    // In range, the integral part converts exactly; the fraction decides ties.
+    let whole = y.trunc();
+    match x.cmp(&(whole as i64)) {
+        Ordering::Equal => {
+            let frac = y - whole;
+            Some(if frac > 0.0 {
+                Ordering::Less
+            } else if frac < 0.0 {
+                Ordering::Greater
+            } else {
+                Ordering::Equal
+            })
+        }
+        other => Some(other),
+    }
+}
+
+/// A total order over all values, used by `sort` so that the sort always
+/// sees a consistent comparison. Where [`compare`] gives an answer this
+/// agrees with it; values it cannot order fall back to an order by kind
+/// (numbers, strings, bools, durations, times, paths, lists, records,
+/// bytes, null, functions) and then by content. The second result is
+/// `false` when the pair is not comparable by [`compare`], so `sort` can
+/// still report the type error after sorting.
+pub fn total_order(a: &Value, b: &Value) -> (Ordering, bool) {
+    match compare(a, b) {
+        Some(o) => (o, true),
+        None => (fallback_order(a, b), false),
+    }
+}
+
+fn kind_rank(v: &Value) -> u8 {
+    match v {
+        Value::Int(_) | Value::Float(_) => 0,
+        Value::Str(_) => 1,
+        Value::Bool(_) => 2,
+        Value::Duration(_) => 3,
+        Value::Time(_) => 4,
+        Value::Path(_) => 5,
+        Value::List(_) => 6,
+        Value::Record(_) => 7,
+        Value::Bytes(_) => 8,
+        Value::Null => 9,
+        Value::Func(_) => 10,
+        Value::Lazy(_) => 11,
+        Value::Env => 12,
+    }
+}
+
+/// The content order behind [`total_order`] for pairs [`compare`] rejects.
+/// It must itself be a total order that agrees with `compare` wherever that
+/// is defined, because a sort mixes both answers.
+fn fallback_order(a: &Value, b: &Value) -> Ordering {
+    let rank = kind_rank(a).cmp(&kind_rank(b));
+    if rank != Ordering::Equal {
+        return rank;
+    }
+    match (a, b) {
+        (Value::List(x), Value::List(y)) => {
+            for (a, b) in x.iter().zip(y.iter()) {
+                match total_order(a, b).0 {
+                    Ordering::Equal => continue,
+                    other => return other,
+                }
+            }
+            x.len().cmp(&y.len())
+        }
+        (Value::Record(x), Value::Record(y)) => {
+            let mut xs: Vec<_> = x.iter().collect();
+            let mut ys: Vec<_> = y.iter().collect();
+            xs.sort_by(|p, q| p.0.cmp(q.0));
+            ys.sort_by(|p, q| p.0.cmp(q.0));
+            for ((ka, va), (kb, vb)) in xs.iter().zip(ys.iter()) {
+                match ka.cmp(kb).then_with(|| total_order(va, vb).0) {
+                    Ordering::Equal => continue,
+                    other => return other,
+                }
+            }
+            xs.len().cmp(&ys.len())
+        }
+        (Value::Bytes(x), Value::Bytes(y)) => x.cmp(y),
+        (Value::Func(x), Value::Func(y)) => Rc::as_ptr(x).cast::<u8>().cmp(&Rc::as_ptr(y).cast()),
+        (Value::Lazy(x), Value::Lazy(y)) => Rc::as_ptr(x).cast::<u8>().cmp(&Rc::as_ptr(y).cast()),
+        // Two numbers are only incomparable when one is NaN, which ok never
+        // produces; order NaN after every other number to stay total.
+        (x, y) => num_nan_last(x).cmp(&num_nan_last(y)),
+    }
+}
+
+fn num_nan_last(v: &Value) -> bool {
+    matches!(v, Value::Float(f) if f.is_nan())
 }
 
 #[cfg(test)]
@@ -459,6 +569,26 @@ mod tests {
         b.insert("y", Value::Int(2));
         b.insert("x", Value::Int(1));
         assert!(equal(&Value::record(a), &Value::record(b)));
+    }
+
+    #[test]
+    fn ints_and_floats_compare_exactly() {
+        let big = 9_007_199_254_740_993_i64; // 2^53 + 1
+        let f = 9_007_199_254_740_992.0_f64; // 2^53
+        assert!(!equal(&Value::Int(big), &Value::Float(f)));
+        assert_eq!(cmp_int_float(big, f), Some(Ordering::Greater));
+        assert_eq!(cmp_int_float(big - 1, f), Some(Ordering::Equal));
+        assert!(!equal(
+            &Value::Int(i64::MAX),
+            &Value::Float(9.223_372_036_854_775_808e18)
+        ));
+        assert_eq!(
+            cmp_int_float(i64::MIN, -9.223_372_036_854_775_808e18),
+            Some(Ordering::Equal)
+        );
+        assert_eq!(cmp_int_float(-3, -2.5), Some(Ordering::Less));
+        assert_eq!(cmp_int_float(-2, -2.5), Some(Ordering::Greater));
+        assert_eq!(cmp_int_float(2, 2.5), Some(Ordering::Less));
     }
 
     #[test]

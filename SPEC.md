@@ -504,10 +504,16 @@ same keys with equal values, in any order. Values of different kinds are unequal
 except that an `int` and a `float` compare numerically (`1 == 1.0`). Comparing
 a `path` with a `string` is always `false`.
 
+An `int` and a `float` compare by their exact mathematical values, never by
+rounding the int to a float: `9007199254740993 == 9007199254740992.0` is
+`false` and `9007199254740993 > 9007199254740992.0` is `true`. So `==`, `<`,
+`sort`, `min`, `max` and `uniq` agree on every mix of numbers.
+
 `<`, `<=`, `>`, `>=` are defined for two numbers, two strings (by Unicode code
 point), two durations, two times, two paths (by their `/` display form) and
 two bools (`false < true`). Lists compare lexicographically element by
-element. Anything else is a type error.
+element. Anything else is a type error. `sort` reports that error when any
+two keys cannot be compared, however many keys there are.
 
 `x in list` tests membership with `==`. `key in record` tests for a key.
 `sub in string` tests for a substring.

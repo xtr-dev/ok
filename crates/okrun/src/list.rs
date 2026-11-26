@@ -14,7 +14,7 @@ use crate::error::{ErrKind, OkError, suggest};
 use crate::interp::{Args, Builtin, Interp, R};
 use crate::lazy::{self, Seen, Source, adapt, at_span, canonical_key, cursor};
 use crate::source::Span;
-use crate::value::{Record, Value, compare};
+use crate::value::{Record, Value, compare, total_order};
 
 #[rustfmt::skip]
 pub static BUILTINS: &[Builtin] = &[
@@ -717,11 +717,14 @@ fn sort(interp: &mut Interp, mut args: Args) -> R<Value> {
         keyed_items.push((keyed(interp, &key, v, span)?, v.clone()));
     }
     let mut problem: Option<(String, String)> = None;
+    // The comparator must be a total order even when some keys cannot be
+    // compared (the standard sort may panic otherwise), so incomparable
+    // pairs are ordered by `total_order`'s fallback and reported afterwards.
     keyed_items.sort_by(|(a, _), (b, _)| {
-        let ord = compare(a, b).unwrap_or_else(|| {
+        let (ord, comparable) = total_order(a, b);
+        if !comparable {
             problem.get_or_insert((a.a_type(), b.a_type()));
-            std::cmp::Ordering::Equal
-        });
+        }
         if desc { ord.reverse() } else { ord }
     });
     if let Some((a, b)) = problem {

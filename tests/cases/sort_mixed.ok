@@ -1,0 +1,19 @@
+# Sorting never crashes on keys it cannot compare: it reports a type error,
+# even when the keys are spread through a list long enough for the sort to
+# check its comparison for consistency.
+let rows = range(40) | map(fn(i) { {age: if i % 7 == 3 { null } else { (i * 37) % 23 }} })
+print(try { sort(rows, fn(r) { r.age }) } catch e { e.message })
+let pairs = range(30) | map(fn(i) { [i % 3, if i % 2 == 0 { "a" } else { i }] })
+print(try { sort(pairs) } catch e { e.message })
+
+# Ints and floats compare by their exact values, also beyond 2^53 where a
+# float cannot hold every int.
+let big = 9007199254740993
+print(big == 9007199254740992.0, big > 9007199254740992.0, big - 1 == 9007199254740992.0)
+print(9223372036854775807 == 9223372036854775808.0, 9223372036854775807 < 9223372036854775808.0)
+print(sort([9007199254740994.0, 9007199254740993, 9007199254740992, 9007199254740992.0, 2.5, 2, 3]))
+print(min([9007199254740993, 9007199254740992.0]), max([9007199254740993, 9007199254740992.0]))
+print(sort([1.5, 1, -2.5, -3, -2]))
+
+# `uniq` treats 1 and 1.0 as the same value, as `==` does.
+print(uniq([1, 1.0, 2.0, 2, 9007199254740993, 9007199254740992.0]))
