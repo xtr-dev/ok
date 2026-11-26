@@ -5,10 +5,16 @@
 /// once per nested call and expression; a large stack lets deep (but
 /// bounded) recursion in scripts work the same on every OS, whose default
 /// main-thread stacks differ (1 MiB on Windows, 8 MiB on Linux).
+#[cfg(not(target_os = "wasi"))]
 const STACK_SIZE: usize = 256 * 1024 * 1024;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // WASI has no threads; the WebAssembly build runs on the main thread,
+    // whose stack size is set at link time (see `.cargo/config.toml`).
+    #[cfg(target_os = "wasi")]
+    let code = okrun::cli::main(args);
+    #[cfg(not(target_os = "wasi"))]
     let code = std::thread::Builder::new()
         .name("ok".into())
         .stack_size(STACK_SIZE)

@@ -52,6 +52,13 @@ fn fetch(interp: &mut Interp, mut args: Args) -> R<Value> {
         ],
     )?;
     count_args(&args, "fetch", 1, 1)?;
+    // WASI preview 1 has no sockets (SPEC.md 19).
+    if cfg!(target_os = "wasi") {
+        return Err(net_err(
+            &args,
+            "the WebAssembly build of ok cannot open network connections".into(),
+        ));
+    }
     let Value::Str(url) = &args.pos[0] else {
         return type_err(
             &args,

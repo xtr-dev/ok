@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- ok builds for WebAssembly (`wasm32-wasip1`). This build runs the
+  playground at https://okrun.dev/#try; there `run` and `fetch` report that
+  they are unavailable, and `os.name` is `"wasi"`.
 - stderr redirection in command mode: `2> file`, `2>> file` and `2>&1`
   (stderr merged into stdout, captured, piped or written together with it).
   `--trace` and `--dry-run` show every redirect.

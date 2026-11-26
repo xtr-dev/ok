@@ -2264,6 +2264,13 @@ wrappers are the only shell code in the project and stay short.
   systems.
 - Where an OS lacks a feature (`chmod` on Windows), the function's documented
   behaviour on that OS is part of its specification.
+- ok also builds for WebAssembly (`wasm32-wasip1`), which is what the
+  playground on the website runs. There `os.name` is `"wasi"` and
+  `os.arch` is `"wasm32"`; `run` and `fetch` raise a command or network
+  error saying this build cannot start programs or open connections. The
+  rest of the language, files included (in whatever directories the host
+  grants), behaves as on any other OS. Recursion depth is limited by the
+  host engine and is much lower than in the native binary.
 
 ## 20. Reserved for later versions
 

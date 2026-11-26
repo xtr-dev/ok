@@ -182,7 +182,13 @@ pub fn install(globals: &Rc<Scope>, script_args: Vec<String>) {
         }
     }
     let mut os = Record::new();
-    os.insert("name", Value::str(std::env::consts::OS));
+    // Rust's `consts::OS` is empty on wasm32-wasip1; SPEC.md 19 names it "wasi".
+    let os_name = if cfg!(target_os = "wasi") {
+        "wasi"
+    } else {
+        std::env::consts::OS
+    };
+    os.insert("name", Value::str(os_name));
     os.insert("arch", Value::str(std::env::consts::ARCH));
     os.insert("exe", Value::str(std::env::consts::EXE_SUFFIX));
     globals.declare("os", Value::record(os), false);

@@ -56,6 +56,24 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --locked --no-fail-fast
 
+  # The WebAssembly build is what the playground on the website runs.
+  wasm:
+    name: wasm (wasm32-wasip1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.100.0"
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cargo clippy -p okrun --target wasm32-wasip1 --locked -- -D warnings
+      - run: cargo build -p okrun --release --target wasm32-wasip1 --locked
+      - run: node --no-warnings tests/wasm/smoke.mjs target/wasm32-wasip1/release/ok.wasm
+
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest

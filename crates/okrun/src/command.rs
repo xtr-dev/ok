@@ -464,6 +464,16 @@ impl Interp {
         if self.run_opts.trace {
             eprintln!("+ {cwd_note}{line}{redirect_note}");
         }
+        // WASI has no way to start a process (SPEC.md 17). Say so plainly
+        // instead of the misleading "command not found" a PATH search gives.
+        if cfg!(target_os = "wasi") {
+            return Err(cmd_err(
+                span,
+                format!("cannot run `{line}`: the WebAssembly build of ok cannot start programs"),
+            )
+            .with_help("`run` needs the native ok binary; everything else in the script works here")
+            .into());
+        }
         let base_cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let cwd = match &opts.cwd {
             Some(c) => base_cwd.join(c),
