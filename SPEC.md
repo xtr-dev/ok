@@ -1419,9 +1419,13 @@ with `node_modules` or `target`.
 hidden temporary file in the target's directory and rename it over the
 target only once it is complete. A failure halfway (a value that cannot be
 serialised, a broken stream, a missing source file) leaves an existing
-target as it was and removes the temporary file. Writing through a symlink
-replaces the file it points to, the new file keeps the old file's
-permission bits, and a read-only target stays an error. A target that is
+target as it was and removes the temporary file. The temporary file has an
+unpredictable name and, on Unix, can be opened only by its owner (mode
+0600) until it is complete, so other users never see a half-written
+secret. Writing through a symlink replaces the file it points to, the new
+file keeps the old file's permission bits (without setuid, setgid and
+sticky, since its owner may differ) or for a new file gets the usual ones
+(0666 minus the umask), and a read-only target stays an error. A target that is
 not a regular file (`/dev/null`, a named pipe), or an existing file in a
 directory where no new file may be created, is written directly.
 Because the target is replaced only at the end, `read(p) | ... | write(p)`

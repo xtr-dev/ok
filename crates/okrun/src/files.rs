@@ -117,13 +117,9 @@ impl Replacement {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let n = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let tmp = target.with_file_name(format!(".{name}.ok-tmp-{}-{n}", process_id()));
-        let file = match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&tmp)
-        {
+        let created =
+            create_unique(|| target.with_file_name(format!(".{name}.ok-tmp-{}", unique_suffix())));
+        let (tmp, file) = match created {
             Ok(f) => f,
             // A writable file in a directory where no new file may be
             // created can still be written, as before, just not safely.
@@ -157,8 +153,8 @@ impl Replacement {
         let Some(tmp) = self.tmp.clone() else {
             return Ok(());
         };
-        if let Ok(meta) = std::fs::metadata(&self.target) {
-            let _ = std::fs::set_permissions(&tmp, meta.permissions());
+        if let Some(perms) = final_permissions(&self.target) {
+            let _ = std::fs::set_permissions(&tmp, perms);
         }
         if std::fs::rename(&tmp, &self.target).is_err() {
             // Some WASI hosts cannot rename; the bytes are complete, so
@@ -177,6 +173,83 @@ impl Drop for Replacement {
             let _ = std::fs::remove_file(tmp);
         }
     }
+}
+
+/// A name part that other users cannot predict, so they cannot claim the
+/// name first: the process id, a counter, and 64 bits from the randomly
+/// keyed hasher of the standard library.
+pub(crate) fn unique_suffix() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    let n = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u64(n);
+    if let Ok(d) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+        h.write_u128(d.as_nanos());
+    }
+    format!("{}-{n}-{:016x}", process_id(), h.finish())
+}
+
+/// Create a new file that only its owner can open (mode 0600 on Unix), at
+/// the first free name `name()` gives. A name that exists already, whether
+/// by chance or planted, is skipped rather than opened.
+pub(crate) fn create_unique(
+    mut name: impl FnMut() -> PathBuf,
+) -> std::io::Result<(PathBuf, std::fs::File)> {
+    let mut last = None;
+    for _ in 0..16 {
+        let p = name();
+        let mut o = std::fs::OpenOptions::new();
+        o.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            o.mode(0o600);
+        }
+        match o.open(&p) {
+            Ok(f) => return Ok((p, f)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last = Some(e),
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::ErrorKind::AlreadyExists.into()))
+}
+
+/// The permissions a finished replacement gets: those of the file it
+/// replaces, without setuid, setgid and sticky bits (the new file may have
+/// a different owner), or for a new file what creating it normally gives.
+/// `None` leaves the temporary file's own permissions.
+fn final_permissions(target: &Path) -> Option<std::fs::Permissions> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = match std::fs::metadata(target) {
+            Ok(meta) => meta.permissions().mode() & 0o777,
+            Err(_) => 0o666 & !umask(),
+        };
+        Some(std::fs::Permissions::from_mode(mode))
+    }
+    // Windows has only the read-only flag, which a writable target does
+    // not have and a new file does not get.
+    #[cfg(not(unix))]
+    {
+        std::fs::metadata(target).ok().map(|m| m.permissions())
+    }
+}
+
+/// The process's file mode creation mask, read once. Reading it means
+/// setting it, so it is set back at once; the threads ok runs meanwhile
+/// (output readers and timeout watchdogs) create no files.
+#[cfg(unix)]
+fn umask() -> u32 {
+    use nix::sys::stat::{Mode, umask};
+    static MASK: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *MASK.get_or_init(|| {
+        let old = umask(Mode::from_bits_truncate(0o077));
+        umask(old);
+        // `mode_t` is u32 on Linux but u16 on macOS.
+        #[allow(clippy::useless_conversion)]
+        u32::from(old.bits())
+    })
 }
 
 fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -1054,6 +1127,42 @@ mod tests {
             assert_eq!(mode & 0o777, 0o750);
         }
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replacement_is_private_until_committed() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("private");
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o7777;
+        // A new file: private while written, then the usual permissions.
+        let target = dir.join("new.txt");
+        let (pending, file) = Replacement::create(&target).unwrap();
+        assert_eq!(mode(pending.tmp.as_ref().unwrap()), 0o600);
+        drop(file);
+        pending.commit().unwrap();
+        assert_eq!(mode(&target), 0o666 & !umask());
+        // An existing setuid file keeps its permission bits only.
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o4755)).unwrap();
+        let (pending, file) = Replacement::create(&target).unwrap();
+        assert_eq!(mode(pending.tmp.as_ref().unwrap()), 0o600);
+        drop(file);
+        pending.commit().unwrap();
+        assert_eq!(mode(&target), 0o755);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_taken_temporary_name_is_skipped() {
+        let dir = scratch("taken");
+        let planted = dir.join("planted");
+        std::fs::write(&planted, "someone else's").unwrap();
+        let mut names = vec![dir.join("free"), planted.clone()];
+        let (p, _) = create_unique(|| names.pop().unwrap()).unwrap();
+        assert_eq!(p, dir.join("free"));
+        assert_eq!(std::fs::read_to_string(&planted).unwrap(), "someone else's");
+        assert_ne!(unique_suffix(), unique_suffix());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
