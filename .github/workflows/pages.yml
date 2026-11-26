@@ -42,9 +42,26 @@ jobs:
           & "$env:RUNNER_TEMP\okbin\ok.exe" -e 'print(os.name, os.arch)'
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
+  # The site is uploaded in its own job and deployed in the next one. When
+  # both happen in one job, deploy-pages often looks the artifact up before
+  # it is listed ("No artifacts named github-pages") and the deploy fails.
+  upload:
+    name: upload site
+    needs: install
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read        # configure-pages reads the site's settings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
   deploy:
     name: deploy
-    needs: install
+    needs: upload
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -55,10 +72,5 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v6
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: site
       - id: deployment
         uses: actions/deploy-pages@v5
