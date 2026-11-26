@@ -8,6 +8,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+Some of these changes can stop a project or script from loading: source files may no longer contain raw control or bidirectional characters, env files may no longer set `OK_`, `LD_` or `DYLD_` variables, a root `ok.ok` may not link outside the project, and projects with env files must be trusted again.
+
+### Security
+
+- The trust prompt's `[v]iew`, `[d]iff` and file list show control characters, bidirectional controls and zero-width characters as escapes (`\r`, `\u{1b}`, `\u{202e}`), so a carriage return, an ANSI or OSC sequence or a "Trojan Source" reordering can no longer make the reviewed code look different from what runs.
+- Error messages, warnings, task listings, `ok TASK --help`, `--trace` and `--dry-run` lines and `= command:` details escape the same characters, so a fresh clone or a data file cannot write to your terminal or clipboard through ok's diagnostics. What a program prints itself (`print`, child output) is unchanged.
+- Raw control characters (other than tab and line endings) and bidirectional control characters are syntax errors anywhere in source, strings and comments included; write a `\u{...}` escape instead.
+- The env files a run loads are covered by trust: editing `.env`, or the first run with `--env NAME`, asks for approval again. The review and the trust store show only variable names and a hash, never values.
+- Env files cannot set variables starting with `OK_`, `LD_` or `DYLD_` (such as `OK_TRUST`, `LD_PRELOAD`); the error names the file and the key.
+- Content trust is bound to the root it was given for: the same files in another directory are asked about again.
+- A trust store that cannot be read is an error instead of being treated as empty and overwritten. The store is created private to the user (0700 directories, 0600 files on Unix), and changes are made under a lock so concurrent `ok trust` runs keep each other's entries.
+- A root `ok.ok` that is a symlink to a file outside the project is refused, like namespace files and imports.
+- `ok self init` accepts only 64-hex-digit checksums and downloads `SHA256SUMS` only over https (pass `--checksums FILE` for other mirrors).
+- The `./ok` and `ok.ps1` wrappers cache the binary under its version and checksum, so a binary cached for another pin is never reused; `ok.ps1` downloads to a unique file name, and `ok.cmd` starts PowerShell by its full path instead of searching the current directory. Run `ok self init` again to get the new wrappers.
+- Traces, dry runs and fetch errors show a URL's password as `***`.
+- `install.sh` and `install.ps1` run nothing until the whole script has been downloaded.
+
+### Changed
+
+- `--trace` and `--dry-run` quote the paths of file operations and fetch like command arguments: `~ copy "my notes.txt" backup/`.
+- `ok --env NAME trust` trusts a project together with the env files of `--env NAME`.
+
+### Documentation
+
+- SECURITY.md and the guide say plainly that `./ok` is a script from the repository that runs before any trust check, so in a repository you have not reviewed, run your installed `ok`.
+- The commands guide warns that an interpolated value starting with `-` is read as an option by most programs, and shows `--`.
+
 ## [0.3.0] - 2026-11-26
 
 Some of these changes can break scripts written for 0.2.0: compact JSON no longer has spaces, `parts()` of an absolute path starts with its root, `remove` refuses the working directory and the directories above it, copying a file onto a directory is an error, an import that leaves the project stops the project from loading, and `--env NAME` with a missing file exits with 2.
