@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- A user guide at https://okrun.dev/docs/: from a first script to tasks, with a standard library reference. Every example is tested against ok, and runs in the browser with a Run button.
+
+### Fixed
+
+- `THIRD_PARTY.md` no longer lists `ok-fixture`, a test helper that is not part of the binary.
+
 ## [0.2.0] - 2026-11-26
 
 ### Added

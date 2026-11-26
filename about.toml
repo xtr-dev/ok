@@ -1,4 +1,4 @@
-# cargo-about configuration: `cargo about generate about.hbs > THIRD_PARTY.md`
+# cargo-about configuration: `cargo about generate -m crates/okrun/Cargo.toml about.hbs > THIRD_PARTY.md`
 accepted = [
   "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",

@@ -1,0 +1,26 @@
+# Getting started
+index
+first-script
+from-bash
+
+# The language
+basics
+control-flow
+functions
+pipelines
+errors
+modules
+
+# Scripts and the system
+data
+files
+commands
+script-cli
+
+# Projects
+tasks
+trust
+tools
+
+# Reference
+stdlib

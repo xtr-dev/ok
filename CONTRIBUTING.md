@@ -27,7 +27,7 @@ The toolchain is pinned in `rust-toolchain.toml`.
 | format | `ok fmt` | `cargo fmt --all` |
 | lint | `ok lint` | `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings` |
 | licences | `ok deny` | `cargo deny check` |
-| notices | `ok third-party` | `cargo about generate about.hbs > THIRD_PARTY.md` |
+| notices | `ok third-party` | `cargo about generate -m crates/okrun/Cargo.toml about.hbs > THIRD_PARTY.md` |
 
 CI (format, clippy and tests on Linux, macOS and Windows, cargo-deny, a
 `THIRD_PARTY.md` check and fuzzing) is currently switched off and runs only

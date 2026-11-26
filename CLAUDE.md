@@ -36,8 +36,9 @@ cargo fmt --all                     # format
 cargo fmt --all --check             # CI format check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo deny check                    # licences, advisories, sources
-cargo about generate about.hbs > THIRD_PARTY.md
+cargo about generate -m crates/okrun/Cargo.toml about.hbs > THIRD_PARTY.md
 OK_BLESS=1 cargo test --test golden # regenerate golden expectations, then review git diff
+cargo run -p okdocs -- build docs _site   # the guide, into a copy of site/ in _site/
 cargo +nightly fuzz run parse -- -max_total_time=300   # needs nightly + cargo-fuzz
 ```
 
@@ -52,7 +53,7 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo deny check
-cargo about generate about.hbs > THIRD_PARTY.md && git diff --exit-code THIRD_PARTY.md
+cargo about generate -m crates/okrun/Cargo.toml about.hbs > THIRD_PARTY.md && git diff --exit-code THIRD_PARTY.md
 ```
 
 and at the end of a milestone also `cargo +nightly fuzz run lex -- -max_total_time=60`
@@ -89,6 +90,16 @@ site/                   landing page, playground (playground.js, playground-work
                         a release redeploys the site
                         robots.txt, sitemap.xml; og.png is the link-preview
                         image, rendered from og-image.html (command inside)
+                        ok-runner.js runs ok.wasm for the playground and
+                        the guide's Run buttons; docs.css, docs.js style and
+                        drive the guide pages
+docs/                   the user guide (Markdown, order in pages.txt),
+                        published at https://okrun.dev/docs/; its code
+                        samples are tests (`cargo test -p okdocs`,
+                        `OKDOCS_PAGE=slug` for one page); fences are
+                        described at the top of crates/okdocs/src/lib.rs
+crates/okdocs/          builds the guide (`cargo run -p okdocs -- build docs
+                        _site` after copying site/ to _site/); not published
 .cargo/config.toml      stack size for the WebAssembly build
 tests/wasm/smoke.mjs    runs the WebAssembly build under Node (CI job `wasm`)
 SPEC.md                 normative language spec
@@ -172,6 +183,9 @@ test --workspace` and review the diff.
   endings, deterministic ordering).
 - Tests must not depend on system tools; use fixture commands built in the
   repo for `run` tests.
+- The guide (`docs/`) explains and shows; `SPEC.md` stays the definition.
+  A change in behaviour updates both. Every sample in the guide runs in the
+  tests, so a guide page that no longer matches ok fails `cargo test`.
 - Comments explain purpose and reasoning so they make sense without the
   conversation that produced them.
 - Do not hard-wrap `CHANGELOG.md`: write each paragraph and each bullet on

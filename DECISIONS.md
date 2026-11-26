@@ -894,3 +894,8 @@ examples from the latest release's tag instead of `main`, fills the
 release name into the page's badge, and runs again when a release is
 published. The page then shows the same ok that the install scripts
 install, and unreleased changes never reach it early.
+
+## 2026-11-26 (guide)
+
+**A user guide at https://okrun.dev/docs/, generated from Markdown with tested samples.** The site's Docs link pointed at `SPEC.md`, which defines the language but does not teach it. The guide is Markdown in `docs/` (readable on GitHub too), turned into pages styled like the landing page by `crates/okdocs`, a small unpublished crate using `pulldown-cmark` (MIT) and ok's own lexer for highlighting. Code fences say what a block is: an ok snippet (must parse and be in canonical format), a named file, or the output of a command. `cargo test -p okdocs` runs every command against the real binary on all three OSes and compares the output, so the guide cannot drift from the language. In the browser each output block gets a Run button that runs the command with the WebAssembly build, using the section's files, which the reader can edit. mdBook was considered: quicker to set up, but it would look unlike the site and would neither test nor run the samples. The guide is built from the latest release when that release has `docs/`, and from `main` until then, so the pages describe the ok the Run buttons run. `THIRD_PARTY.md` is now generated for the `okrun` package only (`-m crates/okrun/Cargo.toml`), so the guide's build tools and the test helper `ok-fixture` are not listed as parts of the binary.
+

@@ -44,9 +44,9 @@ task deny {
   run cargo deny check
 }
 
-# Regenerate THIRD_PARTY.md (cargo about generate about.hbs > THIRD_PARTY.md)
+# Regenerate THIRD_PARTY.md (cargo about generate -m crates/okrun/Cargo.toml about.hbs > THIRD_PARTY.md)
 task third-party {
-  run cargo about generate about.hbs > THIRD_PARTY.md
+  run cargo about generate -m crates/okrun/Cargo.toml about.hbs > THIRD_PARTY.md
 }
 
 # Everything CI checks (lint, test and deny run in parallel)

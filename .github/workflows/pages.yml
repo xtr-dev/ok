@@ -1,5 +1,5 @@
 # Publishes site/ (the landing page, the playground and the install scripts)
-# to GitHub Pages at https://okrun.dev/. The install scripts are first run on
+# and the guide in docs/ (built by crates/okdocs) to GitHub Pages at https://okrun.dev/. The install scripts are first run on
 # Linux, macOS and Windows against the latest release, so a broken script is
 # never published. The playground's ok.wasm and the examples it shows come
 # from the latest release, so the page runs the same ok the install scripts
@@ -9,7 +9,7 @@ name: Pages
 on:
   push:
     branches: [main]
-    paths: ["site/**", ".github/workflows/pages.yml"]
+    paths: ["site/**", "docs/**", "crates/okdocs/**", ".github/workflows/pages.yml"]
   release:
     types: [published]
   workflow_dispatch:
@@ -72,7 +72,9 @@ jobs:
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: release
+          workspaces: |
+            release
+            .
       # Built inside release/ so its .cargo/config.toml (the stack size) applies.
       - run: cargo build -p okrun --release --target wasm32-wasip1 --locked
         working-directory: release
@@ -88,6 +90,14 @@ jobs:
           grep -q ">$TAG is out<" _site/index.html
           cp release/target/wasm32-wasip1/release/ok.wasm _site/
           cp -r release/examples/log-summary release/examples/csv-to-json release/examples/config-render _site/examples/
+      # The guide at /docs/, built from the release when it has one (so the
+      # pages describe the ok the Run buttons use) and from this commit until
+      # a release includes docs/.
+      - run: |
+          src=release
+          [ -d release/docs ] || src=.
+          echo "guide from: $src"
+          (cd "$src" && cargo run -p okdocs --locked -- build docs "$GITHUB_WORKSPACE/_site")
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

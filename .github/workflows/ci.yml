@@ -94,7 +94,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-about
-      - run: cargo about generate about.hbs > THIRD_PARTY.md
+      - run: cargo about generate -m crates/okrun/Cargo.toml about.hbs > THIRD_PARTY.md
       - run: git diff --exit-code THIRD_PARTY.md
 
   fuzz:

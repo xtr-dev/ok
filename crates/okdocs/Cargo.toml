@@ -1,0 +1,22 @@
+[package]
+name = "okdocs"
+description = "Builds the user guide at okrun.dev/docs/ from docs/*.md and checks its code samples against the real ok"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "okdocs"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+okrun = { path = "../okrun" }
+pulldown-cmark = { version = "0.13.6", default-features = false, features = ["html"] }
+
+[dev-dependencies]
+serde_json = "1.0.154"

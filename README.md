@@ -28,8 +28,10 @@ task build(--release: bool) needs [gen] {
 }
 ```
 
-`ok` lists the tasks, `ok build --release` runs one. See [`SPEC.md`](SPEC.md)
-for the full language and [`examples/`](examples/) for real scripts rewritten
+`ok` lists the tasks, `ok build --release` runs one. The guide at
+[okrun.dev/docs](https://okrun.dev/docs/) (source in [`docs/`](docs/)) explains
+the language with examples you can run in the browser; [`SPEC.md`](SPEC.md) is
+the full definition, and [`examples/`](examples/) has real scripts rewritten
 in `ok`, each next to the original.
 
 ## Status
