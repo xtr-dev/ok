@@ -996,8 +996,14 @@ impl Interp {
                 for p in pieces {
                     match p {
                         StrPiece::Lit(s) => out.push_str(s),
-                        StrPiece::Interp { expr, spec } => {
-                            let v = self.eval(expr, scope)?;
+                        StrPiece::Interp { expr, spec, span } => {
+                            let v = self.eval(expr, scope).map_err(|f| match f {
+                                Flow::Err(mut e) => {
+                                    brace_hint(&mut e, expr, spec.is_some(), *span);
+                                    Flow::Err(e)
+                                }
+                                other => other,
+                            })?;
                             match spec {
                                 None => out.push_str(&v.display()),
                                 Some(spec) => {
@@ -2110,6 +2116,31 @@ fn display_fn_name(name: &str) -> String {
     } else {
         format!("`{name}`")
     }
+}
+
+/// Adds help to an unknown-name error raised inside the interpolation `{...}`
+/// at `span` of a double-quoted string: most likely the `{` was meant as a
+/// literal brace, as in `"body { color: red }"`. When the interpolation is
+/// exactly a name (`"{nmae}"`), a did-you-mean found for it is kept, since
+/// that is a typo in an intended interpolation.
+pub(crate) fn brace_hint(e: &mut OkError, expr: &Expr, has_spec: bool, span: Span) {
+    let inside = e
+        .span
+        .is_some_and(|s| s.file == span.file && s.start >= span.start && s.end <= span.end);
+    if e.kind != ErrKind::Name || !e.message.starts_with("unknown name") || !inside {
+        return;
+    }
+    let bare_name = matches!(expr.kind, ExprKind::Ident(_))
+        && !has_spec
+        && expr.span.start == span.start + 1
+        && expr.span.end + 1 == span.end;
+    if bare_name && e.help.as_deref().is_some_and(|h| h.starts_with("did you mean")) {
+        return;
+    }
+    e.help = Some(
+        "`{` starts an interpolation in a double-quoted string; for a literal brace write `\\{`, or use a single-quoted string"
+            .into(),
+    );
 }
 
 /// The error for an unknown name used as a pipeline stage after a command,

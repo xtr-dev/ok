@@ -1225,6 +1225,10 @@ gives it. Required suggestions:
 - habits from other languages: `&&`, `||`, `!x`, `;`, `elif`, `elsif`,
   `function`, `def`, `None`, `nil`, `True`, `False`, `===`;
 - shell habits in command mode (9.2 rules 7, 8, 9, 12);
+- an unknown name inside `{...}` of a double-quoted string, as in
+  `"body { color: red }"`: `{` starts an interpolation, write `\{` or use a
+  single-quoted string (a did-you-mean is kept when the interpolation is
+  exactly a misspelled name, `"{nmae}"`);
 - an unknown name as the stage after a command, as in `run ls | grep x`:
   ``to pipe into the program `grep`, write `| run grep x` `` (reported before
   the command runs, and without a did-you-mean);

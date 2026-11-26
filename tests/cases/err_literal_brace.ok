@@ -1,0 +1,4 @@
+# A `{` meant as a literal brace starts an interpolation; the help says how
+# to write a literal brace (SPEC.md 3.5, 10.3).
+
+print("body { color: red }")

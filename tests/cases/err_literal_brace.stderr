@@ -1,0 +1,7 @@
+error[name]: unknown name `color`
+ --> err_literal_brace.ok:4:15
+  |
+4 | print("body { color: red }")
+  |               ^^^^^ not defined here
+  |
+  = help: `{` starts an interpolation in a double-quoted string; for a literal brace write `\{`, or use a single-quoted string

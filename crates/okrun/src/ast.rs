@@ -307,7 +307,12 @@ pub enum UnOp {
 #[derive(Debug, Clone)]
 pub enum StrPiece {
     Lit(String),
-    Interp { expr: Expr, spec: Option<String> },
+    /// `{expr}` or `{expr:spec}`; `span` covers the braces.
+    Interp {
+        expr: Expr,
+        spec: Option<String>,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone)]

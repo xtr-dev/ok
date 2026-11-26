@@ -861,6 +861,17 @@ impl Checker<'_> {
                     self.unknown_name(name, e.span);
                 }
             }
+            ExprKind::Str(pieces) => {
+                for p in pieces {
+                    if let StrPiece::Interp { expr, spec, span } = p {
+                        let before = self.findings.len();
+                        self.expr(expr);
+                        for f in &mut self.findings[before..] {
+                            crate::interp::brace_hint(f, expr, spec.is_some(), *span);
+                        }
+                    }
+                }
+            }
             ExprKind::Call { callee, args } => {
                 self.expr(callee);
                 self.args(args);

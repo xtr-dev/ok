@@ -1841,7 +1841,7 @@ impl Parser {
                 StrPart::Lit(s) => pieces.push(StrPiece::Lit(s)),
                 StrPart::Interp { tokens, spec, span } => {
                     let expr = self.sub_expr(tokens, span)?;
-                    pieces.push(StrPiece::Interp { expr, spec });
+                    pieces.push(StrPiece::Interp { expr, spec, span });
                 }
             }
         }
