@@ -260,7 +260,7 @@ print(grade(100), grade(85), grade(60), grade(10))
 perfect good pass fail
 ```
 
-As everywhere in ok, a guard must be a `bool`.
+As everywhere in ok, a guard must be a `bool`. Any expression that gives one works, including a single name: `_ if verbose => "details"`.
 
 ### When nothing matches
 

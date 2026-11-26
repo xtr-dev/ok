@@ -133,6 +133,10 @@ struct Parser {
     /// When set, `{` at the outermost level of an expression starts a block,
     /// not a record (the heads of `if`, `while`, `for` and `match`).
     nostruct: bool,
+    /// When set, `name =>` and `(a, b) =>` at the outermost level of an
+    /// expression are not arrow closures: in a match guard the `=>` that
+    /// follows ends the guard and starts the arm's body (SPEC.md 6.6).
+    no_arrow: bool,
     loop_depth: usize,
     fn_depth: usize,
     /// The `(loop_depth, fn_depth)` at the start of the innermost `finally`
@@ -157,6 +161,7 @@ impl Parser {
             ctx,
             depth,
             nostruct: false,
+            no_arrow: false,
             loop_depth: 0,
             fn_depth: 0,
             finally_at: None,
@@ -267,10 +272,22 @@ impl Parser {
         on: bool,
         f: impl FnOnce(&mut Self) -> PResult<T>,
     ) -> PResult<T> {
-        let saved = self.nostruct;
+        let saved = (self.nostruct, self.no_arrow);
         self.nostruct = on;
+        self.no_arrow = false;
         let r = f(self);
-        self.nostruct = saved;
+        (self.nostruct, self.no_arrow) = saved;
+        r
+    }
+
+    /// Parses a match guard: an expression in which a top-level `=>` ends the
+    /// guard instead of turning a name or parenthesised list into a closure.
+    fn guard_expr(&mut self) -> PResult<Expr> {
+        let saved = (self.nostruct, self.no_arrow);
+        self.nostruct = false;
+        self.no_arrow = true;
+        let r = self.expr();
+        (self.nostruct, self.no_arrow) = saved;
         r
     }
 
@@ -1730,7 +1747,7 @@ impl Parser {
             }
             Tok::Ident(name) => {
                 self.bump();
-                if self.at(&Tok::FatArrow) {
+                if self.at(&Tok::FatArrow) && !self.no_arrow {
                     return self.lambda(vec![(name, span)], span);
                 }
                 simple(ExprKind::Ident(name))
@@ -1740,7 +1757,7 @@ impl Parser {
                 Ok(Expr::new(ExprKind::It, span))
             }
             Tok::LParen => {
-                if self.arrow_params_ahead() {
+                if !self.no_arrow && self.arrow_params_ahead() {
                     self.bump();
                     let mut params = Vec::new();
                     while let Tok::Ident(n) = self.peek().clone() {
@@ -2030,7 +2047,7 @@ impl Parser {
             check_alternatives(&pats)?;
             check_unique_names(&pats[0])?;
             let guard = if self.eat(&Tok::Kw(Kw::If)) {
-                Some(self.with_nostruct(false, |p| p.expr())?)
+                Some(self.guard_expr()?)
             } else {
                 None
             };

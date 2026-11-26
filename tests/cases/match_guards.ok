@@ -1,0 +1,20 @@
+# Match guards that are a bare name or a parenthesised expression directly
+# before `=>` are guards, not arrow closures (SPEC.md 6.6).
+
+let flag = true
+print(match 1 {
+  _ if flag => "bare name"
+  _ => "no"
+})
+print(match 1 {
+  _ if (flag) => "parenthesised"
+  _ => "no"
+})
+print(match [1, 2] {
+  xs if xs.any(x => x > 1) => "closure inside a guard"
+  _ => "no"
+})
+print(match 3 {
+  n if n >= 3 => "comparison"
+  _ => "no"
+})

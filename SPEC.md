@@ -686,7 +686,9 @@ let exe = match os.name {
 
 Arms are tried in order. A pattern is a literal (compared with `==`), `_`
 (matches anything), an identifier (matches anything and binds it), or a list
-or record pattern. A guard `if cond` must be a bool. If no arm matches, it is
+or record pattern. A guard `if cond` must be a bool. The guard is any
+expression and ends at the arm's `=>`: `_ if flag =>` and `_ if (a or b) =>`
+are guards, not arrow closures (6.8). If no arm matches, it is
 an error that shows the value. `match` yields the value of the chosen arm.
 `match` does not require the arms to cover every value.
 
