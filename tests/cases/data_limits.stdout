@@ -1,0 +1,15 @@
+io: cannot read out/limits.json: it holds more than 10 bytes
+ok
+io: cannot read out/limits.json: it holds more than 10 bytes
+io: cannot read out/limits.json.gz: it holds more than 10 bytes
+io: cannot read out/limits.log: line 2 is longer than 10 bytes
+2
+a much longer line
+io: cannot read out/limits.csv: line 3 starts a record longer than 100 bytes
+2
+type: `max_line` must be a positive int, or null for no limit, got -1
+format: the header of the text (line 1) has the column "id" twice
+[["id", "id", "name"], ["1", "2", "x"]]
+[9223372036854775807, 9223372036854776000.0]
+format: invalid TOML in the text: the date-time 9999-12-31T00:00:00Z is outside the range of ok times (1677-09-21 to 2262-04-11); quote it to read it as a string
+9999-12-31T00:00:00Z

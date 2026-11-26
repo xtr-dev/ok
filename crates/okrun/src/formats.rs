@@ -15,7 +15,7 @@ use crate::builtins::{arg_err, eager, streaming, type_err};
 use crate::error::{ErrKind, OkError, suggest};
 use crate::interp::{Args, Builtin, Interp, R, io_reason};
 use crate::lazy::{self, Lazy, ReaderLines, Source, at_span};
-use crate::list::{bool_named, count_args, named};
+use crate::list::{bool_named, byte_size, count_args, limit_named, named};
 use crate::path::OkPath;
 use crate::source::Span;
 use crate::value::{
@@ -34,6 +34,58 @@ pub static BUILTINS: &[Builtin] = &[
 const FORMATS: &[&str] = &[
     "json", "jsonl", "csv", "tsv", "lines", "text", "toml", "yaml", "env", "bytes",
 ];
+
+/// Default for `max_size:` of `read` and `stdin`: the largest whole
+/// document (JSON, TOML, YAML, .env, bytes) read into memory, counted after
+/// decompression, so a small `.json.gz` cannot exhaust memory (SPEC.md 13.1).
+const DEFAULT_MAX_SIZE: u64 = 1 << 30;
+/// Default for `max_line:`: the longest line (text, lines, JSON Lines) or
+/// CSV/TSV record that the lazy formats hold at once.
+const DEFAULT_MAX_LINE: u64 = 64 << 20;
+
+/// The `max_size:` and `max_line:` options of `read` and `stdin`.
+struct Limits {
+    size: Option<u64>,
+    line: Option<u64>,
+}
+
+fn limits(opts: &HashMap<String, Value>, args: &Args) -> R<Limits> {
+    Ok(Limits {
+        size: limit_named(opts, "max_size", DEFAULT_MAX_SIZE, args)?,
+        line: limit_named(opts, "max_line", DEFAULT_MAX_LINE, args)?,
+    })
+}
+
+/// Read all of `r`, refusing more than `max` bytes.
+fn read_limited(r: &mut dyn Read, max: Option<u64>, name: &str, args: &Args) -> R<Vec<u8>> {
+    let mut buf = Vec::new();
+    let io = |e: std::io::Error| {
+        crate::interp::Flow::from(OkError::at(
+            ErrKind::Io,
+            args.span,
+            format!("cannot read {name}: {}", io_reason(&e)),
+        ))
+    };
+    match max {
+        None => r.read_to_end(&mut buf).map_err(io)?,
+        Some(max) => r
+            .take(max.saturating_add(1))
+            .read_to_end(&mut buf)
+            .map_err(io)?,
+    };
+    if let Some(max) = max
+        && buf.len() as u64 > max
+    {
+        return Err(OkError::at(
+            ErrKind::Io,
+            args.span,
+            format!("cannot read {name}: it holds more than {}", byte_size(max)),
+        )
+        .with_help("pass max_size: (in bytes) to read more, or null for no limit")
+        .into());
+    }
+    Ok(buf)
+}
 
 /// Whether a file name says the file is gzip-compressed (SPEC.md 13.1.1).
 fn gz_name(p: &OkPath) -> bool {
@@ -196,8 +248,13 @@ impl<R: Read> Read for GzRead<R> {
 // ----- builtins ---------------------------------------------------------------------
 
 fn read(interp: &mut Interp, mut args: Args) -> R<Value> {
-    let opts = named(&mut args, "read", &["delimiter", "header", "gzip"])?;
+    let opts = named(
+        &mut args,
+        "read",
+        &["delimiter", "header", "gzip", "max_size", "max_line"],
+    )?;
     count_args(&args, "read", 1, 2)?;
+    let lim = limits(&opts, &args)?;
     let p = path_arg(&args, 0, "read")?;
     let fmt = match format_arg(&args, 1)? {
         Some(f) => check_format(&f, &args, &[])?,
@@ -228,20 +285,11 @@ fn read(interp: &mut Interp, mut args: Args) -> R<Value> {
             Box::new(file)
         })
     };
-    let read_all = |mut r: Box<dyn Read>| -> R<Vec<u8>> {
-        let mut buf = Vec::new();
-        r.read_to_end(&mut buf).map_err(|e| {
-            crate::interp::Flow::from(OkError::at(
-                ErrKind::Io,
-                args.span,
-                format!("cannot read {name}: {}", io_reason(&e)),
-            ))
-        })?;
-        Ok(buf)
-    };
+    let read_all = |mut r: Box<dyn Read>| read_limited(&mut r, lim.size, &name, &args);
     match fmt {
         "text" | "lines" | "jsonl" => {
-            let src = ReaderLines::new(Box::new(BufReader::new(open()?)), name.clone());
+            let src = ReaderLines::new(Box::new(BufReader::new(open()?)), name.clone())
+                .with_max_line(lim.line);
             Ok(lazy_lines(fmt, Box::new(src), name))
         }
         "csv" | "tsv" => {
@@ -250,6 +298,7 @@ fn read(interp: &mut Interp, mut args: Args) -> R<Value> {
                 Box::new(open()?),
                 name,
                 t,
+                lim.line,
             ))))
         }
         "bytes" => Ok(Value::Bytes(read_all(open()?)?.into())),
@@ -322,6 +371,7 @@ fn parse(interp: &mut Interp, mut args: Args) -> R<Value> {
                 Box::new(std::io::Cursor::new(text.as_bytes().to_vec())),
                 name,
                 t,
+                None,
             );
             lazy::collect(interp, Box::new(src), span)
         }
@@ -504,8 +554,13 @@ fn encode(
 }
 
 fn stdin(interp: &mut Interp, mut args: Args) -> R<Value> {
-    let opts = named(&mut args, "stdin", &["delimiter", "header"])?;
+    let opts = named(
+        &mut args,
+        "stdin",
+        &["delimiter", "header", "max_size", "max_line"],
+    )?;
     count_args(&args, "stdin", 0, 1)?;
+    let lim = limits(&opts, &args)?;
     let fmt = match format_arg(&args, 0)? {
         Some(f) => check_format(&f, &args, &[])?,
         None => "text",
@@ -515,18 +570,18 @@ fn stdin(interp: &mut Interp, mut args: Args) -> R<Value> {
     match fmt {
         "text" | "lines" | "jsonl" => Ok(lazy_lines(
             fmt,
-            Box::new(ReaderLines::new(reader, name.clone())),
+            Box::new(ReaderLines::new(reader, name.clone()).with_max_line(lim.line)),
             name,
         )),
         "csv" | "tsv" => {
             let t = table_opts(&opts, fmt, &args)?;
-            Ok(Lazy::list(Box::new(CsvSource::new(reader, name, t))))
+            Ok(Lazy::list(Box::new(CsvSource::new(
+                reader, name, t, lim.line,
+            ))))
         }
         other => {
-            let mut buf = Vec::new();
             let mut r = reader;
-            r.read_to_end(&mut buf)
-                .map_err(|e| format_err(&args, format!("cannot read stdin: {e}")))?;
+            let buf = read_limited(&mut r, lim.size, &name, &args)?;
             if other == "bytes" {
                 return Ok(Value::Bytes(buf.into()));
             }
@@ -753,8 +808,8 @@ pub fn parse_document(fmt: &str, text: &str, name: &str) -> Result<Value, String
             .map(from_json)
             .map_err(|e| format!("invalid JSON in {name}: {e}")),
         "toml" => toml::from_str::<toml::Table>(text)
-            .map(|t| from_toml(toml::Value::Table(t)))
-            .map_err(|e| format!("invalid TOML in {name}: {}", e.message())),
+            .map_err(|e| format!("invalid TOML in {name}: {}", e.message()))
+            .and_then(|t| from_toml(toml::Value::Table(t), name)),
         "yaml" => {
             let mut docs = parse_yaml(text, name)?;
             match docs.len() {
@@ -771,8 +826,12 @@ pub fn parse_document(fmt: &str, text: &str, name: &str) -> Result<Value, String
     }
 }
 
-fn from_toml(v: toml::Value) -> Value {
-    match v {
+/// The first and last instants a `time` can hold (nanoseconds since 1970
+/// in an `i64`), for messages (SPEC.md 5.9).
+pub const TIME_RANGE: &str = "1677-09-21 to 2262-04-11";
+
+fn from_toml(v: toml::Value, name: &str) -> Result<Value, String> {
+    Ok(match v {
         toml::Value::String(s) => Value::str(s),
         toml::Value::Integer(i) => Value::Int(i),
         toml::Value::Float(f) => Value::Float(f),
@@ -784,24 +843,42 @@ fn from_toml(v: toml::Value) -> Value {
                     toml::value::Offset::Z => 0,
                     toml::value::Offset::Custom { minutes } => minutes as i64,
                 };
-                let secs = days * 86_400
-                    + t.hour as i64 * 3600
-                    + t.minute as i64 * 60
-                    + t.second.unwrap_or(0) as i64
-                    - offset_min * 60;
-                Value::Time(secs * 1_000_000_000 + t.nanosecond.unwrap_or(0) as i64)
+                // Checked, because a date outside the range of `time`
+                // would otherwise wrap around to a wrong instant.
+                let secs = days.checked_mul(86_400).and_then(|s| {
+                    s.checked_add(
+                        t.hour as i64 * 3600 + t.minute as i64 * 60 + t.second.unwrap_or(0) as i64
+                            - offset_min * 60,
+                    )
+                });
+                let nanos = secs
+                    .and_then(|s| s.checked_mul(1_000_000_000))
+                    .and_then(|n| n.checked_add(t.nanosecond.unwrap_or(0) as i64));
+                match nanos {
+                    Some(n) => Value::Time(n),
+                    None => {
+                        return Err(format!(
+                            "invalid TOML in {name}: the date-time {dt} is outside the range of ok times ({TIME_RANGE}); quote it to read it as a string"
+                        ));
+                    }
+                }
             }
             _ => Value::str(dt.to_string()),
         },
-        toml::Value::Array(items) => Value::list(items.into_iter().map(from_toml).collect()),
+        toml::Value::Array(items) => Value::list(
+            items
+                .into_iter()
+                .map(|i| from_toml(i, name))
+                .collect::<Result<_, _>>()?,
+        ),
         toml::Value::Table(t) => {
             let mut r = Record::new();
             for (k, v) in t {
-                r.insert(k.as_str(), from_toml(v));
+                r.insert(k.as_str(), from_toml(v, name)?);
             }
             Value::record(r)
         }
-    }
+    })
 }
 
 fn into_toml(v: &Value, at: &str) -> Result<toml::Value, String> {
@@ -870,30 +947,49 @@ fn to_toml(v: &Value) -> Result<String, String> {
 
 /// The most values that aliases may add to one YAML text (SPEC.md 13.6).
 const YAML_ALIAS_LIMIT: u64 = 1_000_000;
+/// The most bytes of scalar text that aliases may add to one YAML text:
+/// one large scalar aliased many times costs memory without adding many
+/// values (SPEC.md 13.6).
+const YAML_ALIAS_BYTES: u64 = 64 << 20;
 
-/// Counts, from the parser's events, how many values the aliases in a YAML
-/// text would add once resolved, without building them. `YamlLoader` copies
-/// an anchor's whole value at every alias, so aliases that repeat each other
-/// ("billion laughs") turn a 1 KB file into billions of values and exhaust
-/// memory; this pass lets `parse_yaml` refuse such a file first.
+/// The size of a YAML value once resolved: values, and bytes of scalar text.
+#[derive(Clone, Copy, Default)]
+struct YamlSize {
+    values: u64,
+    bytes: u64,
+}
+
+impl YamlSize {
+    fn add(&mut self, other: YamlSize) {
+        self.values = self.values.saturating_add(other.values);
+        self.bytes = self.bytes.saturating_add(other.bytes);
+    }
+}
+
+/// Counts, from the parser's events, how many values and bytes the aliases
+/// in a YAML text would add once resolved, without building them.
+/// `YamlLoader` copies an anchor's whole value at every alias, so aliases
+/// that repeat each other ("billion laughs"), or a large scalar aliased many
+/// times, turn a small file into gigabytes and exhaust memory; this pass
+/// lets `parse_yaml` refuse such a file first.
 #[derive(Default)]
 struct AliasCounter {
-    /// Size in values of each anchor seen so far, by the parser's anchor id.
-    anchors: HashMap<usize, u64>,
-    /// Open sequences and mappings: (anchor id, values inside so far).
-    open: Vec<(usize, u64)>,
-    /// Values added by aliases in the whole text.
-    added: u64,
+    /// Size of each anchor seen so far, by the parser's anchor id.
+    anchors: HashMap<usize, YamlSize>,
+    /// Open sequences and mappings: (anchor id, size inside so far).
+    open: Vec<(usize, YamlSize)>,
+    /// What aliases add in the whole text.
+    added: YamlSize,
 }
 
 impl AliasCounter {
-    /// Account for a finished value of `size` values (itself included).
-    fn finish(&mut self, anchor: usize, size: u64) {
+    /// Account for a finished value of `size` (itself included).
+    fn finish(&mut self, anchor: usize, size: YamlSize) {
         if anchor > 0 {
             self.anchors.insert(anchor, size);
         }
-        if let Some((_, count)) = self.open.last_mut() {
-            *count = count.saturating_add(size);
+        if let Some((_, inside)) = self.open.last_mut() {
+            inside.add(size);
         }
     }
 }
@@ -902,9 +998,21 @@ impl yaml_rust2::parser::EventReceiver for AliasCounter {
     fn on_event(&mut self, ev: yaml_rust2::parser::Event) {
         use yaml_rust2::parser::Event;
         match ev {
-            Event::Scalar(_, _, anchor, _) => self.finish(anchor, 1),
+            Event::Scalar(text, _, anchor, _) => self.finish(
+                anchor,
+                YamlSize {
+                    values: 1,
+                    bytes: text.len() as u64,
+                },
+            ),
             Event::SequenceStart(anchor, _) | Event::MappingStart(anchor, _) => {
-                self.open.push((anchor, 1));
+                self.open.push((
+                    anchor,
+                    YamlSize {
+                        values: 1,
+                        bytes: 0,
+                    },
+                ));
             }
             Event::SequenceEnd | Event::MappingEnd => {
                 if let Some((anchor, size)) = self.open.pop() {
@@ -912,8 +1020,11 @@ impl yaml_rust2::parser::EventReceiver for AliasCounter {
                 }
             }
             Event::Alias(id) => {
-                let size = self.anchors.get(&id).copied().unwrap_or(1);
-                self.added = self.added.saturating_add(size);
+                let size = self.anchors.get(&id).copied().unwrap_or(YamlSize {
+                    values: 1,
+                    bytes: 0,
+                });
+                self.added.add(size);
                 self.finish(0, size);
             }
             _ => {}
@@ -926,9 +1037,15 @@ fn parse_yaml(text: &str, name: &str) -> Result<Vec<Value>, String> {
     yaml_rust2::parser::Parser::new_from_str(text)
         .load(&mut counter, true)
         .map_err(|e| format!("invalid YAML in {name}: {e}"))?;
-    if counter.added > YAML_ALIAS_LIMIT {
+    if counter.added.values > YAML_ALIAS_LIMIT {
         return Err(format!(
             "invalid YAML in {name}: its aliases expand to more than {YAML_ALIAS_LIMIT} values"
+        ));
+    }
+    if counter.added.bytes > YAML_ALIAS_BYTES {
+        return Err(format!(
+            "invalid YAML in {name}: its aliases expand to more than {} of text",
+            crate::list::byte_size(YAML_ALIAS_BYTES)
         ));
     }
     let docs = yaml_rust2::YamlLoader::load_from_str(text)
@@ -1220,30 +1337,87 @@ impl Source for JsonLines {
 
 // ----- CSV and TSV ------------------------------------------------------------------
 
+/// How far a CSV reader has read, shared between `CsvSource` and the
+/// `Bounded` reader under it.
+#[derive(Default)]
+struct CsvProgress {
+    /// Bytes read from the input so far.
+    read: std::cell::Cell<u64>,
+    /// Where the record being read starts.
+    start: std::cell::Cell<u64>,
+    /// The line where that record starts.
+    start_line: std::cell::Cell<u64>,
+    /// Set when `Bounded` stopped a record for being too long.
+    too_long: std::cell::Cell<bool>,
+}
+
+/// The csv crate's input buffer: the reader may be this far ahead of the
+/// record it is parsing.
+const CSV_BUFFER: usize = 8 * 1024;
+
+/// A reader that fails once the current CSV record is longer than `max`
+/// bytes, since the csv crate would otherwise grow its record buffer
+/// without bound on input with an unterminated quote or no line breaks.
+struct Bounded {
+    inner: Box<dyn Read>,
+    progress: Rc<CsvProgress>,
+    max: u64,
+}
+
+impl Read for Bounded {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let p = &self.progress;
+        if p.read.get() - p.start.get() > self.max + CSV_BUFFER as u64 {
+            p.too_long.set(true);
+            return Err(std::io::Error::other("record too long"));
+        }
+        let n = self.inner.read(buf)?;
+        p.read.set(p.read.get() + n as u64);
+        Ok(n)
+    }
+}
+
 struct CsvSource {
     rdr: csv::Reader<Box<dyn Read>>,
     header: Option<Vec<Rc<str>>>,
     use_header: bool,
     name: String,
+    progress: Rc<CsvProgress>,
+    max: Option<u64>,
 }
 
 impl CsvSource {
-    fn new(input: Box<dyn Read>, name: String, t: Table) -> CsvSource {
+    fn new(input: Box<dyn Read>, name: String, t: Table, max: Option<u64>) -> CsvSource {
+        let progress = Rc::new(CsvProgress::default());
+        let input: Box<dyn Read> = match max {
+            Some(max) => Box::new(Bounded {
+                inner: input,
+                progress: progress.clone(),
+                max,
+            }),
+            None => input,
+        };
         let rdr = csv::ReaderBuilder::new()
             .has_headers(false)
             .flexible(true)
             .delimiter(t.delimiter)
             .quoting(!t.tsv)
+            .buffer_capacity(CSV_BUFFER)
             .from_reader(input);
         CsvSource {
             rdr,
             header: None,
             use_header: t.header,
             name,
+            progress,
+            max,
         }
     }
 
     fn error(&self, e: csv::Error) -> crate::interp::Flow {
+        if self.progress.too_long.get() {
+            return self.too_long();
+        }
         let line = e.position().map(|p| p.line());
         let msg = match e.kind() {
             csv::ErrorKind::Utf8 { .. } => format!(
@@ -1255,16 +1429,38 @@ impl CsvSource {
         };
         OkError::new(ErrKind::Format, msg).into()
     }
+
+    fn too_long(&self) -> crate::interp::Flow {
+        OkError::new(
+            ErrKind::Io,
+            format!(
+                "cannot read {}: line {} starts a record longer than {}",
+                self.name,
+                self.progress.start_line.get(),
+                byte_size(self.max.unwrap_or(u64::MAX))
+            ),
+        )
+        .with_help("pass max_line: (in bytes) to allow longer records, or null for no limit")
+        .into()
+    }
 }
 
 impl Source for CsvSource {
     fn next(&mut self, _: &mut Interp) -> R<Option<Value>> {
         loop {
             let mut rec = csv::StringRecord::new();
+            let at = self.rdr.position();
+            self.progress.start.set(at.byte());
+            self.progress.start_line.set(at.line());
             match self.rdr.read_record(&mut rec) {
                 Ok(false) => return Ok(None),
                 Err(e) => return Err(self.error(e)),
                 Ok(true) => {}
+            }
+            if let Some(max) = self.max
+                && rec.as_byte_record().as_slice().len() as u64 > max
+            {
+                return Err(self.too_long());
             }
             let line = rec.position().map(|p| p.line()).unwrap_or(0);
             if rec.len() == 1 && rec[0].is_empty() {
@@ -1279,6 +1475,23 @@ impl Source for CsvSource {
                     && let Some(stripped) = first.strip_prefix('\u{feff}')
                 {
                     *first = Rc::from(stripped);
+                }
+                // A repeated column name would make later columns silently
+                // replace earlier ones in each record.
+                let mut seen = std::collections::HashSet::new();
+                for k in &h {
+                    if !seen.insert(k.clone()) {
+                        return Err(OkError::new(
+                            ErrKind::Format,
+                            format!(
+                                "the header of {} (line {line}) has the column {} twice",
+                                self.name,
+                                Value::str(k.as_ref()).repr()
+                            ),
+                        )
+                        .with_help("read the rows as lists with header: false")
+                        .into());
+                    }
                 }
                 self.header = Some(h);
                 continue;
@@ -1517,6 +1730,23 @@ mod tests {
             run(r#"parse("d: &d\n  a: 1\nx: *d\ny:\n  <<: *d\n  b: 2", "yaml")"#),
             "{d: {a: 1}, x: {a: 1}, y: {b: 2, a: 1}}"
         );
+    }
+
+    #[test]
+    fn yaml_alias_text_is_limited() {
+        // One 1 MiB scalar aliased 100 times: few values, but 100 MiB of
+        // text once resolved.
+        let big = "x".repeat(1 << 20);
+        let mut text = format!("a: &a {big}\nb: [");
+        text.push_str(&vec!["*a"; 100].join(", "));
+        text.push(']');
+        assert_eq!(
+            parse_yaml(&text, "big.yaml").err().unwrap(),
+            "invalid YAML in big.yaml: its aliases expand to more than 64 MiB of text"
+        );
+        // Aliasing it a few times is fine.
+        let few = format!("a: &a {big}\nb: [*a, *a]");
+        assert_eq!(parse_yaml(&few, "few.yaml").map(|d| d.len()).ok(), Some(1));
     }
 
     #[test]

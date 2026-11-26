@@ -102,7 +102,7 @@ A record with a key that the first record lacks is an error, as is a list or rec
 
 ### Options
 
-`delimiter:` reads and writes other separators, and `header: false` treats every row, the first included, as a list of strings:
+`delimiter:` reads and writes other separators, and `header: false` treats every row, the first included, as a list of strings. Use it also for a file whose header names a column twice, which is an error otherwise, since one of the two columns would be lost:
 
 ```text file=scores.txt
 team;points
@@ -186,7 +186,7 @@ Writing the same list to `active.yaml`, `active.jsonl` or `active.tsv` gives the
 
 ## JSON and JSON Lines
 
-JSON objects become records with their keys in document order, and numbers without a fraction or exponent that fit in 64 bits become `int`, the rest `float`. When writing, paths become their `/` display form, durations their literal form such as `"1m30s"`, and times UTC RFC 3339 strings. Functions and bytes cannot be written as JSON.
+JSON objects become records with their keys in document order, and numbers without a fraction or exponent that fit in a signed 64-bit int become `int`, the rest `float` (so an integer above 9223372036854775807 loses precision, as in JavaScript). When writing, paths become their `/` display form, durations their literal form such as `"1m30s"`, and times UTC RFC 3339 strings. Functions and bytes cannot be written as JSON.
 
 JSON Lines (`.jsonl` or `.ndjson`) holds one JSON value per line. It is the usual format for logs and exports that grow over time, and ok reads it lazily, one line at a time:
 
@@ -249,7 +249,7 @@ A file with several documents separated by `---` is an error when read as `yaml`
 
 ## TOML
 
-TOML files read into records. Date-times with an offset become `time` values, while local dates and times (without an offset) stay strings, because they do not name one instant. Writing TOML needs a record.
+TOML files read into records. Date-times with an offset become `time` values, while local dates and times (without an offset) stay strings, because they do not name one instant. A `time` covers 1677 to 2262, so a date-time like `9999-12-31T00:00:00Z` is an error; quote it in the file to read it as a string. Writing TOML needs a record.
 
 ```toml file=release.toml
 title = "spring"
@@ -441,10 +441,26 @@ curl -s https://api.example.com/items | ok -e 'print(stdin("json") | count)'
 
 | Function | Options |
 |---|---|
-| `read(path, format)` | `delimiter`, `header`, `gzip` |
+| `read(path, format)` | `delimiter`, `header`, `gzip`, `max_size`, `max_line` |
 | `write(value, path, format)` | `append`, `compact`, `delimiter`, `header`, `gzip` |
 | `parse(text, format)` | `delimiter`, `header` |
 | `to(value, format)` | `compact`, `delimiter`, `header` |
-| `stdin(format)` | `delimiter`, `header` |
+| `stdin(format)` | `delimiter`, `header`, `max_size`, `max_line` |
+
+## Size limits
+
+A data file may come from anywhere, and a small `.gz` file can unpack to gigabytes. So `read` and `stdin` stop with an `io` error rather than fill your memory: a whole document (JSON, TOML, YAML, .env, bytes) may hold up to 1 GiB, and one line of text, lines or JSON Lines, or one CSV record, up to 64 MiB. The lazy formats stream, so a file of many ordinary lines has no overall limit. Pass `max_size:` or `max_line:` (in bytes) for other limits, or `null` for none:
+
+```ok file=limits.ok
+write("one\na line that is far too long\n", "notes.txt")
+let r = try { read("notes.txt", max_line: 10) | lines | count } catch e { e.message }
+print(r)
+print(read("notes.txt", max_line: 100) | lines | count)
+```
+
+```output
+cannot read notes.txt: line 2 is longer than 10 bytes
+2
+```
 
 `write` refuses arguments that look swapped, such as `write("out.txt", "result")`, with a hint that the value comes first. The reference for each function is in the [standard library](stdlib.md).

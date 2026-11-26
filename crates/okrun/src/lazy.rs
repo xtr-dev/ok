@@ -18,7 +18,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::io::BufRead;
+use std::io::{BufRead, Read};
 use std::rc::Rc;
 
 use crate::error::{ErrKind, OkError};
@@ -227,11 +227,13 @@ impl Source for RangeSource {
 }
 
 /// Lines of a reader, each with its line ending, as strings. Invalid UTF-8
-/// is an error naming the line.
+/// is an error naming the line, and so is a line longer than `max_line`
+/// bytes, which keeps memory bounded when the data has no line breaks.
 pub struct ReaderLines {
     reader: Box<dyn BufRead>,
     name: String,
     line: usize,
+    max_line: Option<u64>,
 }
 
 impl ReaderLines {
@@ -240,21 +242,52 @@ impl ReaderLines {
             reader,
             name,
             line: 0,
+            max_line: None,
         }
+    }
+
+    /// Limit each line to `max` bytes (`None`: no limit).
+    pub fn with_max_line(mut self, max: Option<u64>) -> ReaderLines {
+        self.max_line = max;
+        self
     }
 }
 
 impl Source for ReaderLines {
     fn next(&mut self, _: &mut Interp) -> R<Option<Value>> {
         let mut buf = Vec::new();
-        let n = self
-            .reader
-            .read_until(b'\n', &mut buf)
-            .map_err(|e| OkError::new(ErrKind::Io, format!("cannot read {}: {e}", self.name)))?;
+        let read_err = |e: std::io::Error, name: &str| {
+            OkError::new(ErrKind::Io, format!("cannot read {name}: {e}"))
+        };
+        let n = match self.max_line {
+            // One byte more than the limit, plus the line ending, shows
+            // whether the line goes past it.
+            Some(max) => (&mut self.reader)
+                .take(max.saturating_add(2))
+                .read_until(b'\n', &mut buf),
+            None => self.reader.read_until(b'\n', &mut buf),
+        }
+        .map_err(|e| read_err(e, &self.name))?;
         if n == 0 {
             return Ok(None);
         }
         self.line += 1;
+        if let Some(max) = self.max_line {
+            let body = strip_eol_bytes(&buf).len() as u64;
+            if body > max {
+                return Err(OkError::new(
+                    ErrKind::Io,
+                    format!(
+                        "cannot read {}: line {} is longer than {}",
+                        self.name,
+                        self.line,
+                        crate::list::byte_size(max)
+                    ),
+                )
+                .with_help("pass max_line: (in bytes) to allow longer lines, or null for no limit")
+                .into());
+            }
+        }
         if self.line == 1 && buf.starts_with(b"\xEF\xBB\xBF") {
             buf.drain(..3);
         }
@@ -270,6 +303,16 @@ impl Source for ReaderLines {
             .with_help("read binary data with read(p, \"bytes\")")
             .into()),
         }
+    }
+}
+
+/// `buf` without one trailing `\n` or `\r\n`.
+fn strip_eol_bytes(buf: &[u8]) -> &[u8] {
+    let b = buf.strip_suffix(b"\n").unwrap_or(buf);
+    if b.len() < buf.len() {
+        b.strip_suffix(b"\r").unwrap_or(b)
+    } else {
+        b
     }
 }
 

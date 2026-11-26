@@ -557,7 +557,7 @@ print(read("log.txt", "lines"))
 
 ### read
 
-`read(p: path, format: string? = null, --delimiter: string = ",", --header: bool = true, --gzip: bool? = null)` returns the parsed contents of a file. JSON, YAML and TOML give values; CSV and TSV give a lazy list of records of strings (lists of strings with `header: false`); `jsonl` and `lines` give lazy lists and `text` a lazy string. `delimiter` and `header` apply to CSV and TSV. `gzip` overrides the `.gz` rule in either direction. A missing file is an `io` error; malformed content is a `format` error with the line number; a text file that is not valid UTF-8 is an error that suggests `read(p, "bytes")`.
+`read(p: path, format: string? = null, --delimiter: string = ",", --header: bool = true, --gzip: bool? = null, --max_size: int? = 1_073_741_824, --max_line: int? = 67_108_864)` returns the parsed contents of a file. JSON, YAML and TOML give values; CSV and TSV give a lazy list of records of strings (lists of strings with `header: false`); `jsonl` and `lines` give lazy lists and `text` a lazy string. `delimiter` and `header` apply to CSV and TSV. `gzip` overrides the `.gz` rule in either direction. A missing file is an `io` error; malformed content is a `format` error with the line number; a text file that is not valid UTF-8 is an error that suggests `read(p, "bytes")`. A document larger than `max_size` bytes (JSON, TOML, YAML, .env, bytes; 1 GiB by default), or a line or CSV record longer than `max_line` bytes (64 MiB), is an `io` error; `null` removes a limit.
 
 ### write
 
@@ -573,7 +573,7 @@ print(read("log.txt", "lines"))
 
 ### stdin
 
-`stdin(format: string? = null, --delimiter: string = ",", --header: bool = true)` returns ok's own standard input, read lazily and parsed as `format` (default `text`). Use it to write scripts that sit in a pipeline of other programs. `stdin`, `parse` and `to` never decompress.
+`stdin(format: string? = null, --delimiter: string = ",", --header: bool = true, --max_size: int? = 1_073_741_824, --max_line: int? = 67_108_864)` returns ok's own standard input, read lazily and parsed as `format` (default `text`), with the same limits as `read`. Use it to write scripts that sit in a pipeline of other programs. `stdin`, `parse` and `to` never decompress.
 
 ```ok
 let rows = stdin("csv")

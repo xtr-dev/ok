@@ -1,0 +1,27 @@
+# Size limits when reading (SPEC.md 13.1): max_size for whole documents and
+# bytes, max_line for each line or CSV record of the lazy formats.
+let msg = (f) => try { f() } catch e { "{e.kind}: {e.message}" }
+write({name: "ok", tags: ["a", "b"]}, "out/limits.json")
+print(msg(() => read("out/limits.json", max_size: 10)))
+print(read("out/limits.json", max_size: 100).name)
+print(msg(() => read("out/limits.json", "bytes", max_size: 10)))
+write({name: "ok"}, "out/limits.json.gz")
+print(msg(() => read("out/limits.json.gz", max_size: 10)))
+write(["short", "a much longer line"], "out/limits.log")
+print(msg(() => (read("out/limits.log", max_line: 10) | lines | count)))
+print(read("out/limits.log", max_line: 18) | lines | count)
+print(read("out/limits.log", max_line: null, max_size: null) | lines | last)
+let wide = repeat("x", 20000)
+write([{a: "1", b: "2"}, {a: wide, b: "3"}], "out/limits.csv")
+print(msg(() => (read("out/limits.csv", max_line: 100) | count)))
+print(read("out/limits.csv", max_line: 30000) | count)
+print(msg(() => read("out/limits.log", max_line: -1)))
+
+# Duplicate CSV column names are an error rather than a lost column.
+print(msg(() => parse("id,id,name\n1,2,x\n", "csv")))
+print(parse("id,id,name\n1,2,x\n", "csv", header: false))
+
+# Integers beyond 64 bits become floats; TOML times must fit ok's range.
+print(parse("[9223372036854775807, 9223372036854775808]", "json"))
+print(msg(() => parse("t = 9999-12-31T00:00:00Z", "toml")))
+print(parse("t = \"9999-12-31T00:00:00Z\"", "toml").t)

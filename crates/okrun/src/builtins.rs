@@ -138,11 +138,11 @@ pub static SIGNATURES: &[BuiltinSig] = &[
     sig("abs", 1, 1, &[]), sig("relative_to", 2, 2, &[]), sig("with_ext", 2, 2, &[]),
     sig("parts", 1, 1, &[]), sig("is_abs", 1, 1, &[]),
     // Data formats (formats.rs).
-    sig("read", 1, 2, &["delimiter", "header", "gzip"]),
+    sig("read", 1, 2, &["delimiter", "header", "gzip", "max_size", "max_line"]),
     sig("write", 2, 3, &["append", "compact", "delimiter", "header", "gzip"]),
     sig("parse", 2, 2, &["delimiter", "header"]),
     sig("to", 2, 2, &["compact", "delimiter", "header"]),
-    sig("stdin", 0, 1, &["delimiter", "header"]),
+    sig("stdin", 0, 1, &["delimiter", "header", "max_size", "max_line"]),
     // Network and archives.
     sig("fetch", 1, 1, &["method", "headers", "body", "json", "timeout", "to", "check", "bytes"]),
     sig("zip", 2, 2, &[]), sig("unzip", 2, 2, &["max_size", "max_entries"]),

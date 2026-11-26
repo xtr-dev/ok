@@ -566,7 +566,8 @@ is `x`. `string / string` is a type error with the hint to start from
 ### 5.9 Durations and times
 
 A `duration` is a signed span with nanosecond precision. A `time` is an
-instant (UTC internally, displayed in local time).
+instant (UTC internally, displayed in local time), held in nanoseconds, so
+it ranges from 1677-09-21 to 2262-04-11.
 
 | Operation | Result |
 |---|---|
@@ -1328,7 +1329,7 @@ directory (the project root in project mode).
 
 | Function | Returns | Notes |
 |---|---|---|
-| `read(p: path, format: string? = null, --delimiter: string = ",", --header: bool = true, --gzip: bool? = null)` | value | Format from the extension or `format` (13); a `.gz` file is decompressed (13.1.1). `delimiter` and `header` apply to CSV and TSV (13.4). |
+| `read(p: path, format: string? = null, --delimiter: string = ",", --header: bool = true, --gzip: bool? = null, --max_size: int? = 1_073_741_824, --max_line: int? = 67_108_864)` | value | Format from the extension or `format` (13); a `.gz` file is decompressed (13.1.1). `delimiter` and `header` apply to CSV and TSV (13.4); `max_size` and `max_line` limit memory (13.1.2). |
 | `write(value, p: path, format: string? = null, --append: bool, --compact: bool, --delimiter: string = ",", --header: bool = true, --gzip: bool? = null)` | `null` | Creates parent directories. `compact` applies to JSON (13.1), `delimiter` and `header` to CSV and TSV (13.4). A `.gz` file is compressed (13.1.1). Writes `\n` line endings. Streams lazy values. When the value is a short string that looks like a file name (`"out.txt"`) and the path has no extension, the arguments are almost certainly swapped, and `write` refuses with a hint; `ok self check` warns about literal arguments that look swapped before the script runs (17.1). A failed `write` leaves an existing file as it was (12.1.2). |
 | `copy(src: path, dst: path)` | `null` | Files or directories (recursive). `dst` is the exact destination, never "into". Overwrites files. Copying a file onto an existing directory, or a directory onto an existing file, is an error. Copying a directory onto an existing directory merges the two: files from `src` replace files with the same name, everything else in `dst` stays. Copying a path onto itself or a directory into itself is an error. |
 | `move(src: path, dst: path)` | `null` | Rename; falls back to copy and remove across file systems. Moving a directory into itself is an error. |
@@ -1343,7 +1344,7 @@ directory (the project root in project mode).
 | `tempdir()` | `path` | A new directory in the system's temporary directory (19 for WebAssembly), removed when the script exits (also on error). |
 | `tempfile(--ext: string = "")` | `path` | A new empty file, removed at exit. |
 | `chmod(p: path, mode: int)` | `null` | Sets Unix permission bits, `chmod(p, 0o755)`. On Windows there are no permission bits, and `chmod` does nothing and succeeds. |
-| `stdin(format: string? = null, --delimiter: string = ",", --header: bool = true)` | value | ok's own stdin, lazily, parsed as `format` (default `text`). |
+| `stdin(format: string? = null, --delimiter: string = ",", --header: bool = true, --max_size: int? = 1_073_741_824, --max_line: int? = 67_108_864)` | value | ok's own stdin, lazily, parsed as `format` (default `text`). Limits as for `read` (13.1.2). |
 | `parse(text: string, format: string, --delimiter: string = ",", --header: bool = true)` | value | `read` without the file (13.1); also accepts `"yaml_all"` (13.6). |
 | `to(value, format: string, --compact: bool, --delimiter: string = ",", --header: bool = true)` | `string` or `bytes` | `write` without the file (13.1). |
 
@@ -1644,6 +1645,23 @@ read("server.log.gz") | lines | where(l => "ERROR" in l) | count
 
 `stdin()`, `parse` and `to` do not decompress.
 
+#### 13.1.2 Size limits
+
+Data from a file or stdin may be hostile, and a few kilobytes of gzip can
+stand for gigabytes. So `read` and `stdin()` hold only so much in memory at
+once, counted after decompression:
+
+- `max_size` (default 1 GiB, 1_073_741_824 bytes) limits a whole document:
+  `json`, `toml`, `yaml`, `env` and `bytes`.
+- `max_line` (default 64 MiB, 67_108_864 bytes) limits one line of `text`,
+  `lines` and `jsonl`, and one record of `csv` and `tsv`, without its line
+  ending. The lazy formats stream, so the file as a whole is not limited.
+
+Going over a limit is an `io` error, `cannot read big.json: it holds more
+than 1 GiB` or `cannot read x.log: line 3 is longer than 64 MiB`, with help
+naming the argument. A positive int sets another limit and `null` removes
+it. `parse` works on text already in memory and has no limits.
+
 ### 13.2 Lazy values
 
 `read` of `jsonl`, `csv`, `tsv`, `lines` and `text` (also compressed,
@@ -1670,8 +1688,10 @@ produces three numbers.
 
 ### 13.3 JSON
 
-Numbers without a fraction or exponent that fit in 64 bits become `int`,
-others `float`. Objects become records in document order. Writing: paths and
+Numbers without a fraction or exponent that fit in a signed 64-bit int
+(−2^63 to 2^63−1) become `int`; all other numbers become `float`, so an
+integer beyond that range, such as 18446744073709551615, is read as a float
+and loses precision, as in JavaScript. Objects become records in document order. Writing: paths and
 times become strings (display form; times in UTC RFC 3339), durations become
 strings in literal syntax, bytes and functions are errors. Duplicate keys in
 input: the last wins.
@@ -1679,7 +1699,9 @@ input: the last wins.
 ### 13.4 CSV and TSV
 
 - The first row is the header; each further row becomes a record keyed by the
-  header. With `header: false`, rows are lists of strings.
+  header. A header that names a column twice is a `format` error naming
+  the column, since one of the columns would be lost; read such a file with
+  `header: false`, where rows are lists of strings.
 - All values are strings. ok never guesses numbers, booleans or dates;
   convert explicitly with `int()`, `float()`, `time()`.
 - Reading accepts a UTF-8 BOM, `\n` and `\r\n` line endings, RFC 4180 quoting
@@ -1698,7 +1720,11 @@ input: the last wins.
 ### 13.5 TOML
 
 TOML 1.0. Offset date-times become `time`; local dates, local times and
-local date-times become strings. Writing requires a record.
+local date-times become strings. An offset date-time outside the range a
+`time` can hold (1677-09-21 to 2262-04-11, 5.9) is a `format` error, rather
+than a wrong instant; quoted, it is an ordinary string. An integer outside
+the 64-bit range is a `format` error, as TOML requires. Writing requires a
+record.
 
 ### 13.6 YAML
 
@@ -1710,12 +1736,14 @@ CI and compose files, are applied: the merged mapping's keys are added unless
 the mapping already has them.
 
 Each alias is a full copy of its anchor's value, so a few lines of aliases
-that repeat each other could stand for billions of values. Before building
-anything, ok counts the values aliases would add; when that is more than
-1,000,000 in one file (or `parse` text), reading fails with a `format`
-error: `invalid YAML in NAME: its aliases expand to more than 1000000
-values`. Ordinary files, which alias a few defaults blocks, are far below
-the limit.
+that repeat each other could stand for billions of values, and one large
+string aliased many times for gigabytes. Before building anything, ok
+counts the values aliases would add and the bytes of text in them; when
+that is more than 1,000,000 values or 64 MiB of text in one file (or
+`parse` text), reading fails with a `format` error: `invalid YAML in NAME:
+its aliases expand to more than 1000000 values` (or `more than 64 MiB of
+text`). Ordinary files, which alias a few defaults blocks, are far below
+the limits. Integers outside the 64-bit range become floats, as in JSON.
 
 ### 13.7 .env
 
