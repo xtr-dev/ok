@@ -214,7 +214,7 @@ task hello(name: string = "world") {
 }
 ```
 
-To pin the wrappers, `ok self init` downloads the checksums of its own release (`SHA256SUMS` from the GitHub release of the version you are running). Without network access, download that file some other way and pass it with `--checksums SHA256SUMS`. `OK_DOWNLOAD_URL` points both `init` and the wrappers at a mirror instead of GitHub.
+To pin the wrappers, `ok self init` downloads the checksums of its own release (`SHA256SUMS` from the GitHub release of the version you are running). Without network access, download that file some other way and pass it with `--checksums SHA256SUMS`. `OK_DOWNLOAD_URL` points both `init` and the wrappers at a mirror instead of GitHub; `init` downloads the checksums only over `https://`, so for a plain-HTTP or `file://` mirror pass a `SHA256SUMS` you checked with `--checksums`. Every entry must be a SHA-256 digest (64 hex digits), since it ends up in the wrappers' code.
 
 `ok self init` never overwrites anything: if any of `ok.ok`, `ok`, `ok.cmd` or `ok.ps1` exists, it stops with an error and writes nothing. To add wrappers to a project that already has an `ok.ok`, run it in an empty directory and copy the three wrapper files over.
 
@@ -225,11 +225,11 @@ The wrappers let anyone run your tasks with nothing but a fresh checkout. Commit
 - `ok` is a POSIX `sh` script for Linux and macOS: `./ok build`.
 - `ok.cmd` and `ok.ps1` are for Windows, from `cmd.exe` or PowerShell: `ok.cmd build` or `.\ok.ps1 build`. `ok.cmd` only hands over to `ok.ps1`.
 
-Each wrapper pins one ok version and the SHA-256 of each release binary. On first use it downloads the binary for the current OS and architecture into the user cache (`~/.cache/ok/VERSION/` on Linux and macOS, `%LOCALAPPDATA%\ok\VERSION\` on Windows), checks its checksum, and runs it with all your arguments. If the checksum does not match, it deletes the download and refuses to run it. Later runs use the cached binary straight away, so the wrapper costs nothing after the first time.
+Each wrapper pins one ok version and the SHA-256 of each release binary. On first use it downloads the binary for the current OS and architecture into the user cache (`~/.cache/ok/VERSION-SHA/` on Linux and macOS, `%LOCALAPPDATA%\ok\VERSION-SHA\` on Windows, where `SHA` is the first 16 digits of the pinned checksum, so a binary is only reused by wrappers that pin the same one), checks its checksum, and runs it with all your arguments. If the checksum does not match, it deletes the download and refuses to run it. Later runs use the cached binary straight away, so the wrapper costs nothing after the first time.
 
 Because the version is pinned, everyone on the project, and CI, runs the same ok. If the project's `requires` is newer than the ok someone has installed, the error points at the wrapper as the fix. To move a project to a newer ok, delete the three wrappers, run `ok self init` with the new version in an empty directory, and copy the new wrappers in.
 
-The wrappers are the only shell code ok produces, and they stay short enough to read before you run them. They still go through [trust](trust.md) like any other way of running tasks.
+The wrappers are the only shell code ok produces, and they stay short enough to read before you run them. They still go through [trust](trust.md) like any other way of running tasks, but only once ok runs: `./ok` itself is a shell script from the repository, and your shell runs it before any trust check. A repository you do not trust could have changed it to do anything. So in a repository you have not reviewed, run your installed `ok` instead of `./ok`; the trust prompt then protects you as described.
 
 ## Other `ok self` commands
 

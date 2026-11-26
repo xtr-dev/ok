@@ -306,6 +306,20 @@ pub fn init(args: &[String], start: &Path) -> R<Value> {
     let version = crate::VERSION;
     let base = std::env::var("OK_DOWNLOAD_URL")
         .unwrap_or_else(|_| format!("https://github.com/xtr-dev/ok/releases/download/v{version}"));
+    // The checksums are what every later run of the wrappers trusts, so
+    // they are only downloaded over HTTPS; a mirror without it can still be
+    // used with a SHA256SUMS file checked by hand.
+    if sums_file.is_none() && !base.starts_with("https://") {
+        return Err(OkError::new(
+            ErrKind::Net,
+            format!(
+                "the checksums must be downloaded over https, but OK_DOWNLOAD_URL is {}",
+                crate::command::display_arg(&base)
+            ),
+        )
+        .with_help("use an https:// mirror, or download SHA256SUMS yourself, check it, and pass it with --checksums FILE")
+        .into());
+    }
     let sums_text = match &sums_file {
         Some(f) => std::fs::read_to_string(f).map_err(|e| OkError::new(ErrKind::Io, format!("cannot read {f}: {}", crate::interp::io_reason(&e))))?,
         None => download_text(&format!("{base}/SHA256SUMS")).map_err(|m| {
@@ -315,22 +329,33 @@ pub fn init(args: &[String], start: &Path) -> R<Value> {
     };
     let mut sums: Vec<(&str, String)> = Vec::new();
     for (target, file) in TARGETS {
-        let sum = sums_text.lines().find_map(|l| {
+        let hash = sums_text.lines().find_map(|l| {
             let mut parts = l.split_whitespace();
             let hash = parts.next()?;
             let name = parts.next()?.trim_start_matches('*');
-            (name == *file && hash.len() == 64).then(|| hash.to_ascii_lowercase())
+            (name == *file).then_some(hash)
         });
-        match sum {
-            Some(s) => sums.push((target, s)),
-            None => {
-                return Err(OkError::new(
-                    ErrKind::Value,
-                    format!("the checksums have no entry for {file}"),
-                )
-                .into());
-            }
+        let Some(hash) = hash else {
+            return Err(OkError::new(
+                ErrKind::Value,
+                format!("the checksums have no entry for {file}"),
+            )
+            .into());
+        };
+        // The digest is pasted into shell and PowerShell code, so nothing
+        // but 64 hex digits may get through.
+        if !is_sha256(hash) {
+            return Err(OkError::new(
+                ErrKind::Value,
+                format!(
+                    "the checksum for {file} is not a SHA-256 digest: {}",
+                    crate::command::display_arg(hash)
+                ),
+            )
+            .with_help("a SHA256SUMS line is 64 hexadecimal digits, spaces, and the file name")
+            .into());
         }
+        sums.push((target, hash.to_ascii_lowercase()));
     }
     let sum = |t: &str| {
         sums.iter()
@@ -381,6 +406,11 @@ pub fn init(args: &[String], start: &Path) -> R<Value> {
     Ok(Value::Null)
 }
 
+/// Whether `s` is a SHA-256 digest in hex: exactly 64 hex digits.
+fn is_sha256(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 fn download_text(url: &str) -> Result<String, String> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(30)))
@@ -414,7 +444,9 @@ case "$(uname -s)-$(uname -m)" in
   *) echo "ok: no prebuilt ok for $(uname -s) $(uname -m)" >&2; exit 1 ;;
 esac
 
-cache="${{XDG_CACHE_HOME:-$HOME/.cache}}/ok/$OK_VERSION"
+# The cache is keyed by the checksum too, so a binary cached for another
+# pin of the same version (a mirror, an edited wrapper) is never reused.
+cache="${{XDG_CACHE_HOME:-$HOME/.cache}}/ok/$OK_VERSION-$(printf '%.16s' "$sum")"
 bin="$cache/ok-$target"
 if [ ! -x "$bin" ]; then
   mkdir -p "$cache"
@@ -462,11 +494,13 @@ switch ($Arch) {{
     'Arm64' {{ $Target = 'aarch64-pc-windows-msvc'; $Sum = '{wa}' }}
     default {{ Write-Error "ok: no prebuilt ok for Windows $Arch"; exit 1 }}
 }}
-$Cache = Join-Path $env:LOCALAPPDATA "ok\$Version"
+# The cache is keyed by the checksum too, so a binary cached for another
+# pin of the same version (a mirror, an edited wrapper) is never reused.
+$Cache = Join-Path $env:LOCALAPPDATA "ok\$Version-$($Sum.Substring(0, 16))"
 $Bin = Join-Path $Cache "ok-$Target.exe"
-if (-not (Test-Path $Bin)) {{
+if (-not (Test-Path -PathType Leaf $Bin)) {{
     New-Item -ItemType Directory -Force -Path $Cache | Out-Null
-    $Tmp = "$Bin.download"
+    $Tmp = "$Bin.download-$([guid]::NewGuid())"
     Invoke-WebRequest -UseBasicParsing -Uri "$Base/ok-$Target.exe" -OutFile $Tmp
     $Actual = (Get-FileHash -Algorithm SHA256 $Tmp).Hash.ToLower()
     if ($Actual -ne $Sum) {{
@@ -484,4 +518,7 @@ exit $LASTEXITCODE
     )
 }
 
-const CMD_WRAPPER: &str = "@echo off\nrem ok bootstrap wrapper for cmd.exe, written by `ok self init`; the work is done by ok.ps1.\npowershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0ok.ps1\" %*\nexit /b %ERRORLEVEL%\n";
+/// cmd.exe looks for a bare `powershell` in the current directory before
+/// PATH, so a `powershell.bat` in a cloned repository would run instead;
+/// the wrapper names the system's PowerShell by its full path.
+const CMD_WRAPPER: &str = "@echo off\nrem ok bootstrap wrapper for cmd.exe, written by `ok self init`; the work is done by ok.ps1.\n\"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"%~dp0ok.ps1\" %*\nexit /b %ERRORLEVEL%\n";

@@ -2406,11 +2406,24 @@ exit code is then 1.
 `ok self init` writes `./ok` (POSIX sh) and `ok.cmd` plus `ok.ps1` (Windows).
 Each wrapper pins one ok version and the SHA-256 of each release binary. On
 first use it downloads the binary for the current OS and architecture into
-the user cache (`${XDG_CACHE_HOME:-$HOME/.cache}/ok/<version>/` on Unix,
-`%LOCALAPPDATA%\ok\<version>\` on Windows), verifies the checksum, refuses to
-run on a mismatch, and then runs it with all arguments. Later runs use the
-cached binary. `OK_DOWNLOAD_URL` overrides the base URL for mirrors. The
-wrappers are the only shell code in the project and stay short.
+the user cache (`${XDG_CACHE_HOME:-$HOME/.cache}/ok/<version>-<sha>/` on Unix,
+`%LOCALAPPDATA%\ok\<version>-<sha>\` on Windows, where `<sha>` is the first 16
+hex digits of the pinned checksum), verifies the checksum, refuses to run on
+a mismatch, and then runs it with all arguments. Later runs use the cached
+binary. Downloads go to a file name unique to the run and are renamed into
+place. `ok.cmd` starts PowerShell by its full path under `%SystemRoot%`, since
+cmd.exe searches the current directory before `PATH`. `OK_DOWNLOAD_URL`
+overrides the base URL for mirrors. The wrappers are the only shell code in
+the project and stay short.
+
+`ok self init` takes the checksums from `--checksums FILE` or downloads
+`SHA256SUMS` from the base URL, which must then be `https://`. Every entry
+used must be exactly 64 hex digits (normalised to lower case); anything else
+is an error and nothing is written.
+
+The wrappers are files in the repository that the shell or cmd.exe runs
+before ok starts, so trust (16) cannot cover them: in a repository you have
+not reviewed, run the installed `ok` instead of `./ok`.
 
 ## 19. Portability rules
 

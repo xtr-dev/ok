@@ -101,8 +101,26 @@ fn a_fresh_project_runs_through_the_wrapper() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&out.stdout), "hello, wrapper!\n");
-    // The second run uses the cached binary.
+    // The second run uses the cached binary, kept under the version and
+    // the start of its checksum.
     assert!(run(&["self", "version"]).status.success());
+    let cached: Vec<String> = std::fs::read_dir(cache.join("ok"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    let version = env!("CARGO_PKG_VERSION");
+    assert_eq!(cached.len(), 1, "{cached:?}");
+    assert!(
+        cached[0].starts_with(&format!("{version}-")) && cached[0].len() == version.len() + 17,
+        "{cached:?}"
+    );
+    let ps1 = std::fs::read_to_string(project.join("ok.ps1")).unwrap();
+    assert!(ps1.contains("[guid]::NewGuid()"), "a unique download name");
+    let cmd = std::fs::read_to_string(project.join("ok.cmd")).unwrap();
+    assert!(
+        cmd.contains("\"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\""),
+        "{cmd}"
+    );
 
     // A tampered binary is refused.
     std::fs::remove_dir_all(&cache).unwrap();
@@ -118,5 +136,70 @@ fn a_fresh_project_runs_through_the_wrapper() {
         "{}",
         String::from_utf8_lossy(&bad.stderr)
     );
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn init_accepts_only_hex_checksums_and_https_downloads() {
+    let base = std::env::temp_dir().join(format!("ok-init-sums-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    let ok = Path::new(env!("CARGO_BIN_EXE_ok"));
+    let good = "ab".repeat(32);
+    let mut sums = String::new();
+    for (i, (_, file)) in okrun::tools::TARGETS.iter().enumerate() {
+        // One entry is shell code of the right length instead of a digest.
+        let hash = if i == 0 {
+            format!("$(reboot){}", "0".repeat(55))
+        } else {
+            good.clone()
+        };
+        sums.push_str(&format!("{hash}  {file}\n"));
+    }
+    std::fs::write(base.join("SHA256SUMS"), &sums).unwrap();
+    let o = Command::new(ok)
+        .args(["self", "init", "--checksums", "SHA256SUMS"])
+        .current_dir(&base)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(!o.status.success());
+    assert!(err.contains("is not a SHA-256 digest"), "{err}");
+    assert!(!base.join("ok").exists(), "no wrapper is written");
+
+    // Upper-case digests are accepted and written in lower case.
+    let upper = sums
+        .lines()
+        .skip(1)
+        .map(|l| format!("{l}\n"))
+        .collect::<String>();
+    let first = okrun::tools::TARGETS[0].1;
+    std::fs::write(
+        base.join("SHA256SUMS"),
+        format!("{}  {first}\n{upper}", "CD".repeat(32)),
+    )
+    .unwrap();
+    let o = Command::new(ok)
+        .args(["self", "init", "--checksums", "SHA256SUMS"])
+        .current_dir(&base)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let wrappers = std::fs::read_to_string(base.join("ok")).unwrap()
+        + &std::fs::read_to_string(base.join("ok.ps1")).unwrap();
+    assert!(!wrappers.contains("CD"), "normalised to lower case");
+
+    // Without a file, the checksums must come over https.
+    let empty = base.join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
+    let o = Command::new(ok)
+        .args(["self", "init"])
+        .env("OK_DOWNLOAD_URL", "http://mirror.example/ok")
+        .current_dir(&empty)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(!o.status.success());
+    assert!(err.contains("must be downloaded over https"), "{err}");
     let _ = std::fs::remove_dir_all(&base);
 }
