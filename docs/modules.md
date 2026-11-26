@@ -204,7 +204,7 @@ error[name]: `greet` from lib/b.ok clashes with a name already declared here
   = help: import it under a name instead: import "./lib/b.ok" as lib
 ```
 
-ok never lets one name silently win over another. Import one or both files with `as` and the names no longer meet.
+ok never lets one name silently win over another. Import one or both files with `as` and the names no longer meet. Importing the same file twice is not a clash: the second `import` of it does nothing.
 
 Each file is loaded once per run, however many files import it. Two libraries that import each other, directly or through others, are an import cycle, and the error shows the whole cycle:
 
