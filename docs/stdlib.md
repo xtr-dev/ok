@@ -714,7 +714,7 @@ if not r.ok {
 
 ## Archives
 
-Archive members are stored with `/` paths relative to the parent of each source, so zipping the directory `site` gives members `site/...`. Extraction refuses members with an absolute path or one that escapes the destination ("zip slip"), and does not create symlinks that point outside it. Unix permission bits are kept where the OS has them. A missing archive is an `io` error.
+Archive members are stored with `/` paths relative to the parent of each source, so zipping the directory `site` gives members `site/...`. Extraction refuses members with an absolute path or one that escapes the destination ("zip slip"), member names that are not portable (with `:`, `\` or control characters, ending in a dot or space, or a Windows device name such as `NUL`), and links that point outside the destination; it never writes through a link already in the destination. Extracted files get the permissions of any new file (the umask applies), and an executable member stays executable. A missing archive is an `io` error.
 
 ```ok file=archives.ok
 write("hello\n", "site/index.html")
@@ -738,7 +738,7 @@ print(glob("t/**/*"))
 
 ### unzip
 
-`unzip(archive: path, dst: path)` returns `null`. Extracts a zip archive into the directory `dst`.
+`unzip(archive: path, dst: path, --max_size: int? = 4_294_967_296, --max_entries: int? = 1_000_000)` returns `null`. Extracts a zip archive into the directory `dst`. Symbolic links in the archive are refused. Extraction stops with an `io` error when the files would hold more than `max_size` bytes (4 GiB) or the archive has more than `max_entries` members; pass a larger number, or `null` for no limit.
 
 ### tar
 
@@ -746,4 +746,4 @@ print(glob("t/**/*"))
 
 ### untar
 
-`untar(archive: path, dst: path)` returns `null`. Extracts a tar archive into `dst`; gzip compression is detected from the content, not the name.
+`untar(archive: path, dst: path, --max_size: int? = 4_294_967_296, --max_entries: int? = 1_000_000)` returns `null`. Extracts a tar archive into `dst`; gzip compression is detected from the content, not the name. Symbolic links are created after every other member and only when they point inside `dst`; a hard link becomes a copy of the file it names; devices and pipes are skipped. `max_size` and `max_entries` work as for `unzip`.

@@ -145,7 +145,8 @@ pub static SIGNATURES: &[BuiltinSig] = &[
     sig("stdin", 0, 1, &["delimiter", "header"]),
     // Network and archives.
     sig("fetch", 1, 1, &["method", "headers", "body", "json", "timeout", "to", "check", "bytes"]),
-    sig("zip", 2, 2, &[]), sig("unzip", 2, 2, &[]), sig("tar", 2, 2, &[]), sig("untar", 2, 2, &[]),
+    sig("zip", 2, 2, &[]), sig("unzip", 2, 2, &["max_size", "max_entries"]),
+    sig("tar", 2, 2, &[]), sig("untar", 2, 2, &["max_size", "max_entries"]),
     // Text (text.rs).
     sig("trim", 1, 1, &[]), sig("trim_start", 1, 1, &[]), sig("trim_end", 1, 1, &[]),
     sig("split", 1, 2, &["limit"]), sig("replace", 3, 3, &[]), sig("contains", 2, 2, &[]),

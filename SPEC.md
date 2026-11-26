@@ -1528,17 +1528,46 @@ Strings default to left alignment, numbers to right. Examples: `"{n:>6}"`,
 | `hash(x: path \| bytes, algo: string = "sha256")` | `string` | Lowercase hex. `algo`: `sha256`, `sha512`, `sha1`, `md5`. A string argument is an error asking for `path(s)` or `bytes(s)`, because it is ambiguous. Files are hashed streaming. |
 | `fetch(url: string, --method = "GET", --headers: record = {}, --body = null, --json = null, --timeout: duration = 30s, --to: path? = null, --check: bool = true, --bytes: bool)` | record | 12.9.1 |
 | `zip(src: path \| list[path], dst: path)` | `null` | |
-| `unzip(archive: path, dst: path)` | `null` | |
+| `unzip(archive: path, dst: path, --max_size: int? = 4_294_967_296, --max_entries: int? = 1_000_000)` | `null` | |
 | `tar(src: path \| list[path], dst: path)` | `null` | gzip-compressed when `dst` ends in `.gz` or `.tgz` |
-| `untar(archive: path, dst: path)` | `null` | gzip detected from content |
+| `untar(archive: path, dst: path, --max_size: int? = 4_294_967_296, --max_entries: int? = 1_000_000)` | `null` | gzip detected from content |
 
 Archive members are stored with `/` paths relative to the source's parent
-directory (for a directory `src`, members are `src/...`). Extraction refuses
-members whose path is absolute or escapes `dst` ("zip slip"), and does not
-create symlinks that point outside `dst`. Unix permission bits are stored and
-restored where the OS has them. `zip` and `tar` list their sources before
-they create the archive, so an archive written inside a source directory
-does not contain itself, and they write it as 12.1.2 describes.
+directory (for a directory `src`, members are `src/...`). Unix permission
+bits are stored where the OS has them. `zip` and `tar` list their sources
+before they create the archive, so an archive written inside a source
+directory does not contain itself, and they write it as 12.1.2 describes.
+
+Extraction treats the archive as untrusted and stops with an `io` error,
+naming the member, rather than write anywhere but inside `dst`:
+
+- A member whose path is absolute or climbs out of `dst` with `..` ("zip
+  slip") is refused.
+- Member names must be portable, so an archive means the same on every OS:
+  a path component may not contain `:`, `\` or a control character, end in
+  `.` or a space, or be a Windows device name (`CON`, `PRN`, `AUX`, `NUL`,
+  `COM1` to `COM9`, `LPT1` to `LPT9`, in any case and with any extension,
+  such as `nul.txt`).
+- Nothing is written through a symbolic link: a link where a directory of
+  a member would go is an error, and a file or link where a member itself
+  goes is replaced, not followed.
+- `unzip` refuses symbolic links. `untar` creates them after every other
+  member, with the target written in normalised form (no `.`, no `..` after
+  a name), and only when the target, resolved from the link's directory,
+  stays inside `dst` and passes through no link that was in `dst` before.
+  The WebAssembly build refuses links. A hard link becomes a copy of the
+  member it names, which must be a file extracted earlier. Devices, pipes
+  and other special members are skipped.
+- Files get the permissions of any new file, so the umask applies; a
+  member stored as executable is created executable. Other mode bits
+  (setuid, setgid, sticky, write access the umask removes) are not
+  restored, and directories get default permissions.
+- `max_size` limits the bytes of file content written (default 4 GiB) and
+  `max_entries` the number of members (default 1,000,000), so a small
+  archive cannot fill the disk; `null` removes a limit. Going over a limit
+  is an error that stops the extraction, leaving the members written so far.
+
+`untar` also restores each file's modification time.
 
 #### 12.9.1 fetch
 

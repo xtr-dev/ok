@@ -1,0 +1,7 @@
+error[io]: refusing to extract out/limit-err/src.tar: its files hold more than 4 bytes
+ --> err_archive_limit.ok:5:1
+  |
+5 | untar(d / "src.tar", d / "out", max_size: 4)
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: pass max_size: (in bytes) to allow more, or null for no limit

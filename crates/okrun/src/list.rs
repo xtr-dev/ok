@@ -103,6 +103,44 @@ pub(crate) fn bool_named(opts: &HashMap<String, Value>, name: &str, args: &Args)
     }
 }
 
+/// A size or count limit given as a named argument (`max_size:`,
+/// `max_entries:`, `max_line:`): `default` when the argument is absent,
+/// `None` (no limit) for `null`, otherwise a positive int.
+pub(crate) fn limit_named(
+    opts: &HashMap<String, Value>,
+    name: &str,
+    default: u64,
+    args: &Args,
+) -> R<Option<u64>> {
+    match opts.get(name) {
+        None => Ok(Some(default)),
+        Some(Value::Null) => Ok(None),
+        Some(Value::Int(n)) if *n > 0 => Ok(Some(*n as u64)),
+        Some(other) => type_err(
+            args,
+            format!(
+                "`{name}` must be a positive int, or null for no limit, got {}",
+                other.repr()
+            ),
+        ),
+    }
+}
+
+/// A byte count for messages: whole KiB, MiB or GiB when it is one, so the
+/// default limits read as `1 GiB` rather than `1073741824 bytes`.
+pub(crate) fn byte_size(n: u64) -> String {
+    for (unit, size) in [("GiB", 1u64 << 30), ("MiB", 1 << 20), ("KiB", 1 << 10)] {
+        if n >= size && n.is_multiple_of(size) {
+            return format!("{} {unit}", n / size);
+        }
+    }
+    if n == 1 {
+        "1 byte".to_string()
+    } else {
+        format!("{n} bytes")
+    }
+}
+
 fn expect_fn(args: &Args, i: usize, fname: &str) -> R<Value> {
     match args.pos.get(i) {
         Some(f @ Value::Func(_)) => Ok(f.clone()),

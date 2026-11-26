@@ -1,0 +1,17 @@
+# Extraction limits (SPEC.md 12.9): the bytes of file content and the
+# number of members, overridable with max_size: and max_entries:.
+let msg = (f) => try { f() } catch e { "{e.kind}: {e.message}" }
+let d = path("out/limits")
+remove(d)
+write("12345", d / "src/a.txt")
+write("67890", d / "src/b.txt")
+zip(d / "src", d / "src.zip")
+tar(d / "src", d / "src.tar")
+print(msg(() => unzip(d / "src.zip", d / "z1", max_size: 9)))
+print(msg(() => untar(d / "src.tar", d / "t1", max_size: 9)))
+print(msg(() => unzip(d / "src.zip", d / "z2", max_entries: 2)))
+print(msg(() => untar(d / "src.tar", d / "t2", max_entries: 2)))
+print(msg(() => untar(d / "src.tar", d / "t3", max_size: 0)))
+unzip(d / "src.zip", d / "z4", max_size: 10, max_entries: 3)
+untar(d / "src.tar", d / "t4", max_size: null, max_entries: null)
+print(read(d / "z4/src/b.txt"), read(d / "t4/src/b.txt"))

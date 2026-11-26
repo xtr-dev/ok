@@ -1,0 +1,6 @@
+io: refusing to extract out/limits/src.zip: its files hold more than 9 bytes
+io: refusing to extract out/limits/src.tar: its files hold more than 9 bytes
+io: refusing to extract out/limits/src.zip: it has more than 2 members
+io: refusing to extract out/limits/src.tar: it has more than 2 members
+type: `max_size` must be a positive int, or null for no limit, got 0
+67890 67890

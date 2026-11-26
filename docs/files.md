@@ -271,7 +271,15 @@ print(list_dir("single"), read("single/summary.txt"))
 [path("single/summary.txt")] one
 ```
 
-Extraction refuses members with an absolute path or one that escapes the destination (the "zip slip" attack) and does not create symlinks that point outside it, so unpacking a downloaded archive cannot write elsewhere on your disk. Unix permission bits are kept where the OS has them. For gzip-compressed data files, such as `events.jsonl.gz`, you do not need archives at all: see [Compressed files](data.md#compressed-files).
+Extraction refuses members with an absolute path or one that escapes the destination (the "zip slip" attack), never writes through a symlink already in the destination, and does not create symlinks that point outside it, so unpacking a downloaded archive cannot write elsewhere on your disk. Member names must also be portable: a name with `:` or `\`, one ending in a dot or space, or a Windows device name such as `NUL` or `con.txt` is refused on every OS, so an archive unpacks the same everywhere. Extracted files get your usual permissions (the umask applies); an executable member stays executable, but setuid and similar bits are dropped.
+
+An archive whose files would hold more than 4 GiB, or that has more than a million members, is refused partway through; pass `max_size:` (in bytes) or `max_entries:` to change a limit, or `null` to lift it:
+
+```ok
+unzip("out/report.zip", "big", max_size: 20_000_000_000)
+```
+
+For gzip-compressed data files, such as `events.jsonl.gz`, you do not need archives at all: see [Compressed files](data.md#compressed-files).
 
 ## Portability rules
 

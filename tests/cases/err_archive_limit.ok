@@ -1,0 +1,5 @@
+let d = path("out/limit-err")
+remove(d)
+write("12345", d / "src/a.txt")
+tar(d / "src", d / "src.tar")
+untar(d / "src.tar", d / "out", max_size: 4)
