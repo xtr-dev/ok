@@ -8,3 +8,6 @@ tests/fixtures/** -text
 tests/cases/data/** -text
 # Fuzzer-found inputs keep their exact bytes (they contain CR).
 crates/okrun/tests/lexer_regressions/** -text
+
+# Lexer error cases keep their exact bytes (control characters, lone CR).
+tests/cases/err_source_*.ok -text

@@ -1,0 +1,7 @@
+error[syntax]: a carriage return must be followed by a newline
+ --> err_source_lone_cr.ok:1:18
+  |
+1 | print("PWNED") # \r  print("building")
+  |                  ^^
+  |
+  = help: save the file with \n or \r\n line endings

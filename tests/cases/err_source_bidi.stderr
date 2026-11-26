@@ -1,0 +1,7 @@
+error[syntax]: the bidirectional control character U+202E is not allowed in source text
+ --> err_source_bidi.ok:1:15
+  |
+1 | # owner check \u{202e} } \u{2066} if admin {
+  |               ^^^^^^^^ changes the order in which text is shown
+  |
+  = help: it can make code look different from what runs; in a string, write the escape \u{202e}

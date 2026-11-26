@@ -142,6 +142,13 @@ Source files are UTF-8. A leading byte order mark is ignored. Line endings
 are `\n` or `\r\n`; a lone `\r` is an error. Files conventionally end in
 `.ok`.
 
+Control characters (U+0000 to U+001F, U+007F to U+009F) other than tab and
+the line endings, and the bidirectional controls U+061C, U+200E, U+200F,
+U+202A to U+202E and U+2066 to U+2069, are syntax errors anywhere in a file:
+in code, in strings of every kind and in comments. They can make a line
+look different from what runs ("Trojan Source"); a string that needs one
+uses an escape (3.5), such as `"\u{1b}[1m"`.
+
 ### 3.2 Comments
 
 `#` starts a comment that runs to the end of the line, except inside string

@@ -1,0 +1,7 @@
+error[syntax]: the control character U+001B is not allowed in source text
+ --> err_source_control.ok:1:19
+  |
+1 | let title = "build\u{1b}[2Jdone"
+  |                   ^^^^^^
+  |
+  = help: control characters can hide code on a terminal; in a string, write the escape \u{1b}

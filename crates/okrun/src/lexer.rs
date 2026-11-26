@@ -323,11 +323,74 @@ pub fn lex(file: FileId, src: &str) -> Result<Lexed, OkError> {
     if src.starts_with('\u{feff}') {
         lx.pos = 3;
     }
+    check_characters(file, src, lx.pos)?;
     let (tokens, _) = lx.tokens(Mode::Top)?;
     Ok(Lexed {
         tokens: fix_newlines(tokens),
         comments: lx.comments,
     })
+}
+
+/// Refuse characters that make source text look different from what it
+/// is (SPEC.md 3.1): control characters other than tab and the newline of
+/// `\n` or `\r\n`, and bidirectional controls, which can reorder a line on
+/// screen ("Trojan Source"). They are refused everywhere, in code, strings
+/// and comments, since a reviewer reads all of them; a string that needs
+/// one writes it as an escape.
+fn check_characters(file: FileId, src: &str, from: usize) -> Result<(), OkError> {
+    let bytes = src.as_bytes();
+    for (i, c) in src[from..].char_indices() {
+        let i = i + from;
+        let bad = match c {
+            '\t' | '\n' => false,
+            '\r' => bytes.get(i + 1) != Some(&b'\n'),
+            '\u{0}'..='\u{1f}' | '\u{7f}'..='\u{9f}' => true,
+            '\u{61c}'
+            | '\u{200e}'
+            | '\u{200f}'
+            | '\u{202a}'..='\u{202e}'
+            | '\u{2066}'..='\u{2069}' => true,
+            _ => false,
+        };
+        if !bad {
+            continue;
+        }
+        let span = Span::new(file, i, i + c.len_utf8());
+        let code = c as u32;
+        let mut escape = String::new();
+        crate::error::escape_char(c, &mut escape);
+        let err = if c == '\r' {
+            OkError::at(
+                ErrKind::Syntax,
+                span,
+                "a carriage return must be followed by a newline",
+            )
+            .with_help("save the file with \\n or \\r\\n line endings")
+        } else if code < 0x80 || (0x80..=0x9f).contains(&code) {
+            OkError::at(
+                ErrKind::Syntax,
+                span,
+                format!("the control character U+{code:04X} is not allowed in source text"),
+            )
+            .with_help(format!(
+                "control characters can hide code on a terminal; in a string, write the escape {escape}"
+            ))
+        } else {
+            OkError::at(
+                ErrKind::Syntax,
+                span,
+                format!(
+                    "the bidirectional control character U+{code:04X} is not allowed in source text"
+                ),
+            )
+            .with_label("changes the order in which text is shown")
+            .with_help(format!(
+                "it can make code look different from what runs; in a string, write the escape {escape}"
+            ))
+        };
+        return Err(err);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1702,6 +1765,31 @@ mod tests {
 
     fn err(src: &str) -> OkError {
         lex(0, src).err().expect("expected a lex error")
+    }
+
+    #[test]
+    fn control_and_bidi_characters_are_refused_outside_escapes() {
+        for src in [
+            "let s = \"a\x1bb\"\n",
+            "# \x07 bell\n",
+            "let s = 'a\u{202e}b'\n",
+            "# \u{2066}\n",
+            "let x = 1\x7f\n",
+            "let x = \"\u{85}\"\n",
+            "let x = 1 \r\n\r",
+        ] {
+            assert_eq!(err(src).kind, ErrKind::Syntax, "{src:?}");
+        }
+        assert!(err("x\x1b").message.contains("U+001B"));
+        // Escapes, tabs, CRLF line endings and a leading BOM are fine.
+        for src in [
+            "let s = \"a\\u{1b}b\\u{202e}\"\n",
+            "let s =\t1\r\nlet t = 2\r\n",
+            "\u{feff}let s = 1\n",
+            "let s = \"\u{200b}é\"\n",
+        ] {
+            assert!(lex(0, src).is_ok(), "{src:?}");
+        }
     }
 
     #[test]
