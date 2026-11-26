@@ -153,3 +153,30 @@ fn self_and_trust_print_their_help() {
         assert!(stdout(&out).contains("  ok untrust [DIR]"));
     }
 }
+
+/// `remove` refuses the home directory and every directory that holds it,
+/// such as `/home` (SPEC.md 12.1).
+#[test]
+fn remove_refuses_directories_that_hold_the_home_directory() {
+    let base = std::env::temp_dir().join(format!("ok-remove-home-{}", std::process::id()));
+    let home = base.join("homes").join("me");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(base.join("homes").join("other")).unwrap();
+    let script = "for p in [\"homes\", \"homes/me\", \"homes/other\"] { print(try { remove(p) } catch e { e.message }) }\n";
+    let out = Command::new(env!("CARGO_BIN_EXE_ok"))
+        .args(["-e", script])
+        .current_dir(&base)
+        .env("NO_COLOR", "1")
+        .env("HOME", &home)
+        .env("USERPROFILE", &home)
+        .output()
+        .expect("run ok");
+    assert_eq!(
+        stdout(&out),
+        "refusing to remove homes because it is a directory that contains your home directory\nrefusing to remove homes/me because it is your home directory\ntrue\n",
+        "{}",
+        stderr(&out)
+    );
+    assert!(home.is_dir());
+    let _ = std::fs::remove_dir_all(&base);
+}

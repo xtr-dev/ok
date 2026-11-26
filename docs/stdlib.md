@@ -441,7 +441,7 @@ Symbolic links inside a copied directory are copied as links, like `cp -R` does,
 
 ### remove
 
-`remove(p: path)` returns a `bool`: `true` if it removed something, `false` if nothing existed. Removes a file or a whole directory tree. A symlink is removed itself, not what it points to. It refuses, before deleting anything, to remove the root of the file system, your home directory, the project root, the working directory and any directory that contains the working directory, such as `remove(".")` or `remove("..")` (an `io` error).
+`remove(p: path)` returns a `bool`: `true` if it removed something, `false` if nothing existed. Removes a file or a whole directory tree. A symlink is removed itself, not what it points to. It refuses, before deleting anything, to remove the root of the file system, your home directory or a directory that contains it (such as `/home`), the project root, the working directory and any directory that contains the working directory, such as `remove(".")` or `remove("..")` (an `io` error).
 
 ### mkdir
 

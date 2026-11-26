@@ -565,11 +565,14 @@ fn is_protected(interp: &Interp, p: &Path) -> Option<&'static str> {
     if canon.parent().is_none() {
         return Some("the root of the file system");
     }
-    if home_dir()
-        .and_then(|h| crate::path::canonical(&h).ok())
-        .is_some_and(|h| h == canon)
-    {
-        return Some("your home directory");
+    if let Some(home) = home_dir().and_then(|h| crate::path::canonical(&h).ok()) {
+        if home == canon {
+            return Some("your home directory");
+        }
+        // `/home` or `/Users` holds every user's files.
+        if meta.is_dir() && home.starts_with(&canon) {
+            return Some("a directory that contains your home directory");
+        }
     }
     if interp
         .project_root
@@ -598,6 +601,9 @@ fn remove(interp: &mut Interp, mut args: Args) -> R<Value> {
                 "to empty it, remove its entries instead: for f in list_dir({}) {{ remove(f) }}",
                 Value::str(p.display()).repr()
             )),
+            "a directory that contains your home directory" => err.with_help(
+                "remove the entries you mean one by one; ok never removes a directory your home directory is in",
+            ),
             "a directory that contains the working directory" => err.with_help(format!(
                 "run the script from a directory outside {}, or remove the entries you mean one by one",
                 p.display()
