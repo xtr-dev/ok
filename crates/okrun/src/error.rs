@@ -387,7 +387,12 @@ pub fn edit_distance(a: &str, b: &str) -> usize {
 /// distance of at most 2 (at most 1 for names of three characters or fewer,
 /// so that short names do not suggest unrelated ones).
 pub fn suggest<'a>(name: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<String> {
-    let limit = if name.chars().count() <= 3 { 1 } else { 2 };
+    // At most two edits, and fewer than half the name's length, so that a
+    // short name is not "corrected" to an unrelated one (`b` to `a`, `grep`
+    // to `get`) while `payed` still finds `paid`. A case-only difference
+    // always counts.
+    let len = name.chars().count();
+    let limit = 2.min(len.saturating_sub(1) / 2);
     let mut best: Option<(usize, &str)> = None;
     for c in candidates {
         if c == name {
@@ -424,6 +429,16 @@ mod tests {
         assert_eq!(suggest("verbos", names), Some("verbose".into()));
         assert_eq!(suggest("zzz", names), None);
         assert_eq!(suggest("Release", names), Some("release".into()));
+    }
+
+    #[test]
+    fn suggest_skips_short_unrelated_names() {
+        assert_eq!(suggest("b", ["a"]), None);
+        assert_eq!(suggest("B", ["b"]), Some("b".into()));
+        assert_eq!(suggest("grep", ["get"]), None);
+        assert_eq!(suggest("payed", ["paid"]), Some("paid".into()));
+        assert_eq!(suggest("lne", ["len"]), Some("len".into()));
+        assert_eq!(suggest("pirnt", ["print"]), Some("print".into()));
     }
 
     #[test]

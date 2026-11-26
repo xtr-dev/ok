@@ -1,0 +1,8 @@
+error[key]: the record has no field `b`
+ --> err_field_no_suggestion.ok:5:9
+  |
+5 | print(r.b)
+  |         ^
+  |
+  = note: use `.b?` to get null instead of an error
+  = help: it has a

@@ -1,0 +1,5 @@
+# A one-letter field is not "corrected" to an unrelated one-letter field
+# (SPEC.md 10.3).
+
+let r = {a: 1}
+print(r.b)

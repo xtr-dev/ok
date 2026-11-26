@@ -1218,8 +1218,10 @@ error record re-raises it.
 Error messages are part of the product. When a fix is knowable, the help line
 gives it. Required suggestions:
 
-- misspelled variable, function, field, task, namespace or flag (edit
-  distance at most 2, or a case-only difference): `did you mean ...?`
+- misspelled variable, function, field, task, namespace or flag (a
+  case-only difference, or an edit distance of at most 1 for names of 3 or
+  4 characters and at most 2 for longer names; names of 1 or 2 characters
+  get no other suggestion): `did you mean ...?`
 - habits from other languages: `&&`, `||`, `!x`, `;`, `elif`, `elsif`,
   `function`, `def`, `None`, `nil`, `True`, `False`, `===`;
 - shell habits in command mode (9.2 rules 7, 8, 9, 12);
