@@ -2126,8 +2126,9 @@ directory ok was started in, which runs only that task. A worker:
   appears on ok's stdout or stderr as `LABEL | line`, where `LABEL` is the
   task (`gen`, `db.migrate`, `build(release: true)`, with values shown as in
   lists) padded to the longest label among the workers of the invocation.
-  Lines are never split or mixed; the order of lines from different workers
-  is unspecified. A last line without a newline gets one. Commands in a
+  Lines are never mixed, and split only when longer than 64 KiB, into
+  pieces of 64 KiB that each get their own prefix; the order of lines from
+  different workers is unspecified. A last line without a newline gets one. Commands in a
   worker write to a pipe, not a terminal, so some tools turn off colors.
 - has no terminal for input: its stdin, which its commands inherit, is
   empty. `prompt()` returns its default or fails, and `confirm()` answers

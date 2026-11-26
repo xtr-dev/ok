@@ -510,14 +510,37 @@ impl Interp {
     }
 }
 
+/// The longest piece of a worker's output line that `forward` holds; a
+/// longer line (a progress bar without newlines, a minified file) goes out
+/// in pieces of this size, each on its own prefixed line, instead of
+/// growing ok's memory without bound.
+const FORWARD_CHUNK: u64 = 64 * 1024;
+
 /// Copy a worker's output to ok's stdout or stderr, one whole line at a
 /// time with `prefix` in front, so lines of parallel tasks never mix.
 fn forward(r: impl Read, prefix: &str, to_stderr: bool) {
+    prefixed_lines(r, prefix, |line| {
+        if to_stderr {
+            let _ = std::io::stderr().lock().write_all(line);
+        } else {
+            let mut o = std::io::stdout().lock();
+            let _ = o.write_all(line);
+            let _ = o.flush();
+        }
+    });
+}
+
+/// Each line of `r` (at most [`FORWARD_CHUNK`] bytes of it at a time) with
+/// `prefix` in front and a newline at the end.
+fn prefixed_lines(r: impl Read, prefix: &str, mut emit: impl FnMut(&[u8])) {
     let mut reader = BufReader::new(r);
     let mut buf = Vec::new();
     loop {
         buf.clear();
-        match reader.read_until(b'\n', &mut buf) {
+        match (&mut reader)
+            .take(FORWARD_CHUNK)
+            .read_until(b'\n', &mut buf)
+        {
             Ok(0) | Err(_) => break,
             Ok(_) => {}
         }
@@ -527,12 +550,24 @@ fn forward(r: impl Read, prefix: &str, to_stderr: bool) {
         let mut line = Vec::with_capacity(prefix.len() + buf.len());
         line.extend_from_slice(prefix.as_bytes());
         line.extend_from_slice(&buf);
-        if to_stderr {
-            let _ = std::io::stderr().lock().write_all(&line);
-        } else {
-            let mut o = std::io::stdout().lock();
-            let _ = o.write_all(&line);
-            let _ = o.flush();
-        }
+        emit(&line);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn long_worker_lines_are_forwarded_in_pieces() {
+        let long = "x".repeat(FORWARD_CHUNK as usize * 2 + 10);
+        let input = format!("short\n{long}\nend");
+        let mut got: Vec<Vec<u8>> = Vec::new();
+        prefixed_lines(input.as_bytes(), "[t] ", |l| got.push(l.to_vec()));
+        let sizes: Vec<usize> = got.iter().map(Vec::len).collect();
+        let piece = 4 + FORWARD_CHUNK as usize + 1;
+        assert_eq!(sizes, [10, piece, piece, 4 + 10 + 1, 8]);
+        assert_eq!(got[0], b"[t] short\n");
+        assert_eq!(got[4], b"[t] end\n");
     }
 }
