@@ -29,3 +29,10 @@ doc = false
 bench = false
 
 [workspace]
+
+[[bin]]
+name = "fmt"
+path = "fuzz_targets/fmt.rs"
+test = false
+doc = false
+bench = false
