@@ -91,8 +91,16 @@ impl OkPath {
         }
     }
 
+    /// A native path as an ok path. A name that is not UTF-8 is converted
+    /// lossily; where the path will be used to reach a file, use
+    /// [`OkPath::try_from_native`], so ok never acts on a different file.
     pub fn from_native(p: &std::path::Path) -> OkPath {
         OkPath::parse(&p.to_string_lossy())
+    }
+
+    /// A native path as an ok path, or `None` when it is not UTF-8.
+    pub fn try_from_native(p: &std::path::Path) -> Option<OkPath> {
+        p.to_str().map(OkPath::parse)
     }
 
     /// `self / other`. An absolute `other` replaces `self` (SPEC.md 5.8).

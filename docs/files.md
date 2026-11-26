@@ -288,6 +288,7 @@ ok keeps file work identical across operating systems:
 - Paths print with `/`, and `glob` and `list_dir` sort the same way everywhere.
 - `write` uses `\n` line endings on every OS, and `read` accepts both `\n` and `\r\n`.
 - File names are compared case-sensitively, also on macOS and Windows, whose file systems usually are not. A glob for `*.TXT` does not find `notes.txt` on any OS.
+- File names are text. A name that is not valid UTF-8, which Linux allows, is an error in `list_dir`, and in `glob` when the pattern selects it, rather than being turned into the name of some other file.
 - Where an OS lacks a feature, the behaviour is defined: `chmod` succeeds and does nothing on Windows, and `stat().mode` is `null` there.
 - Nothing depends on a Unix shell or on tools such as `cp`, `find` or `tar` being installed.
 

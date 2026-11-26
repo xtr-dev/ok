@@ -148,7 +148,16 @@ fn which(interp: &mut Interp, mut args: Args) -> R<Value> {
     let path = interp.env_var("PATH").map(std::ffi::OsString::from);
     Ok(
         match crate::command::resolve_program(name, &cwd, &cwd, path.as_deref()) {
-            Ok(p) => Value::path(OkPath::from_native(&p)),
+            Ok(p) => match OkPath::try_from_native(&p) {
+                Some(p) => Value::path(p),
+                None => {
+                    return Err(crate::files::not_utf8(
+                        &args,
+                        &format!("find {name}"),
+                        p.as_os_str(),
+                    ));
+                }
+            },
             Err(_) => Value::Null,
         },
     )

@@ -64,7 +64,13 @@ fn members(src: &OkPath) -> std::io::Result<Vec<(PathBuf, String, bool)>> {
         let mut entries: Vec<_> = std::fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
         entries.sort_by_key(|e| e.file_name());
         for e in entries {
-            let child = format!("{name}/{}", e.file_name().to_string_lossy());
+            let raw = e.file_name();
+            let Some(file) = raw.to_str() else {
+                return Err(std::io::Error::other(format!(
+                    "the name {raw:?} is not valid UTF-8"
+                )));
+            };
+            let child = format!("{name}/{file}");
             if e.file_type()?.is_dir() {
                 walk(&e.path(), &child, out)?;
             } else {

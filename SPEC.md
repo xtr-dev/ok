@@ -1390,6 +1390,16 @@ directory (the project root in project mode).
 | `parse(text: string, format: string, --delimiter: string = ",", --header: bool = true)` | value | `read` without the file (13.1); also accepts `"yaml_all"` (13.6). |
 | `to(value, format: string, --compact: bool, --delimiter: string = ",", --header: bool = true)` | `string` or `bytes` | `write` without the file (13.1). |
 
+Strings and paths are UTF-8, so a file name that is not (possible on Linux
+and other Unix systems) cannot be represented, and ok never converts one
+into the name of a different file. `list_dir` of a directory holding such
+a name is an `io` error naming it (`the name "a\xFF" is not valid UTF-8`),
+and so is a `glob` that would return one (a name the pattern does not
+select, or that `exclude` skips, does not matter), `zip` or `tar` of a
+directory with one, and `abs`, `relative_to`, `which`, `tempdir()` or
+`tempfile()` when the working directory, the program found or the
+temporary directory has one.
+
 The mutating functions `write`, `copy`, `move`, `remove`, `mkdir`, `touch`,
 `chmod`, `zip`, `unzip`, `tar` and `untar` are printed by `--trace` and
 skipped by `--dry-run`.

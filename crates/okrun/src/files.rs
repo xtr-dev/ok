@@ -667,10 +667,13 @@ fn list_dir(_: &mut Interp, mut args: Args) -> R<Value> {
         path_at(&args, 0, "list_dir")?
     };
     let entries = std::fs::read_dir(p.native()).map_err(|e| io_fail(&args, "list", &p, &e))?;
-    let mut names: Vec<String> = entries
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .collect();
+    let mut names: Vec<String> = Vec::new();
+    for e in entries.filter_map(|e| e.ok()) {
+        match e.file_name().into_string() {
+            Ok(n) => names.push(n),
+            Err(raw) => return Err(not_utf8(&args, &format!("list {}", p.display()), &raw)),
+        }
+    }
     names.sort();
     Ok(Value::list(
         names
@@ -678,6 +681,21 @@ fn list_dir(_: &mut Interp, mut args: Args) -> R<Value> {
             .map(|n| Value::path(p.join_str(&n)))
             .collect(),
     ))
+}
+
+/// A file name that is not UTF-8 cannot be a string or a path in ok;
+/// converting it lossily would name a different file, which a later
+/// `remove` could then delete.
+pub(crate) fn not_utf8(args: &Args, what: &str, name: &std::ffi::OsStr) -> crate::interp::Flow {
+    OkError::at(
+        ErrKind::Io,
+        args.span,
+        format!("cannot {what}: the name {name:?} is not valid UTF-8"),
+    )
+    .with_help(
+        "ok works only with UTF-8 file names; rename the file, or exclude it from the pattern",
+    )
+    .into()
 }
 
 fn system_time(t: std::io::Result<std::time::SystemTime>) -> Value {
@@ -836,8 +854,12 @@ fn tempdir(interp: &mut Interp, mut args: Args) -> R<Value> {
             format!("cannot create a temporary directory: {}", io_reason(&e)),
         )
     })?;
-    interp.track_temp(p.clone());
-    Ok(Value::path(OkPath::from_native(&p)))
+    let Some(shown) = OkPath::try_from_native(&p) else {
+        crate::procs::remove_temp(&p);
+        return Err(not_utf8(&args, "make a temporary entry", p.as_os_str()));
+    };
+    interp.track_temp(p);
+    Ok(Value::path(shown))
 }
 
 fn tempfile(interp: &mut Interp, mut args: Args) -> R<Value> {
@@ -865,8 +887,12 @@ fn tempfile(interp: &mut Interp, mut args: Args) -> R<Value> {
                 format!("cannot create a temporary file: {}", io_reason(&e)),
             )
         })?;
-    interp.track_temp(p.clone());
-    Ok(Value::path(OkPath::from_native(&p)))
+    let Some(shown) = OkPath::try_from_native(&p) else {
+        crate::procs::remove_temp(&p);
+        return Err(not_utf8(&args, "make a temporary entry", p.as_os_str()));
+    };
+    interp.track_temp(p);
+    Ok(Value::path(shown))
 }
 
 fn chmod(interp: &mut Interp, mut args: Args) -> R<Value> {
@@ -1022,7 +1048,8 @@ fn glob(_: &mut Interp, mut args: Args) -> R<Value> {
         &matcher,
         &excludes,
         &mut found,
-    );
+    )
+    .map_err(|raw| not_utf8(&args, &format!("glob {pattern:?}"), &raw))?;
     found.sort();
     found.dedup();
     Ok(Value::list(
@@ -1061,7 +1088,8 @@ pub fn glob_native(pattern: &str, root: &Path) -> Result<Vec<PathBuf>, String> {
         &matcher,
         &[],
         &mut found,
-    );
+    )
+    .map_err(|raw| format!("cannot glob {pattern:?}: the name {raw:?} is not valid UTF-8"))?;
     found.sort();
     Ok(found
         .into_iter()
@@ -1077,41 +1105,62 @@ fn walk(
     m: &globset::GlobMatcher,
     ex: &[globset::GlobMatcher],
     out: &mut Vec<String>,
-) {
-    if depth == 0 {
-        return;
-    }
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(|e| e.ok()) {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') && !hidden {
-            continue;
+) -> Result<(), std::ffi::OsString> {
+    let mut w = Walk { hidden, m, ex, out };
+    w.dir(dir, rel, depth, None)
+}
+
+/// One glob walk. Names that are not UTF-8 are matched in their lossy
+/// form, and only a match below such a name is an error, so a stray file
+/// that the pattern does not select cannot break the glob, and a selected
+/// one is never returned under a wrong name.
+struct Walk<'a> {
+    hidden: bool,
+    m: &'a globset::GlobMatcher,
+    ex: &'a [globset::GlobMatcher],
+    out: &'a mut Vec<String>,
+}
+
+impl Walk<'_> {
+    fn dir(
+        &mut self,
+        dir: &Path,
+        rel: &str,
+        depth: usize,
+        bad: Option<&std::ffi::OsStr>,
+    ) -> Result<(), std::ffi::OsString> {
+        if depth == 0 {
+            return Ok(());
         }
-        let child_rel = if rel.is_empty() {
-            name.clone()
-        } else {
-            format!("{rel}/{name}")
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return Ok(());
         };
-        if ex.iter().any(|e| e.is_match(&child_rel)) {
-            continue;
+        for entry in entries.filter_map(|e| e.ok()) {
+            let raw = entry.file_name();
+            let name = raw.to_string_lossy().into_owned();
+            if name.starts_with('.') && !self.hidden {
+                continue;
+            }
+            let child_rel = if rel.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel}/{name}")
+            };
+            if self.ex.iter().any(|e| e.is_match(&child_rel)) {
+                continue;
+            }
+            let bad = bad.or_else(|| raw.to_str().is_none().then_some(raw.as_os_str()));
+            if self.m.is_match(&child_rel) {
+                if let Some(b) = bad {
+                    return Err(b.to_os_string());
+                }
+                self.out.push(child_rel.clone());
+            }
+            if entry.file_type().is_ok_and(|t| t.is_dir()) {
+                self.dir(&entry.path(), &child_rel, depth.saturating_sub(1), bad)?;
+            }
         }
-        if m.is_match(&child_rel) {
-            out.push(child_rel.clone());
-        }
-        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        if is_dir {
-            walk(
-                &entry.path(),
-                &child_rel,
-                depth.saturating_sub(1),
-                hidden,
-                m,
-                ex,
-                out,
-            );
-        }
+        Ok(())
     }
 }
 
@@ -1124,18 +1173,26 @@ pub fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-fn absolute(p: &OkPath) -> OkPath {
+/// `p` joined to the working directory, or the working directory's name
+/// when it is not UTF-8.
+fn absolute(p: &OkPath) -> Result<OkPath, std::ffi::OsString> {
     if p.is_abs() {
-        return p.clone();
+        return Ok(p.clone());
     }
     let cwd = std::env::current_dir().unwrap_or_default();
-    OkPath::from_native(&cwd).join(p)
+    match OkPath::try_from_native(&cwd) {
+        Some(c) => Ok(c.join(p)),
+        None => Err(cwd.into_os_string()),
+    }
 }
 
 fn abs(_: &mut Interp, mut args: Args) -> R<Value> {
     named(&mut args, "abs", &[])?;
     count_args(&args, "abs", 1, 1)?;
-    Ok(Value::path(absolute(&path_at(&args, 0, "abs")?)))
+    let p = path_at(&args, 0, "abs")?;
+    let a = absolute(&p)
+        .map_err(|raw| not_utf8(&args, &format!("make {} absolute", p.display()), &raw))?;
+    Ok(Value::path(a))
 }
 
 fn relative_to(_: &mut Interp, mut args: Args) -> R<Value> {
@@ -1148,7 +1205,8 @@ fn relative_to(_: &mut Interp, mut args: Args) -> R<Value> {
     let (pa, ba) = if p.is_abs() == base.is_abs() {
         (p.clone(), base.clone())
     } else {
-        (absolute(&p), absolute(&base))
+        let fail = |raw: std::ffi::OsString| not_utf8(&args, "make the paths absolute", &raw);
+        (absolute(&p).map_err(fail)?, absolute(&base).map_err(fail)?)
     };
     let (pd, bd) = (pa.display(), ba.display());
     let rest = if bd == "." {
@@ -1369,6 +1427,38 @@ mod tests {
                 .unwrap()
                 .file_type()
                 .is_symlink()
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A name that is not UTF-8 is never turned into the name of another
+    /// file. macOS and Windows file systems cannot even store one.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn names_that_are_not_utf8_are_refused_not_converted() {
+        use std::os::unix::ffi::OsStrExt;
+        let dir = scratch("not-utf8");
+        std::fs::write(dir.join(std::ffi::OsStr::from_bytes(b"a\xff")), "").unwrap();
+        std::fs::write(dir.join("a\u{FFFD}"), "").unwrap();
+        std::fs::write(dir.join("b.txt"), "").unwrap();
+        let run = |src: String| {
+            let mut interp = Interp::new(Vec::new());
+            match interp.run_source("<test>", &src, dir.clone()) {
+                Ok(v) => v.display(),
+                Err(crate::interp::Flow::Err(e)) => e.message,
+                Err(_) => "other".into(),
+            }
+        };
+        let d = Value::str(dir.to_str().unwrap()).repr();
+        assert_eq!(
+            run(format!("list_dir({d})")),
+            "cannot list {}: the name \"a\\xFF\" is not valid UTF-8"
+                .replace("{}", &OkPath::from_native(&dir).display())
+        );
+        assert!(run(format!("glob(\"*\", root: {d})")).contains("is not valid UTF-8"));
+        assert_eq!(
+            run(format!("glob(\"*.txt\", root: {d}).map(.name)")),
+            "[\"b.txt\"]"
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }
