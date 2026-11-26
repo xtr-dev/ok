@@ -1,0 +1,8 @@
+# --dry-run shows remove and mkdir whether or not the path exists
+# (SPEC.md 9.9). data/dry_run exists only for this case: if dry runs ever
+# stop skipping, it is the only fixture at risk.
+
+print(remove("out/no-such-file.txt"))
+print(remove("data/dry_run/target.txt"), exists("data/dry_run/target.txt"))
+print(mkdir("data/dry_run"))
+print(mkdir("out/never-made"), exists("out/never-made"))

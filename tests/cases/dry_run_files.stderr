@@ -1,0 +1,4 @@
+~ remove out/no-such-file.txt
+~ remove data/dry_run/target.txt
+~ mkdir data/dry_run
+~ mkdir out/never-made

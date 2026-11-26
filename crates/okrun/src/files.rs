@@ -398,11 +398,12 @@ fn remove(interp: &mut Interp, mut args: Args) -> R<Value> {
         };
         return Err(err.into());
     }
-    if std::fs::symlink_metadata(&native).is_err() {
-        return Ok(Value::Bool(false));
-    }
-    if !interp.mutation(&format!("remove {}", p.display())) {
-        return Ok(Value::Bool(true));
+    // The operation is traced (and shown by --dry-run) whether or not the
+    // path exists, so the plan a dry run prints does not depend on what
+    // earlier, skipped steps would have created (SPEC.md 9.9).
+    let exists = std::fs::symlink_metadata(&native).is_ok();
+    if !interp.mutation(&format!("remove {}", p.display())) || !exists {
+        return Ok(Value::Bool(exists));
     }
     remove_path(&native).map_err(|e| io_fail(&args, "remove", &p, &e))?;
     Ok(Value::Bool(true))
@@ -412,7 +413,8 @@ fn mkdir(interp: &mut Interp, mut args: Args) -> R<Value> {
     named(&mut args, "mkdir", &[])?;
     count_args(&args, "mkdir", 1, 1)?;
     let p = path_at(&args, 0, "mkdir")?;
-    if !p.native().is_dir() && interp.mutation(&format!("mkdir {}", p.display())) {
+    // Traced like `remove`, also when the directory already exists.
+    if interp.mutation(&format!("mkdir {}", p.display())) && !p.native().is_dir() {
         std::fs::create_dir_all(p.native())
             .map_err(|e| io_fail(&args, "create the directory", &p, &e))?;
     }

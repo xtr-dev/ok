@@ -1151,7 +1151,11 @@ stderr, with targets in display form (`/`).
 
 With `--dry-run`, every command and every mutating file-system or network
 operation (12.1, 12.9) is printed in trace format with the prefix `~ ` and
-not performed. A skipped command yields `{out: "", err: "", code: 0, ok: true}`.
+not performed. A file operation is printed even when it would have nothing
+to do (`remove` of a missing path, `mkdir` of an existing directory), so the
+plan does not depend on what earlier skipped steps would have created; with
+`--trace` the same lines are printed with `+ `. A skipped command yields
+`{out: "", err: "", code: 0, ok: true}`.
 Reads still happen. Because skipped steps produce empty results, a dry run
 shows the plan of a script, not a guaranteed preview of every branch.
 

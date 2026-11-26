@@ -314,7 +314,7 @@ The function form has no redirects. For a computed command that needs them, use 
 + make test < input.txt > build.log 2>&1
 ```
 
-`--dry-run` prints the same lines with `~` and runs nothing. File-system changes such as `write`, `remove` and `mkdir` are skipped and printed too, while reads still happen so the script can make its decisions. Both options go before the script name:
+`--dry-run` prints the same lines with `~` and runs nothing. File-system changes such as `write`, `remove` and `mkdir` are skipped and printed too (also when there would be nothing to do, such as removing a file that does not exist), while reads still happen so the script can make its decisions. Both options go before the script name:
 
 ```ok file=deploy.ok
 fn main(--version: string = "1.4.0") {
