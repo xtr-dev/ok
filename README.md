@@ -42,6 +42,9 @@ first release is [v0.1.0](https://github.com/xtr-dev/ok/releases/tag/v0.1.0).
 
 ## Install
 
+To try ok without installing anything, use the playground at
+[okrun.dev](https://okrun.dev/#try): it runs the examples in your browser.
+
 Linux and macOS:
 
 ```

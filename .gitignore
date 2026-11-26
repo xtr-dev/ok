@@ -7,3 +7,4 @@
 .DS_Store
 /fuzz/Cargo.lock
 /tests/cases/out/
+/_site/

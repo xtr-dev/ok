@@ -1,13 +1,21 @@
-# Publishes site/ (the landing page and the install scripts) to GitHub Pages
-# at https://okrun.dev/. The install scripts are first run on
+# Publishes site/ (the landing page, the playground and the install scripts)
+# to GitHub Pages at https://okrun.dev/. The install scripts are first run on
 # Linux, macOS and Windows against the latest release, so a broken script is
-# never published.
+# never published. The playground's ok.wasm is built from this commit, and
+# the examples it shows are copied from examples/.
 name: Pages
 
 on:
   push:
     branches: [main]
-    paths: ["site/**", ".github/workflows/pages.yml"]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+      # the playground runs ok.wasm built from the crate and shows examples
+      - "crates/okrun/**"
+      - "Cargo.lock"
+      - ".cargo/**"
+      - "examples/**"
   workflow_dispatch:
 
 permissions:
@@ -54,10 +62,23 @@ jobs:
       pages: read        # configure-pages reads the site's settings
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.100.0"
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p okrun --release --target wasm32-wasip1 --locked
+      # The site as published: site/, the playground's ok.wasm, and the
+      # example folders playground.js loads.
+      - run: |
+          mkdir -p _site/examples
+          cp -r site/. _site/
+          cp target/wasm32-wasip1/release/ok.wasm _site/
+          cp -r examples/log-summary examples/csv-to-json examples/config-render _site/examples/
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: site
+          path: _site
 
   deploy:
     name: deploy

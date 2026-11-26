@@ -42,6 +42,8 @@
   }
 }
 * { box-sizing: border-box; }
+/* Ligatures would show `!=` as one glyph; code must look as it is typed. */
+code, pre, textarea, input { font-variant-ligatures: none; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
@@ -116,6 +118,55 @@ pre {
 footer { border-top: 1px solid var(--border); padding: 28px 0 48px; color: var(--muted); font-size: 14px; }
 footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
 footer a { color: var(--muted); }
+/* Playground */
+.pg { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.pg-examples { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.pg-examples button, .pg-reset {
+  font: 14px var(--sans); background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 999px; padding: 4px 12px; cursor: pointer;
+}
+.pg-examples button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.pg-reset { margin-left: auto; color: var(--muted); }
+.pg-files { display: flex; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--code-bg); }
+.pg-files button {
+  font: 13px var(--mono); background: none; border: 0; border-right: 1px solid var(--border); color: var(--muted);
+  padding: 8px 14px; cursor: pointer; white-space: nowrap;
+}
+.pg-files button[aria-selected="true"] { color: var(--text); background: var(--surface); }
+.pg-files button.new::after { content: " new"; color: var(--accent); font-family: var(--sans); font-size: 11px; font-weight: 600; }
+.pg-editor {
+  display: block; width: 100%; min-height: 300px; resize: vertical; border: 0; margin: 0; padding: 14px 16px;
+  font: 13.5px/1.6 var(--mono); color: var(--text); background: var(--surface); tab-size: 2; white-space: pre;
+  overflow: auto;
+}
+.pg-editor:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pg-command { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--border); background: var(--code-bg); }
+.pg-command label { font: 14px var(--mono); color: var(--muted); }
+.pg-command input {
+  flex: 1; min-width: 0; font: 14px var(--mono); color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px;
+}
+.pg-run {
+  font: 600 14px var(--sans); background: var(--accent); color: var(--surface); border: 0; border-radius: 6px;
+  padding: 7px 16px; cursor: pointer; flex-shrink: 0;
+}
+.pg-run:disabled { opacity: 0.6; cursor: progress; }
+.pg-output {
+  margin: 0; min-height: 120px; max-height: 420px; overflow: auto; padding: 14px 16px; border-top: 1px solid var(--border);
+  font: 13px/1.55 var(--mono); white-space: pre; background: var(--code-bg); border-radius: 0; border-left: 0; border-right: 0; border-bottom: 0;
+  height: auto;
+}
+.pg-output:empty::before { content: "Output appears here."; color: var(--com); }
+.pg-output .b { font-weight: 700; }
+.pg-output .red { color: #dc2626; }
+.pg-output .green { color: var(--accent); }
+.pg-output .yellow { color: var(--str); }
+.pg-output .blue { color: var(--fn); }
+.pg-output .magenta { color: var(--kw); }
+.pg-output .cyan { color: var(--fn); }
+.pg-status { font-size: 13px; color: var(--muted); padding: 8px 16px; border-top: 1px solid var(--border); min-height: 37px; }
+@media (prefers-color-scheme: dark) { .pg-output .red { color: #f87171; } }
+.pg-noscript { padding: 16px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -127,6 +178,7 @@ footer a { color: var(--muted); }
       ok
     </a>
     <nav>
+      <a href="#try">Try it</a>
       <a href="https://github.com/xtr-dev/ok/blob/main/SPEC.md">Docs</a>
       <a href="https://github.com/xtr-dev/ok/tree/main/examples">Examples</a>
       <a href="https://github.com/xtr-dev/ok">GitHub</a>
@@ -155,6 +207,26 @@ footer a { color: var(--muted); }
     <p class="install-note">Downloads the binary for your machine from the <a href="https://github.com/xtr-dev/ok/releases/latest">latest release</a> and checks its SHA-256. Read the <a href="install.sh">install.sh</a> / <a href="install.ps1">install.ps1</a> source first, or download the binary yourself.</p>
   </div>
 </div>
+
+<section id="try">
+  <div class="wrap">
+    <h2>Try it in your browser</h2>
+    <p class="sub">This is the real ok, compiled to WebAssembly and running on this page. Edit the files or the command, then press Run (or Ctrl+Enter in the editor). Starting programs with <code>run</code> and network access with <code>fetch</code> need the installed ok.</p>
+    <div class="pg" id="playground">
+      <div class="pg-examples" aria-label="Examples"><button class="pg-reset" type="button" title="Undo your edits to this example">Reset</button></div>
+      <div class="pg-files" role="tablist" aria-label="Files"></div>
+      <textarea class="pg-editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"></textarea>
+      <div class="pg-command">
+        <label for="pg-cmd">$</label>
+        <input id="pg-cmd" type="text" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Command line">
+        <button class="pg-run" type="button">Run</button>
+      </div>
+      <pre class="pg-output" aria-live="polite"></pre>
+      <div class="pg-status"></div>
+      <noscript><div class="pg-noscript">The playground needs JavaScript.</div></noscript>
+    </div>
+  </div>
+</section>
 
 <section>
   <div class="wrap">
@@ -279,5 +351,6 @@ api (~/code/api)
     });
   });
 </script>
+<script type="module" src="playground.js"></script>
 </body>
 </html>
