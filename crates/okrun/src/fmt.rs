@@ -549,6 +549,9 @@ struct Formatter<'a> {
     commas: HashSet<usize>,
     /// The maximum width of a line's code.
     width: usize,
+    /// Whether the file starts with a shebang line (after an optional BOM),
+    /// which is the only `#!` comment that may stay on the first line.
+    shebang: bool,
 }
 
 impl<'a> Formatter<'a> {
@@ -602,6 +605,7 @@ impl<'a> Formatter<'a> {
             forced: HashSet::new(),
             commas: HashSet::new(),
             width: WIDTH,
+            shebang: src.trim_start_matches('\u{feff}').starts_with("#!"),
         };
         f.scan_gaps(src);
         let mut walk = Walk {
@@ -995,12 +999,13 @@ impl<'a> Formatter<'a> {
                 match item {
                     Item::Blank => blank = true,
                     Item::Comment(c) => {
-                        let shebang = out.is_empty() && c.starts_with("#!");
+                        let shebang = out.is_empty() && c.starts_with("#!") && self.shebang;
                         let pad = if shebang {
                             String::new()
                         } else {
                             INDENT.repeat(comment_indent)
                         };
+                        self.keep_off_first_line(&mut out, c);
                         emit(&mut out, &format!("{pad}{c}"), &mut blank, &mut no_blank);
                     }
                 }
@@ -1022,7 +1027,10 @@ impl<'a> Formatter<'a> {
         for item in &self.items_end {
             match item {
                 Item::Blank => blank = true,
-                Item::Comment(c) => emit(&mut out, c, &mut blank, &mut no_blank),
+                Item::Comment(c) => {
+                    self.keep_off_first_line(&mut out, c);
+                    emit(&mut out, c, &mut blank, &mut no_blank);
+                }
             }
         }
         if out.is_empty() {
@@ -1030,6 +1038,18 @@ impl<'a> Formatter<'a> {
         }
         let trimmed = out.trim_end_matches('\n');
         format!("{trimmed}\n")
+    }
+}
+
+impl Formatter<'_> {
+    /// A comment that starts with `#!` but was not the file's shebang (it
+    /// was indented, or below a blank line) would become a shebang on the
+    /// first line, and stop being a comment; it keeps one blank line above
+    /// it instead.
+    fn keep_off_first_line(&self, out: &mut String, comment: &str) {
+        if out.is_empty() && comment.starts_with("#!") && !self.shebang {
+            out.push('\n');
+        }
     }
 }
 
@@ -1060,6 +1080,22 @@ mod tests {
         let once = format_source(src).unwrap();
         assert_eq!(format_source(&once).unwrap(), once, "not idempotent");
         once
+    }
+
+    #[test]
+    fn hashbang_comment_does_not_become_a_shebang() {
+        // Found by fuzzing: removing the leading blank line turned the
+        // comment into a shebang, which the self-check rejected.
+        assert_eq!(fmt("\n#!"), "\n#!\n");
+        assert_eq!(fmt("  #! x\nprint(1)\n"), "\n#! x\nprint(1)\n");
+        assert_eq!(
+            fmt("#!/usr/bin/env ok\n\n\nprint(1)\n"),
+            "#!/usr/bin/env ok\n\nprint(1)\n"
+        );
+        assert_eq!(
+            fmt("\u{feff}#!/usr/bin/env ok\nprint(1)\n").trim_start_matches('\u{feff}'),
+            "#!/usr/bin/env ok\nprint(1)\n"
+        );
     }
 
     #[test]

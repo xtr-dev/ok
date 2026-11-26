@@ -2524,14 +2524,17 @@ that are too long, and normalises everything else:
   which decides between a field and an implicit closure; around a `-` that
   is not an operator, as in `--dry-run`, `reset-db` and `take -1`), a space
   is kept if there was one, and several become one.
-- **Blank lines**: at most one in a row, none at the start of the file,
+- **Blank lines**: at most one in a row, none at the start of the file
+  (except before a `#!` comment, below),
   after a line that ends with an opening bracket, or at the end. The file
   ends with one newline, and no line ends with blanks outside a string.
 - **Comments** stay where they are. An own-line comment takes the
   indentation of the line after it (one level more if that line starts with
   a closing bracket). An end-of-line comment keeps its column, so aligned
   comments stay aligned; if the code now reaches that column, it follows two
-  spaces after the code. A shebang line is kept as it is.
+  spaces after the code. A shebang line is kept as it is. A comment that
+  starts with `#!` but is not the shebang keeps a blank line above it when
+  it would otherwise move to the first line, where it would become one.
 - **Verbatim**: string literals (also multi-line and triple-quoted ones)
   and commands in command mode (from `run` to the end of the command,
   including `\` continuations, redirects and `with {...}`) are copied byte

@@ -1,0 +1,3 @@
+
+#! not a shebang: it was below blank lines
+print(1)
