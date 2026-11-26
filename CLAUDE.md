@@ -80,15 +80,20 @@ examples/<name>/        real scripts rewritten in ok, original alongside
 tests/cases/            golden tests (from M1)
 fuzz/                   cargo-fuzz targets for lexer and parser (from M1)
 ok.ok                   the repo's own tasks (dogfooding)
-site/                   landing page and install.sh / install.ps1, published to
-                        https://okrun.dev/ by pages.yml (after the
-                        install scripts pass on Linux, macOS and Windows)
+site/                   landing page, playground (playground.js, playground-worker.js)
+                        and install.sh / install.ps1, published to
+                        https://okrun.dev/ by pages.yml (after the install
+                        scripts pass on Linux, macOS and Windows); pages.yml
+                        adds ok.wasm, built from the commit, and three
+                        examples/ folders the playground loads
+.cargo/config.toml      stack size for the WebAssembly build
+tests/wasm/smoke.mjs    runs the WebAssembly build under Node (CI job `wasm`)
 SPEC.md                 normative language spec
 DECISIONS.md            dated design decisions
 IDEAS.md                out-of-scope ideas
 THIRD_PARTY.md          generated licence notices (cargo-about); shipped with binaries
 deny.toml, about.toml, about.hbs   licence tooling
-.github/workflows/      ci.yml (fmt, clippy, test x3 OS, deny, notices), release.yml (6 targets, draft release)
+.github/workflows/      ci.yml (fmt, clippy, test x3 OS, wasm, deny, notices, fuzz), release.yml (6 targets, draft release), pages.yml (site)
 ```
 
 Modules in `crates/okrun/src/`:

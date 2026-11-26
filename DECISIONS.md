@@ -858,3 +858,19 @@ a comment above a `| stage` line at the stage's level.
 scripts are served from the custom domain `okrun.dev` (GitHub Pages, HTTPS
 enforced); `https://xtr-dev.github.io/ok/` redirects there. The install
 one-liners in the README and on the page use the new address.
+
+**A playground on the website runs ok compiled to WebAssembly.** ok builds
+for `wasm32-wasip1` without code changes except three: the interpreter runs
+on the main thread there (WASI has no threads; `.cargo/config.toml` gives it
+an 8 MiB stack, beyond which the browser engine's own stack limit is reached
+first), and `run` and `fetch` fail with a message saying this build cannot
+start programs or open connections, instead of a misleading "command not
+found" or network error. In the browser, `@bjorn3/browser_wasi_shim`
+(MIT OR Apache-2.0, loaded pinned from jsDelivr) provides WASI with an
+in-memory file system, and the script runs in a Web Worker so a time limit
+(10 s) can stop a script that never ends. The examples are copied from
+`examples/` at deploy time, so the page never drifts from the repository.
+The playground runs ok as built from `main`, not the latest release: the
+release does not have the WebAssembly changes yet. Once a release has them,
+building it from the latest release tag would keep the page and the
+installed binary in step.
