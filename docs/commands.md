@@ -120,6 +120,15 @@ error[type]: a list cannot be one command argument
 
 `null`, records and functions cannot be arguments either; convert them to a string first.
 
+One argument is not the same as one *kind* of argument, though. The program decides what its arguments mean, and most treat a word starting with `-` as an option. If a value comes from outside your script (a command-line argument, a file, a server), `run git clone {url}` with a `url` of `--upload-pack=touch /tmp/pwned` is an option for git, not a URL. No shell is involved, but the program does what the option says. Put `--` before such values, which most programs read as "only arguments from here on", or check the value first:
+
+```ok file=clone.ok
+fn main(url: string, dir: path = "checkout") {
+  if url.starts_with("-") { fail("not a URL: {url}") }
+  run git clone -- {url} {dir}
+}
+```
+
 ## Live, captured or piped
 
 Where you write `run` decides what happens to the output. It never depends on what the command prints.
@@ -306,7 +315,7 @@ The function form has no redirects. For a computed command that needs them, use 
 
 ## Seeing what runs: trace and dry run
 
-`--trace` prints each command to stderr before it starts, prefixed with `+`. Arguments with spaces or quotes are quoted, the working directory is shown when it is not the default, and redirects come last:
+`--trace` prints each command to stderr before it starts, prefixed with `+`. Arguments with spaces or quotes are quoted, control characters inside them are shown as escapes such as `\r` or `\u{1b}`, the password of a URL is shown as `***`, the working directory is shown when it is not the default, and redirects come last:
 
 ```
 + cargo build --release --target x86_64-unknown-linux-musl

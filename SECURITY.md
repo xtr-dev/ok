@@ -19,7 +19,7 @@ ok runs scripts with the permissions of the user who starts them; a script is co
 - **No shell.** `run` passes each word as one argument and never starts a shell, so interpolated values cannot inject commands (SPEC.md §9).
 - **Binaries.** Release binaries come with SHA-256 checksums and signed build provenance; the install scripts and the `./ok` wrappers check the checksum before running a download. Verify provenance with `gh attestation verify ok-x86_64-unknown-linux-musl --repo xtr-dev/ok`.
 
-The `./ok` bootstrap wrapper is a shell script inside the repository, so in a repository you do not trust, run your installed `ok` instead of `./ok`.
+The `./ok` bootstrap wrapper (and `ok.cmd`, `ok.ps1`) is a script inside the repository, and your shell runs it before ok, and so before any trust check. A repository you do not trust can make it do anything. In a repository you have not reviewed, run your installed `ok` instead of `./ok`.
 
 ## How ok is kept secure
 
