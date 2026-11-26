@@ -1254,7 +1254,7 @@ directory (the project root in project mode).
 | Function | Returns | Notes |
 |---|---|---|
 | `read(p: path, format: string? = null, --gzip: bool? = null)` | value | Format from the extension or `format` (13); a `.gz` file is decompressed (13.1.1). |
-| `write(value, p: path, format: string? = null, --append: bool, --gzip: bool? = null)` | `null` | Creates parent directories. A `.gz` file is compressed (13.1.1). Writes `\n` line endings. Streams lazy values. When the value is a short string that looks like a file name (`"out.txt"`) and the path has no extension, the arguments are almost certainly swapped, and `write` refuses with a hint. |
+| `write(value, p: path, format: string? = null, --append: bool, --gzip: bool? = null)` | `null` | Creates parent directories. A `.gz` file is compressed (13.1.1). Writes `\n` line endings. Streams lazy values. When the value is a short string that looks like a file name (`"out.txt"`) and the path has no extension, the arguments are almost certainly swapped, and `write` refuses with a hint; `ok self check` warns about literal arguments that look swapped before the script runs (17.1). |
 | `copy(src: path, dst: path)` | `null` | Files or directories (recursive). `dst` is the exact destination, never "into". Overwrites files. |
 | `move(src: path, dst: path)` | `null` | Rename; falls back to copy and remove across file systems. |
 | `remove(p: path)` | `bool` | File or directory tree. `false` if nothing existed. Refuses the file-system root, the home directory and the project root. |
@@ -2063,10 +2063,185 @@ The only reserved first arguments are `trust`, `untrust` and `self`.
 | `ok self init [--checksums FILE]` | Write a starter `ok.ok` and the wrappers `./ok`, `ok.cmd`, `ok.ps1` (18) in the current directory. The checksums of this version's release are downloaded from the release (`SHA256SUMS`), or read from `FILE`. Refuses to overwrite. |
 | `ok self completions SHELL` | Print a completion script for `zsh`, `bash`, `fish` or `powershell`. |
 | `ok self complete -- WORDS...` | Used by completion scripts; prints candidates. |
-| `ok self fmt [--check] [FILES...]` | Format ok files in the canonical layout (the style of `examples/`). It changes whitespace only: two-space indentation per open bracket plus one level for continuation lines (a leading `\|` or `.`, or a previous line ending in an operator), no trailing whitespace, at most one blank line in a row, one final newline. Multi-line strings and continued commands are left as written. Default: the project files. `--check` lists files that would change and exits with 1. |
-| `ok self check [FILES...]` | Parse and check files without running them: syntax, the top-level rules for scripts, libraries and project files, and, for a project, namespaces, mounts, task references, dependency cycles and import confinement. (Static detection of undefined names is not in v0.1.) |
+| `ok self fmt [--check] [FILES...]` | Format ok files in the canonical layout (17.2). Default: the project files. `--check` lists files that would change and exits with 1. |
+| `ok self check [--strict] [FILES...]` | Check files without running them (17.1). Default: the whole project. |
 | `ok self tasks [--all]` | The task listing; `--all` includes hidden tasks. |
 | `ok self version` | Print `ok X.Y.Z`. |
+
+### 17.1 `ok self check`
+
+`ok self check` parses and checks files without running any of their code.
+Without files it checks the project around the current directory: first the
+load-time rules of section 15 (namespaces, mounts, task references and the
+arguments in `needs`, dependency cycles, import confinement), then every file
+of the project: the root `ok.ok`, `ok/*.ok`, mounted sub-projects and the
+files they import. Given files, it checks those; `ok.ok` and a file directly
+in an `ok/` directory next to one are checked as project files.
+
+For each file it reports:
+
+1. syntax errors and the top-level rules of 4.1;
+2. **unknown names**: a variable or function used where no declaration of
+   that name is visible, an assignment to an undeclared name, a method call
+   `x.f()` for which there is no function `f` (6.4), a name that an import
+   namespace does not export (`lib.f`), and an `env` method that does not
+   exist; the help line suggests a close name (10.3) or says that the name is
+   only declared further down;
+3. **wrong arguments** in a call of a known function: a `fn` of the file or
+   of an import, a closure bound with `let`, or a builtin (12). Too many or
+   too few positional arguments, a missing flag that has no default, a named
+   argument that is not a flag of the function, and a positional parameter
+   passed by name. The receiver of a method call and the input of a pipeline
+   stage count as the first argument; with a spread `...xs` the number of
+   arguments is unknown and only named arguments are checked;
+4. an `import` whose file does not exist.
+
+Names are resolved with the interpreter's rules (5.10, 7, 11): builtins and
+the globals `os`, `env`, `args`, `cwd`, `home`, `script_dir` and
+`invocation_dir`; a block's functions from the start of the block; imports
+from the start of the file; `let` and `var` bindings, parameters, loop
+variables, match bindings and `catch` names in their scopes. Code that runs
+where it stands sees only the bindings made before it: `print(x)` followed by
+`let x = 1` is an unknown name. Code that runs later (bodies of functions,
+closures and tasks, parameter defaults, `sources` and `outputs`) sees every
+name of its enclosing scopes, wherever in them it is declared.
+
+A finding means the code fails whenever it runs. Where the outcome depends on
+values, the check stays silent:
+
+- calls of a function held in a variable, a parameter or a record field;
+- a method call `x.f()` where `x` may be a record whose field `f` holds a
+  function, which the call would use instead of the function `f` (6.4): that
+  is the case when the file or one of its imports has a record literal with
+  a key `f` whose value is not a plain literal, or assigns `r.f = ...`; a
+  computed key (`r[k] = ...`) or `from_entries` makes every name possible.
+  Method calls on literals (`"a,b".split(",")`) are always checked;
+- the body of a `try` and the expression before `?`, where errors become
+  values (6.2, 6.7);
+- fields and properties of values (`r.name`, `env.HOME`) and the types of
+  arguments;
+- the rest of a file with an import that cannot be read or parsed, since it
+  could define any name; only the import is reported.
+
+The check does not follow calls: a function with an unknown name in its body
+is reported even if nothing calls it.
+
+**Lints** are warnings about code that runs but is almost certainly wrong.
+There is one: **swapped `write` arguments** (12.1). `write(value, path)` is
+reported when its first argument is a string or `path(...)` literal that
+looks like a file name (no spaces or newlines, and the extension of a format
+of 13.1, `.txt`, `.log`, `.md` or `.gz`) and its second does not, as in
+`write("out.json", data)`; the method form and pipelines count their input
+as the first argument.
+
+Findings are rendered like runtime errors (10.1), warnings with
+`warning[kind]:` instead of `error[kind]:`. All findings of all files are
+shown, in file and source order, followed by a summary on stderr
+(`ok: 3 files checked: 2 errors and 1 warning`); without findings the
+summary goes to stdout (`ok: 3 files checked, no problems found`). The exit
+code is 1 when there is an error, 0 when there are only warnings, or 1 with
+`--strict`, and 2 for bad usage.
+
+```
+error[name]: unknown name `relase`
+ --> deploy.ok:7:4
+  |
+7 | if relase { deploy("staging") }
+  |    ^^^^^^ not defined here
+  |
+  = help: did you mean `release`?
+error[arg]: `greet` takes 1 positional argument, got 2
+ --> deploy.ok:9:1
+  |
+9 | greet("ok", "again")
+  | ^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `greet` is declared at deploy.ok:2:4
+warning[arg]: the arguments of `write` look swapped: "report.json" looks like a path
+  --> deploy.ok:12:1
+   |
+12 | write("report.json", report)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: write(value, path) writes the value to the file at path
+   = help: the value comes first and the path second: write(report, "report.json")
+ok: 1 file checked: 2 errors and 1 warning
+```
+
+### 17.2 Canonical layout (`ok self fmt`)
+
+`ok self fmt` rewrites files in the canonical layout, the style of
+`examples/`. It keeps the author's line breaks, except that it breaks lines
+that are too long, and normalises everything else:
+
+- **Indentation** is two spaces per level. A line inside brackets is one
+  level deeper than the line that opened the innermost of them, however many
+  brackets that line opened (`print(match x {` indents its arms once). A line
+  that starts with a closing bracket is at the level of the line that opened
+  it. A line that continues the previous statement (it starts with `|` or
+  with `.name`, a method chain, or the previous line ends with a binary
+  operator; 3.3) gets one more level.
+- **Spacing**: one space around binary operators (`=`, `+=`, `=>`, `|`, `??`,
+  `and`, `or`, `in`, comparisons and arithmetic), after `,` and `:`, and
+  inside the braces of a block on one line (`{ print(x) }`). No space after
+  `(`, `[`, `...` and a prefix `-`, before `)`, `]`, `,` and `:`, and inside
+  record literals and record patterns (`{a: 1}`). Empty brackets are `()`,
+  `[]` and `{}`. Where whitespace changes meaning (before `(` and `[`, which
+  decides between a call and a juxtaposed argument, 4.4 and 8.2; around `.`,
+  which decides between a field and an implicit closure; around a `-` that
+  is not an operator, as in `--dry-run`, `reset-db` and `take -1`), a space
+  is kept if there was one, and several become one.
+- **Blank lines**: at most one in a row, none at the start of the file,
+  after a line that ends with an opening bracket, or at the end. The file
+  ends with one newline, and no line ends with blanks outside a string.
+- **Comments** stay where they are. An own-line comment takes the
+  indentation of the line after it (one level more if that line starts with
+  a closing bracket). An end-of-line comment keeps its column, so aligned
+  comments stay aligned; if the code now reaches that column, it follows two
+  spaces after the code. A shebang line is kept as it is.
+- **Verbatim**: string literals (also multi-line and triple-quoted ones)
+  and commands in command mode (from `run` to the end of the command,
+  including `\` continuations, redirects and `with {...}`) are copied byte
+  for byte; only blanks after the end of a command are removed.
+- **Long lines**: a line whose code, with its indentation and without an
+  end-of-line comment, is longer than 100 characters is broken, unless it
+  has an end-of-line comment or contains a string or command that spans
+  lines:
+  1. if a pipeline runs through the line outside any bracket opened on it,
+     the line is broken before each of its `|`;
+  2. otherwise the largest bracket group that opens and closes on the line
+     is split: the arguments of a call, the parameters of a `fn` or task, a
+     list literal, a record literal or `needs [...]` get one element per
+     line and a trailing comma; a block on one line gets its statement on a
+     line of its own. A group holding a single token (one long string) is
+     not split.
+
+  The new lines are checked again. A line that cannot be broken this way,
+  such as a long string or command, stays as it is.
+
+```
+# before
+let files = glob("**/*", root: root, hidden: true, exclude: ["**/.git", "**/node_modules", "**/target"])
+let r = {name:x , size:stat(x).size}
+if r.size>limit {print( "big" )}
+
+# after
+let files = glob(
+  "**/*",
+  root: root,
+  hidden: true,
+  exclude: ["**/.git", "**/node_modules", "**/target"],
+)
+let r = {name: x, size: stat(x).size}
+if r.size > limit { print("big") }
+```
+
+Formatting never changes what a file means: `ok self fmt` parses its result
+and compares the syntax tree (ignoring positions) and the comments with the
+original, and if they differ it reports an internal error and leaves the
+file unchanged. Formatting a formatted file changes nothing. A file that
+does not parse is reported with its syntax error and left unchanged; the
+exit code is then 1.
 
 ## 18. Bootstrap wrappers
 

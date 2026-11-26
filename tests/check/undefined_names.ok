@@ -1,0 +1,18 @@
+# Names that are not defined where they are used.
+fn deploy(target: string, --dry-run: bool) {
+  if dry_rnu { print("would deploy {targte}") }
+}
+
+let release = true
+if relase { deploy("staging") }
+
+var count = 0
+cuont += 1
+
+print(lenght("abc"))
+print(None)
+run ok-fixture echo {relese}
+
+# Used before its `let`: the statement runs first.
+print(later)
+let later = 1

@@ -1,0 +1,5 @@
+# A missing import is reported; the rest of the file is not checked, since
+# the import could have defined any name.
+import "./lib/nope.ok"
+
+print(from_the_missing_library())

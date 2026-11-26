@@ -504,6 +504,58 @@ fn fmt_and_check() {
     assert!(out(&p.run(&["self", "check"])).contains("no problems"));
 }
 
+#[test]
+fn check_finds_problems_in_every_project_file() {
+    let p = Proj::new(
+        "checkall",
+        &[
+            (
+                "ok.ok",
+                "import \"ok/_lib.ok\"\n\ntask build(--release: bool) {\n  print(relase, helper(1))\n}\n",
+            ),
+            ("ok/_lib.ok", "fn helper() { 1 }\n"),
+            (
+                "ok/db.ok",
+                "task seed sources [glob(\"*.sql\", root: \"db\", recursive: true)] {\n  print(\"seeding\")\n}\n",
+            ),
+        ],
+    );
+    let o = p.run(&["self", "check"]);
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    let e = err(&o);
+    assert!(
+        e.contains("unknown name `relase`") && e.contains("did you mean `release`?"),
+        "{e}"
+    );
+    assert!(
+        e.contains("`helper` takes 0 positional arguments, got 1"),
+        "{e}"
+    );
+    assert!(e.contains("is declared at ok/_lib.ok:1:4"), "{e}");
+    assert!(e.contains("ok/db.ok:1:"), "{e}");
+    assert!(e.contains("`glob` has no parameter `recursive`"), "{e}");
+    assert!(e.contains("3 files and 2 tasks checked: 3 errors"), "{e}");
+    // An unknown dependency is a load error, reported before anything else.
+    p.write("ok.ok", "task a needs [nope] {\n}\n");
+    let o = p.run(&["self", "check"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err(&o).contains("unknown task `nope` in needs"),
+        "{}",
+        err(&o)
+    );
+}
+
+#[test]
+fn check_rejects_unknown_options() {
+    let p = Proj::new("checkopts", &[("ok.ok", "task a {\n}\n")]);
+    let o = p.run(&["self", "check", "--bogus"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(err(&o).contains("unknown option --bogus"), "{}", err(&o));
+    let o = p.run(&["self", "fmt", "--strict"]);
+    assert_eq!(o.status.code(), Some(2));
+}
+
 /// Tasks `a` and `b` each wait until the other one has started, so the
 /// invocation only finishes when they really run at the same time.
 const RENDEZVOUS: &str = r#"

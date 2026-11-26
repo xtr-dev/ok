@@ -1,0 +1,47 @@
+# Lines longer than 100 columns are broken.
+let files = glob(
+  "**/*",
+  root: root,
+  hidden: true,
+  exclude: ["**/.git", "**/node_modules", "**/target"],
+)
+let report = {
+  name: project.name,
+  version: project.version,
+  files: len(files),
+  when: now(),
+  ok: true,
+}
+let sizes = files
+  | where is_file
+  | map(f => {path: f, size: stat(f).size})
+  | sort(.size, desc: true)
+print(
+  read(d / "unzipped/src/nested/b.txt"),
+  read(d / "untarred/src/a.txt"),
+  read(d / "plain/a.txt"),
+)
+if len(files) > 1000 {
+  fail("too many files under {root}: {len(files)}, limit the search with exclude")
+}
+
+task build(
+  --release: bool,
+  --target: string = "x86_64-unknown-linux-musl",
+) needs [gen, lint, test] {
+  run cargo build
+}
+
+fn render(
+  template: string,
+  values: record,
+  --strict: bool,
+  --missing: string = "",
+  ...extra: string,
+) {
+  template
+}
+
+# A long string or command cannot be broken; it is left as it is.
+print("this string is long, and splitting a string would change it, so the line stays as it is")
+run ok-fixture echo this command is long and its words are copied verbatim so it stays as written

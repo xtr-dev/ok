@@ -1,0 +1,14 @@
+# Strings and commands are copied exactly, whatever their spacing.
+let msg = "spaces   {name  }   stay"
+let raw = 'C:\Users\  x'
+let text = """
+    indented   text
+      keeps its layout
+    """
+    run   git   commit   -m "a  b"   {msg}
+run cargo build \
+      --release   \
+   --locked
+let out = (run   ok-fixture echo hi).out
+if x {  run make test   }
+let r = run ok-fixture echo hi with {env:{A:"1"}}

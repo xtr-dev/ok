@@ -107,6 +107,9 @@ pub struct OkError {
     pub status: Option<u16>,
     /// Text printed after everything else, such as a usage line.
     pub trailer: Option<String>,
+    /// A finding of `ok self check` that does not stop the program from
+    /// running (a lint); rendered as `warning[kind]:`.
+    pub warning: bool,
 }
 
 impl OkError {
@@ -125,7 +128,14 @@ impl OkError {
             stderr: None,
             status: None,
             trailer: None,
+            warning: false,
         }
+    }
+
+    /// Turn the error into a warning.
+    pub fn as_warning(mut self) -> OkError {
+        self.warning = true;
+        self
     }
 
     pub fn at(kind: ErrKind, span: Span, message: impl Into<String>) -> OkError {
@@ -203,6 +213,9 @@ impl Paint {
     fn error(&self, t: &str) -> String {
         self.wrap("1;31", t)
     }
+    fn warning(&self, t: &str) -> String {
+        self.wrap("1;33", t)
+    }
     fn bold(&self, t: &str) -> String {
         self.wrap("1", t)
     }
@@ -222,16 +235,17 @@ pub fn render(err: &OkError, sources: &SourceMap, color: Color) -> String {
         on: color == Color::Always,
     };
     let mut out = String::new();
+    let word = if err.warning { "warning" } else { "error" };
     let head = match err.span {
-        Some(_) => format!("error[{}]", err.kind.name()),
-        None => "error".to_string(),
+        Some(_) => format!("{word}[{}]", err.kind.name()),
+        None => word.to_string(),
     };
-    let _ = writeln!(
-        out,
-        "{}{}",
-        p.error(&head),
-        p.bold(&format!(": {}", err.message))
-    );
+    let head = if err.warning {
+        p.warning(&head)
+    } else {
+        p.error(&head)
+    };
+    let _ = writeln!(out, "{head}{}", p.bold(&format!(": {}", err.message)));
 
     let mut gutter_width = 1;
     if let Some(span) = err.span {

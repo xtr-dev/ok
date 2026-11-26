@@ -14,6 +14,7 @@
 pub mod archive;
 pub mod ast;
 pub mod builtins;
+pub mod check;
 pub mod cli;
 pub mod command;
 pub mod error;

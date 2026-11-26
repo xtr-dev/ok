@@ -1,0 +1,52 @@
+error[arg]: `greet` takes 1 positional argument, got 2
+ --> arguments.ok:7:1
+  |
+7 | greet("ok", "again", times: 2)
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `greet` is declared at arguments.ok:2:4
+error[arg]: missing argument `name` for `greet`
+ --> arguments.ok:8:1
+  |
+8 | greet(times: 1)
+  | ^^^^^^^^^^^^^^^
+  |
+  = note: `greet` is declared at arguments.ok:2:4
+error[arg]: `greet` has no parameter `lound`
+ --> arguments.ok:9:13
+  |
+9 | greet("ok", lound: true, times: 1)
+  |             ^^^^^
+  |
+  = note: `greet` is declared at arguments.ok:2:4
+  = help: did you mean `loud`?
+error[arg]: missing argument `times` for `greet` (pass it as times: ...)
+  --> arguments.ok:10:1
+   |
+10 | greet("ok")
+   | ^^^^^^^^^^^
+   |
+   = note: `greet` is declared at arguments.ok:2:4
+error[arg]: `len` takes 1 argument, got 2
+  --> arguments.ok:13:7
+   |
+13 | print(len(words, 2))
+   |       ^^^^^^^^^^^^^
+error[arg]: `sort` has no parameter `by`
+  --> arguments.ok:14:32
+   |
+14 | print(words | sort(desc: true, by: .x))
+   |                                ^^
+   |
+   = note: `sort` takes named arguments desc
+error[arg]: `split` takes 1 to 2 arguments, got 4
+  --> arguments.ok:15:7
+   |
+15 | print("a,b".split(",", 2, 3))
+   |       ^^^^^^^^^^^^^^^^^^^^^^
+error[arg]: `env.get` takes 1 to 2 arguments, got 0
+  --> arguments.ok:17:7
+   |
+17 | print(env.get())
+   |       ^^^^^^^^^
+ok: 1 file checked: 8 errors

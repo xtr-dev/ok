@@ -1,0 +1,10 @@
+# Imported names: plain imports and namespaces.
+import "./lib/tools.ok" as tools
+import "./lib/tools.ok"
+
+print(shout("hi"), tools.shout("hi"), tools.version)
+print(tools.shuot("hi"))
+print(tools._hidden())
+print(tools.shout("a", "b"))
+print("hi" | tools.shout(1))
+print(shout())

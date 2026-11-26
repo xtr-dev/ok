@@ -1,0 +1,17 @@
+# Calls with the wrong arguments.
+fn greet(name: string, --loud: bool, --times: int) {
+  repeat(name, times)
+}
+
+greet("ok", times: 2)
+greet("ok", "again", times: 2)
+greet(times: 1)
+greet("ok", lound: true, times: 1)
+greet("ok")
+
+let words = ["b", "a"]
+print(len(words, 2))
+print(words | sort(desc: true, by: .x))
+print("a,b".split(",", 2, 3))
+print(words | join)
+print(env.get())

@@ -1,0 +1,29 @@
+# Valid code the checker must accept: it cannot know these are wrong, or
+# they are right.
+fn main(input: path = "in.txt", --verbose, -v: bool, ...rest: string) {
+  # Functions are hoisted, and a body may use names declared after it.
+  print(helper(input), limit)
+  let handlers = {split: x => [x]}
+  # A record field holding a function is called instead of `split`.
+  print(handlers.split(1, 2, 3))
+  let f = handlers.split
+  print(f(1, 2, 3, 4))
+  # Inside `try` and `?` errors become values.
+  let v = try { nope() } catch e { e.message }
+  print(v, maybe_defined?, len(1, 2)?)
+  for i, [a, b] in [[1, 2]] {
+    print(i, a, b)
+  }
+  print(match rest {
+    [first, ...others] if len(others) > 0 => first
+    {key: 1 | 2} => "record"
+    _ => "other"
+  })
+  if verbose { run ok-fixture echo {input} {...rest} }
+}
+
+fn helper(p: path, --label: string = "{p}") {
+  "{label}: {p.name}"
+}
+
+let limit = 10

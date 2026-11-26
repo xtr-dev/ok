@@ -53,8 +53,77 @@ fn kind_of(path: &Path) -> FileKind {
     FileKind::Script
 }
 
-/// `ok self check [FILES...]`: parse and check without running anything.
-pub fn check(interp: &mut Interp, files: &[String], start: &Path) -> R<Value> {
+/// Split the arguments of `ok self check` / `ok self fmt` into the allowed
+/// options and the files.
+fn options_and_files(
+    args: &[String],
+    allowed: &str,
+    cmd: &str,
+) -> Result<(bool, Vec<PathBuf>), Flow> {
+    let mut flag = false;
+    let mut files = Vec::new();
+    for a in args {
+        if a == allowed {
+            flag = true;
+        } else if a.starts_with('-') && a.len() > 1 {
+            return Err(usage(&format!(
+                "unknown option {a} for ok self {cmd} (it takes {allowed} and files)"
+            )));
+        } else {
+            files.push(PathBuf::from(a));
+        }
+    }
+    Ok((flag, files))
+}
+
+/// Read a file to check or format and register it in the source map, so
+/// that findings can show its lines.
+fn read_source(interp: &mut Interp, shown: &str, path: &Path) -> Result<(u32, String), OkError> {
+    let text = std::fs::read_to_string(path).map_err(|e| {
+        OkError::new(
+            ErrKind::Io,
+            format!("cannot read {shown}: {}", crate::interp::io_reason(&e)),
+        )
+    })?;
+    let id = interp.sources.add(
+        shown.to_string(),
+        Some(path.to_path_buf()),
+        text.clone().into(),
+    );
+    Ok((id, text))
+}
+
+/// Like [`read_source`], but the source map gets the text the formatter
+/// works on: `\n` line endings, no byte order mark. Returns the id, the
+/// text as read and the normalised text.
+fn read_for_format(
+    interp: &mut Interp,
+    shown: &str,
+    path: &Path,
+) -> Result<(u32, String, String), OkError> {
+    let text = std::fs::read_to_string(path).map_err(|e| {
+        OkError::new(
+            ErrKind::Io,
+            format!("cannot read {shown}: {}", crate::interp::io_reason(&e)),
+        )
+    })?;
+    let norm = crate::fmt::normalize(&text);
+    let id = interp.sources.add(
+        shown.to_string(),
+        Some(path.to_path_buf()),
+        norm.clone().into(),
+    );
+    Ok((id, text, norm))
+}
+
+/// `ok self check [--strict] [FILES...]`: parse and check without running
+/// anything (SPEC.md 17). Errors exit with 1; warnings only with
+/// `--strict`.
+pub fn check(interp: &mut Interp, args: &[String], start: &Path) -> R<Value> {
+    let (strict, files) = options_and_files(args, "--strict", "check")?;
+    // (shown name, path, kind)
+    let mut targets: Vec<(String, PathBuf, FileKind)> = Vec::new();
+    let mut tasks = None;
     if files.is_empty() {
         let Some(root) = crate::project::discover(start) else {
             return Err(usage(
@@ -62,44 +131,61 @@ pub fn check(interp: &mut Interp, files: &[String], start: &Path) -> R<Value> {
             ));
         };
         let project = interp.load_project(&root)?;
-        let tasks = project.tasks.len();
-        println!(
-            "ok: {} file{} and {tasks} task{} checked, no problems found",
-            project.trust_files.len(),
-            plural(project.trust_files.len()),
-            plural(tasks)
-        );
-        return Ok(Value::Null);
-    }
-    let mut failed = 0;
-    for f in files {
-        let path = Path::new(f);
-        let text = match std::fs::read_to_string(path) {
-            Ok(t) => t,
-            Err(e) => {
-                eprintln!("error: cannot read {f}: {}", crate::interp::io_reason(&e));
-                failed += 1;
-                continue;
-            }
-        };
-        let id = interp
-            .sources
-            .add(f.clone(), Some(path.to_path_buf()), text.clone().into());
-        let result =
-            crate::parser::parse(id, &text).and_then(|prog| check_items(&prog, kind_of(path)));
-        if let Err(e) = result {
-            eprint!("{}", render(&e, &interp.sources, Color::Never));
-            failed += 1;
+        tasks = Some(project.tasks.len());
+        for (rel, path) in &project.trust_files {
+            // Files a project imports are libraries (SPEC.md 11).
+            let kind = match kind_of(path) {
+                FileKind::Script => FileKind::Library,
+                k => k,
+            };
+            targets.push((rel.clone(), path.clone(), kind));
+        }
+    } else {
+        for f in &files {
+            let shown = OkPath::from_native(f).display();
+            targets.push((shown, f.clone(), kind_of(f)));
         }
     }
-    if failed > 0 {
+    let (mut errors, mut warnings) = (0, 0);
+    for (shown, path, kind) in &targets {
+        let findings = match read_source(interp, shown, path) {
+            Err(e) => vec![e],
+            Ok((id, text)) => match crate::parser::parse(id, &text)
+                .and_then(|prog| check_items(&prog, *kind).map(|()| prog))
+            {
+                Err(e) => vec![e],
+                Ok(prog) => crate::check::check_file(&prog, &text, shown, path, *kind),
+            },
+        };
+        for e in &findings {
+            if e.warning {
+                warnings += 1;
+            } else {
+                errors += 1;
+            }
+            eprint!("{}", render(e, &interp.sources, Color::Never));
+        }
+    }
+    let n = targets.len();
+    let what = match tasks {
+        Some(t) => format!("{n} file{} and {t} task{} checked", plural(n), plural(t)),
+        None => format!("{n} file{} checked", plural(n)),
+    };
+    if errors == 0 && warnings == 0 {
+        println!("ok: {what}, no problems found");
+        return Ok(Value::Null);
+    }
+    let mut found = Vec::new();
+    if errors > 0 {
+        found.push(format!("{errors} error{}", plural(errors)));
+    }
+    if warnings > 0 {
+        found.push(format!("{warnings} warning{}", plural(warnings)));
+    }
+    eprintln!("ok: {what}: {}", found.join(" and "));
+    if errors > 0 || strict {
         return Err(Flow::Exit(1));
     }
-    println!(
-        "ok: {} file{} checked, no problems found",
-        files.len(),
-        plural(files.len())
-    );
     Ok(Value::Null)
 }
 
@@ -109,12 +195,7 @@ fn plural(n: usize) -> &'static str {
 
 /// `ok self fmt [--check] [FILES...]`.
 pub fn fmt(interp: &mut Interp, args: &[String], start: &Path) -> R<Value> {
-    let check_only = args.iter().any(|a| a == "--check");
-    let mut files: Vec<PathBuf> = args
-        .iter()
-        .filter(|a| *a != "--check")
-        .map(PathBuf::from)
-        .collect();
+    let (check_only, mut files) = options_and_files(args, "--check", "fmt")?;
     if files.is_empty() {
         let Some(root) = crate::project::discover(start) else {
             return Err(usage(
@@ -125,19 +206,23 @@ pub fn fmt(interp: &mut Interp, args: &[String], start: &Path) -> R<Value> {
         files = project.trust_files.iter().map(|(_, p)| p.clone()).collect();
     }
     let mut changed = Vec::new();
+    let mut failed = 0;
     for f in &files {
         let shown = OkPath::from_native(f).display();
-        let text = std::fs::read_to_string(f).map_err(|e| {
-            OkError::new(
-                ErrKind::Io,
-                format!("cannot read {shown}: {}", crate::interp::io_reason(&e)),
-            )
-        })?;
-        let formatted = crate::fmt::format_source(&text).map_err(|mut e| {
-            e.message = format!("{shown}: {}", e.message);
-            e.span = None;
-            e
-        })?;
+        let result = read_for_format(interp, &shown, f).and_then(|(id, text, norm)| {
+            crate::fmt::format_file(id, &norm).map(|formatted| (text, formatted))
+        });
+        let (text, formatted) = match result {
+            Ok(r) => r,
+            Err(mut e) => {
+                if e.span.is_none() {
+                    e.message = format!("{shown}: {}", e.message);
+                }
+                eprint!("{}", render(&e, &interp.sources, Color::Never));
+                failed += 1;
+                continue;
+            }
+        };
         if formatted != text {
             changed.push(shown.clone());
             if !check_only {
@@ -151,10 +236,12 @@ pub fn fmt(interp: &mut Interp, args: &[String], start: &Path) -> R<Value> {
             }
         }
     }
-    if check_only && !changed.is_empty() {
+    if check_only {
         for c in &changed {
             println!("would reformat {c}");
         }
+    }
+    if failed > 0 || (check_only && !changed.is_empty()) {
         return Err(Flow::Exit(1));
     }
     if changed.is_empty() {

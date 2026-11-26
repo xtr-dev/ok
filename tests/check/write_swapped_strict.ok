@@ -1,0 +1,3 @@
+# With --strict, warnings fail the check too.
+let lines = ["a", "b"]
+write(path("out/list.txt"), lines)

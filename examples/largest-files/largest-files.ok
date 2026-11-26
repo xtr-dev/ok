@@ -3,7 +3,12 @@ fn main(
   root: path = ".",  # directory to scan
   --top: int = 10,   # how many files to show
 ) {
-  let files = glob("**/*", root: root, hidden: true, exclude: ["**/.git", "**/node_modules", "**/target"])
+  let files = glob(
+    "**/*",
+    root: root,
+    hidden: true,
+    exclude: ["**/.git", "**/node_modules", "**/target"],
+  )
     | where is_file
     | map(f => {path: f, size: stat(f).size})
     | sort(.size, desc: true)
