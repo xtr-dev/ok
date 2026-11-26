@@ -433,9 +433,11 @@ true false
 
 `copy(src: path, dst: path)` returns `null`. Copies a file, or a directory with everything in it. `dst` is the exact destination, never a directory to copy into: `copy("a.txt", "out")` creates a file named `out`. Existing files are overwritten and parent directories are created. Copying a directory onto an existing directory merges them: files with the same name are replaced, the other files in `dst` stay. A missing `src`, a file copied onto an existing directory (or a directory onto a file), and a path copied onto itself or a directory into itself are `io` errors.
 
+Symbolic links inside a copied directory are copied as links, like `cp -R` does, so a link that points outside the directory does not copy what is outside into the destination. A link given as `src` itself is followed. In an existing destination, links are never written through: a link where a file goes is replaced, and a link where a directory goes is an `io` error.
+
 ### move
 
-`move(src: path, dst: path)` returns `null`. Renames a file or directory, copying and removing when `src` and `dst` are on different file systems.
+`move(src: path, dst: path)` returns `null`. Renames a file, directory or link, copying and removing when `src` and `dst` are on different file systems (links are then recreated as links).
 
 ### remove
 

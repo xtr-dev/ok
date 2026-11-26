@@ -252,18 +252,123 @@ fn umask() -> u32 {
     })
 }
 
-fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
-    let meta = std::fs::symlink_metadata(src)?;
+/// Why a copy stopped.
+enum CopyFail {
+    Io(std::io::Error),
+    /// A conflict in the destination, described.
+    Refused(String),
+}
+
+impl From<std::io::Error> for CopyFail {
+    fn from(e: std::io::Error) -> CopyFail {
+        CopyFail::Io(e)
+    }
+}
+
+/// Copy a file, link or directory tree (SPEC.md 12.1). `src` itself is
+/// followed when it is a symlink and `follow` is set (`copy` copies what a
+/// link names; `move` moves the link). Below `src`, symlinks are copied as
+/// links, never followed, so a link in the source cannot pull files from
+/// outside it into the copy. Below `dst`, existing links are never written
+/// through or descended into: a link where a file goes is replaced, a link
+/// where a directory goes is an error.
+fn copy_tree(src: &Path, dst: &Path, follow: bool) -> Result<(), CopyFail> {
+    let meta = if follow {
+        std::fs::metadata(src)?
+    } else {
+        std::fs::symlink_metadata(src)?
+    };
+    if meta.file_type().is_symlink() {
+        ensure_parent(dst)?;
+        return copy_link(src, dst);
+    }
     if meta.is_dir() {
         std::fs::create_dir_all(dst)?;
-        for entry in std::fs::read_dir(src)? {
-            let entry = entry?;
-            copy_tree(&entry.path(), &dst.join(entry.file_name()))?;
-        }
-        Ok(())
+        copy_entries(src, dst)
     } else {
         ensure_parent(dst)?;
-        std::fs::copy(src, dst).map(|_| ())
+        std::fs::copy(src, dst)?;
+        Ok(())
+    }
+}
+
+fn copy_entries(src: &Path, dst: &Path) -> Result<(), CopyFail> {
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let (s, d) = (entry.path(), dst.join(entry.file_name()));
+        let kind = entry.file_type()?;
+        let existing = std::fs::symlink_metadata(&d).ok();
+        let shown = || OkPath::from_native(&d).display();
+        match &existing {
+            Some(m) if m.file_type().is_symlink() && kind.is_dir() => {
+                return Err(CopyFail::Refused(format!(
+                    "{} is a symbolic link, and copy never writes through links",
+                    shown()
+                )));
+            }
+            Some(m) if m.is_dir() && !kind.is_dir() => {
+                return Err(CopyFail::Refused(format!("{} is a directory", shown())));
+            }
+            Some(m) if !m.is_dir() && !m.file_type().is_symlink() && kind.is_dir() => {
+                return Err(CopyFail::Refused(format!(
+                    "{} is a file, not a directory",
+                    shown()
+                )));
+            }
+            // A link where a file or link goes is replaced, not followed.
+            Some(m) if m.file_type().is_symlink() => std::fs::remove_file(&d)?,
+            _ => {}
+        }
+        if kind.is_symlink() {
+            copy_link(&s, &d)?;
+        } else if kind.is_dir() {
+            if existing.is_none() {
+                std::fs::create_dir(&d)?;
+            }
+            copy_entries(&s, &d)?;
+        } else {
+            std::fs::copy(&s, &d)?;
+        }
+    }
+    Ok(())
+}
+
+/// Recreate the symlink `src` at `dst`, with the same target text.
+fn copy_link(src: &Path, dst: &Path) -> Result<(), CopyFail> {
+    let target = std::fs::read_link(src)?;
+    if std::fs::symlink_metadata(dst).is_ok_and(|m| !m.is_dir()) {
+        std::fs::remove_file(dst)?;
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&target, dst)?;
+        Ok(())
+    }
+    // Windows has separate links for files and directories. Creating one
+    // may need a privilege; without it the copy fails instead of copying
+    // what the link points to.
+    #[cfg(windows)]
+    {
+        let made = if std::fs::metadata(src).is_ok_and(|m| m.is_dir()) {
+            std::os::windows::fs::symlink_dir(&target, dst)
+        } else {
+            std::os::windows::fs::symlink_file(&target, dst)
+        };
+        made.map_err(|e| {
+            CopyFail::Refused(format!(
+                "cannot create the symbolic link {}: {}",
+                OkPath::from_native(dst).display(),
+                io_reason(&e)
+            ))
+        })
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = target;
+        Err(CopyFail::Refused(format!(
+            "{} is a symbolic link, which cannot be created here",
+            OkPath::from_native(src).display()
+        )))
     }
 }
 
@@ -328,8 +433,30 @@ fn copy(interp: &mut Interp, mut args: Args) -> R<Value> {
         }
         _ => {}
     }
-    copy_tree(&s, &d).map_err(|e| io_fail(&args, "copy to", &dst, &e))?;
+    copy_tree(&s, &d, true).map_err(|e| copy_fail(&args, "copy", &src, &dst, e))?;
     Ok(Value::Null)
+}
+
+fn copy_fail(
+    args: &Args,
+    what: &str,
+    src: &OkPath,
+    dst: &OkPath,
+    e: CopyFail,
+) -> crate::interp::Flow {
+    match e {
+        CopyFail::Io(e) => io_fail(args, &format!("{what} to"), dst, &e),
+        CopyFail::Refused(msg) => OkError::at(
+            ErrKind::Io,
+            args.span,
+            format!(
+                "cannot {what} {} to {}: {msg}",
+                src.display(),
+                dst.display()
+            ),
+        )
+        .into(),
+    }
 }
 
 /// Where `p` is or would be: the canonical form of its nearest existing
@@ -401,7 +528,7 @@ fn move_(interp: &mut Interp, mut args: Args) -> R<Value> {
     ensure_parent(&d).map_err(|e| io_fail(&args, "move to", &dst, &e))?;
     if std::fs::rename(&s, &d).is_err() {
         // Across file systems a rename fails; copy and remove instead.
-        copy_tree(&s, &d).map_err(|e| io_fail(&args, "move to", &dst, &e))?;
+        copy_tree(&s, &d, false).map_err(|e| copy_fail(&args, "move", &src, &dst, e))?;
         remove_path(&s).map_err(|e| io_fail(&args, "remove", &src, &e))?;
     }
     Ok(Value::Null)
@@ -687,6 +814,7 @@ fn tempdir(interp: &mut Interp, mut args: Args) -> R<Value> {
         let mut last = None;
         for _ in 0..16 {
             let p = temp_name("ok", "");
+            #[cfg_attr(not(unix), allow(unused_mut))]
             let mut b = std::fs::DirBuilder::new();
             #[cfg(unix)]
             {
@@ -1178,6 +1306,70 @@ mod tests {
         assert_eq!(p, dir.join("free"));
         assert_eq!(std::fs::read_to_string(&planted).unwrap(), "someone else's");
         assert_ne!(unique_suffix(), unique_suffix());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Links inside a copied tree stay links, and links inside an existing
+    /// destination are never written through (SPEC.md 12.1).
+    #[cfg(unix)]
+    #[test]
+    fn copy_keeps_links_and_never_writes_through_them() {
+        use std::os::unix::fs::symlink;
+        let dir = scratch("copy-links");
+        let (outside, src, dst) = (dir.join("outside"), dir.join("src"), dir.join("dst"));
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("key"), "secret").unwrap();
+        std::fs::create_dir_all(src.join("sub")).unwrap();
+        std::fs::write(src.join("sub/f2"), "new").unwrap();
+        symlink("../outside/key", src.join("k")).unwrap();
+        symlink("../outside", src.join("d")).unwrap();
+        assert!(copy_tree(&src, &dst, true).is_ok());
+        assert_eq!(
+            std::fs::read_link(dst.join("k")).unwrap(),
+            Path::new("../outside/key")
+        );
+        assert!(
+            std::fs::symlink_metadata(dst.join("d"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        // A link in the destination where the source has a directory.
+        let dst2 = dir.join("dst2");
+        std::fs::create_dir_all(&dst2).unwrap();
+        symlink("../outside", dst2.join("sub")).unwrap();
+        assert!(matches!(
+            copy_tree(&src, &dst2, true),
+            Err(CopyFail::Refused(m)) if m.contains("is a symbolic link")
+        ));
+        assert!(!outside.join("f2").exists());
+        // A link in the destination where the source has a file is replaced.
+        let dst3 = dir.join("dst3");
+        std::fs::create_dir_all(dst3.join("sub")).unwrap();
+        symlink("../../outside/key", dst3.join("sub/f2")).unwrap();
+        assert!(copy_tree(&src.join("sub"), &dst3.join("sub"), true).is_ok());
+        assert_eq!(
+            std::fs::read_to_string(outside.join("key")).unwrap(),
+            "secret"
+        );
+        assert_eq!(std::fs::read_to_string(dst3.join("sub/f2")).unwrap(), "new");
+        // A link given as the source is followed by copy, kept by move.
+        let (a, b) = (dir.join("a"), dir.join("b"));
+        assert!(copy_tree(&src.join("k"), &a, true).is_ok());
+        assert_eq!(std::fs::read_to_string(&a).unwrap(), "secret");
+        assert!(
+            !std::fs::symlink_metadata(&a)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(copy_tree(&src.join("k"), &b, false).is_ok());
+        assert!(
+            std::fs::symlink_metadata(&b)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
