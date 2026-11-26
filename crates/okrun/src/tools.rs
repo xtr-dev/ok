@@ -265,13 +265,20 @@ pub fn fmt(interp: &mut Interp, args: &[String], start: &Path) -> R<Value> {
     Ok(Value::Null)
 }
 
-const STARTER: &str = r#"requires "0.1"
+/// The starter `ok.ok`; `requires` is filled in with the running version's
+/// major.minor, the oldest ok the file is known to work with (SPEC.md 15.7).
+const STARTER: &str = r#"requires "{requires}"
 
 # Say hello
 task hello(name: string = "world") {
   print("hello, {name}!")
 }
 "#;
+
+/// `0.2` for `0.2.0`: the form `requires` takes.
+fn major_minor(version: &str) -> String {
+    version.split('.').take(2).collect::<Vec<_>>().join(".")
+}
 
 /// `ok self init [--checksums FILE]`: a starter `ok.ok` and the bootstrap
 /// wrappers, which pin this version and the checksums of its release.
@@ -333,7 +340,10 @@ pub fn init(args: &[String], start: &Path) -> R<Value> {
     };
     let dir = start.to_path_buf();
     let outputs = [
-        ("ok.ok", STARTER.to_string()),
+        (
+            "ok.ok",
+            STARTER.replace("{requires}", &major_minor(version)),
+        ),
         ("ok", sh_wrapper(version, &sum)),
         ("ok.ps1", ps_wrapper(version, &sum)),
         ("ok.cmd", CMD_WRAPPER.replace('\n', "\r\n")),

@@ -64,6 +64,15 @@ fn a_fresh_project_runs_through_the_wrapper() {
     for f in ["ok.ok", "ok", "ok.cmd", "ok.ps1"] {
         assert!(project.join(f).exists(), "{f} written");
     }
+    // The starter requires the running version's major.minor.
+    let mut version = env!("CARGO_PKG_VERSION").split('.');
+    let requires = format!(
+        "requires \"{}.{}\"\n",
+        version.next().unwrap(),
+        version.next().unwrap()
+    );
+    let starter = std::fs::read_to_string(project.join("ok.ok")).unwrap();
+    assert!(starter.starts_with(&requires), "{starter}");
     let again = Command::new(ok)
         .args(["self", "init", "--checksums"])
         .arg(release.join("SHA256SUMS"))

@@ -203,10 +203,10 @@ wrote ok.ok, ./ok, ok.cmd and ok.ps1 (pinned to ok 0.2.0)
 run ./ok hello (or ok.cmd hello on Windows)
 ```
 
-The starter file has one task to build on:
+The starter file has one task to build on, and requires the version of ok that wrote it (here 0.2):
 
 ```ok
-requires "0.1"
+requires "0.2"
 
 # Say hello
 task hello(name: string = "world") {
