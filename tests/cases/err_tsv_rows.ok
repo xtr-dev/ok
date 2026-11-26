@@ -1,0 +1,4 @@
+# With header: false, TSV and CSV rows are lists; the error names the format
+# (SPEC.md 13.4).
+
+print(to([{a: 1}], "tsv", header: false))

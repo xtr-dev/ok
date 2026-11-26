@@ -1352,7 +1352,8 @@ fn write_table(
         .quote_style(quote)
         .flexible(!t.header)
         .from_writer(out);
-    let mut src = lazy::cursor(interp, value, span, "CSV output")?;
+    let name = if t.tsv { "TSV" } else { "CSV" };
+    let mut src = lazy::cursor(interp, value, span, &format!("{name} output"))?;
     let mut header: Option<Vec<Rc<str>>> = None;
     let mut row = 0usize;
     let fail = |m: String| -> crate::interp::Flow { OkError::at(ErrKind::Format, span, m).into() };
@@ -1389,14 +1390,29 @@ fn write_table(
                 return Err(OkError::at(
                     ErrKind::Type,
                     span,
-                    "rows are lists; write them with header: false",
+                    format!("{name} rows are lists; write them with header: false"),
                 )
                 .into());
             }
-            (other, _) => {
+            (Value::Record(_), false) => {
+                return Err(OkError::at(
+                    ErrKind::Type,
+                    span,
+                    format!("with header: false, {name} rows must be lists, got a record"),
+                )
+                .with_help("drop header: false to write records with a header line")
+                .into());
+            }
+            (other, true) => {
                 return type_err(
                     args,
-                    format!("CSV rows must be records, got {}", other.a_type()),
+                    format!("{name} rows must be records, got {}", other.a_type()),
+                );
+            }
+            (other, false) => {
+                return type_err(
+                    args,
+                    format!("with header: false, {name} rows must be lists, got {}", other.a_type()),
                 );
             }
         };

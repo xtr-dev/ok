@@ -1599,7 +1599,8 @@ input: the last wins.
   missing a key writes an empty field; a record with an extra key is an
   error. Values are written with `str`, `null` as an empty field; lists,
   records and bytes are errors. Fields are quoted only when needed. Lines end
-  in `\n`.
+  in `\n`. With `header: false`, each row must be a list, written as one
+  line without a header; a record is then a `type` error.
 - TSV is tab-separated with no quoting; on write, a value containing a tab or
   newline is an error.
 

@@ -1,0 +1,7 @@
+error[type]: with header: false, TSV rows must be lists, got a record
+ --> err_tsv_rows.ok:4:7
+  |
+4 | print(to([{a: 1}], "tsv", header: false))
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: drop header: false to write records with a header line
