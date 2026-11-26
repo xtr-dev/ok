@@ -1154,18 +1154,24 @@ with `+ `, and with the working directory if it is not the default:
 An argument is shown as it is when it is not empty and consists only of
 ASCII letters, digits and `-_./=:@%+,^~`. Any other argument (empty, or with
 whitespace, quotes, glob characters, `$`, `\`, non-ASCII text, ...) is shown
-in double quotes, with `\` and `"` escaped by a backslash. So the line shows
-exactly the arguments the program gets: `"*.txt"` was passed as is, not
-expanded.
+in double quotes, with `\` and `"` escaped by a backslash and the characters
+of 10.1 (and newline and tab) written as string escapes (`"a\u{1b}[2J"`,
+`"x\ry"`). So the line shows exactly the arguments the program gets:
+`"*.txt"` was passed as is, not expanded. The one exception is a password
+in a URL: `https://user:secret@host/` is shown as `"https://user:***@host/"`,
+so that traces in CI logs do not leak credentials.
 
 Redirects are shown after the arguments in the order stdin, stdout,
-stderr, with targets in display form (`/`).
+stderr, and the working directory as `(in DIR)`, with paths in display form
+(`/`) and quoted like arguments.
 
 ### 9.9 Dry run
 
 With `--dry-run`, every command and every mutating file-system or network
 operation (12.1, 12.9) is printed in trace format with the prefix `~ ` and
-not performed. A file operation is printed even when it would have nothing
+not performed: the operation's name, then its paths and URLs quoted like
+command arguments (`~ copy "my notes.txt" backup/`, `~ fetch POST
+https://example.com/api`). A file operation is printed even when it would have nothing
 to do (`remove` of a missing path, `mkdir` of an existing directory), so the
 plan does not depend on what earlier skipped steps would have created; with
 `--trace` the same lines are printed with `+ `. A skipped command yields

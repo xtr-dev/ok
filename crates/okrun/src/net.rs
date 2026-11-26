@@ -66,10 +66,12 @@ fn fetch(interp: &mut Interp, mut args: Args) -> R<Value> {
         );
     };
     let url = url.to_string();
+    // Messages, traces and dry runs show the URL without its password.
+    let shown = crate::command::redact_url(&url).into_owned();
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return arg_err(
             &args,
-            format!("`fetch` needs an http:// or https:// URL, got {url:?}"),
+            format!("`fetch` needs an http:// or https:// URL, got {shown:?}"),
         );
     }
     let method = match opts.get("method") {
@@ -166,8 +168,12 @@ fn fetch(interp: &mut Interp, mut args: Args) -> R<Value> {
 
     let mutating = !matches!(method.as_str(), "GET" | "HEAD") || to.is_some();
     let what = match &to {
-        Some(p) => format!("fetch {method} {url} > {}", p.display()),
-        None => format!("fetch {method} {url}"),
+        Some(p) => format!(
+            "fetch {method} {} > {}",
+            crate::command::display_arg(&url),
+            crate::command::display_arg(&p.display())
+        ),
+        None => format!("fetch {method} {}", crate::command::display_arg(&url)),
     };
     let proceed = if mutating {
         interp.mutation(&what)
@@ -204,8 +210,15 @@ fn fetch(interp: &mut Interp, mut args: Args) -> R<Value> {
             );
         }
     };
-    let mut resp =
-        result.map_err(|e| net_err(&args, format!("request to {url} failed: {}", describe(&e))))?;
+    let mut resp = result.map_err(|e| {
+        net_err(
+            &args,
+            format!(
+                "request to {shown} failed: {}",
+                describe(&e).replace(&url, &shown)
+            ),
+        )
+    })?;
     let status = resp.status().as_u16();
     let mut hdrs = Record::new();
     for (k, v) in resp.headers() {
@@ -231,7 +244,7 @@ fn fetch(interp: &mut Interp, mut args: Args) -> R<Value> {
             .map_err(write_fail)?;
         let mut reader = resp.body_mut().with_config().limit(u64::MAX).reader();
         std::io::copy(&mut reader, &mut file)
-            .map_err(|e| net_err(&args, format!("download of {url} failed: {e}")))?;
+            .map_err(|e| net_err(&args, format!("download of {shown} failed: {e}")))?;
         drop(file);
         pending.commit().map_err(write_fail)?;
         Value::Null
@@ -245,7 +258,7 @@ fn fetch(interp: &mut Interp, mut args: Args) -> R<Value> {
             .map_err(|e| {
                 net_err(
                     &args,
-                    format!("reading the response from {url} failed: {e}"),
+                    format!("reading the response from {shown} failed: {e}"),
                 )
             })?;
         if !ok && check {
@@ -255,7 +268,7 @@ fn fetch(interp: &mut Interp, mut args: Args) -> R<Value> {
             let mut e = OkError::at(
                 ErrKind::Net,
                 args.span,
-                format!("{method} {url} returned HTTP {status}"),
+                format!("{method} {shown} returned HTTP {status}"),
             );
             e.status = Some(status);
             if !preview.is_empty() {
@@ -273,7 +286,7 @@ fn fetch(interp: &mut Interp, mut args: Args) -> R<Value> {
                 Err(_) => {
                     return Err(net_err(
                         &args,
-                        format!("the response from {url} is not UTF-8 text; pass bytes: true",),
+                        format!("the response from {shown} is not UTF-8 text; pass bytes: true",),
                     ));
                 }
             }

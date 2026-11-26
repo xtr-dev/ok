@@ -198,7 +198,11 @@ fn copy(interp: &mut Interp, mut args: Args) -> R<Value> {
     named(&mut args, "copy", &[])?;
     count_args(&args, "copy", 2, 2)?;
     let (src, dst) = (path_at(&args, 0, "copy")?, path_at(&args, 1, "copy")?);
-    if !interp.mutation(&format!("copy {} {}", src.display(), dst.display())) {
+    if !interp.mutation(&format!(
+        "copy {} {}",
+        crate::command::display_arg(&src.display()),
+        crate::command::display_arg(&dst.display())
+    )) {
         return Ok(Value::Null);
     }
     let (s, d) = (src.native(), dst.native());
@@ -300,7 +304,11 @@ fn move_(interp: &mut Interp, mut args: Args) -> R<Value> {
     named(&mut args, "move", &[])?;
     count_args(&args, "move", 2, 2)?;
     let (src, dst) = (path_at(&args, 0, "move")?, path_at(&args, 1, "move")?);
-    if !interp.mutation(&format!("move {} {}", src.display(), dst.display())) {
+    if !interp.mutation(&format!(
+        "move {} {}",
+        crate::command::display_arg(&src.display()),
+        crate::command::display_arg(&dst.display())
+    )) {
         return Ok(Value::Null);
     }
     let (s, d) = (src.native(), dst.native());
@@ -402,7 +410,11 @@ fn remove(interp: &mut Interp, mut args: Args) -> R<Value> {
     // path exists, so the plan a dry run prints does not depend on what
     // earlier, skipped steps would have created (SPEC.md 9.9).
     let exists = std::fs::symlink_metadata(&native).is_ok();
-    if !interp.mutation(&format!("remove {}", p.display())) || !exists {
+    if !interp.mutation(&format!(
+        "remove {}",
+        crate::command::display_arg(&p.display())
+    )) || !exists
+    {
         return Ok(Value::Bool(exists));
     }
     remove_path(&native).map_err(|e| io_fail(&args, "remove", &p, &e))?;
@@ -414,7 +426,11 @@ fn mkdir(interp: &mut Interp, mut args: Args) -> R<Value> {
     count_args(&args, "mkdir", 1, 1)?;
     let p = path_at(&args, 0, "mkdir")?;
     // Traced like `remove`, also when the directory already exists.
-    if interp.mutation(&format!("mkdir {}", p.display())) && !p.native().is_dir() {
+    if interp.mutation(&format!(
+        "mkdir {}",
+        crate::command::display_arg(&p.display())
+    )) && !p.native().is_dir()
+    {
         std::fs::create_dir_all(p.native())
             .map_err(|e| io_fail(&args, "create the directory", &p, &e))?;
     }
@@ -504,7 +520,10 @@ fn touch(interp: &mut Interp, mut args: Args) -> R<Value> {
     named(&mut args, "touch", &[])?;
     count_args(&args, "touch", 1, 1)?;
     let p = path_at(&args, 0, "touch")?;
-    if !interp.mutation(&format!("touch {}", p.display())) {
+    if !interp.mutation(&format!(
+        "touch {}",
+        crate::command::display_arg(&p.display())
+    )) {
         return Ok(Value::Null);
     }
     let native = p.native();
@@ -653,7 +672,11 @@ fn chmod(interp: &mut Interp, mut args: Args) -> R<Value> {
             format!("{mode:o} is not a file mode; use an octal number like 0o755"),
         );
     }
-    if !interp.mutation(&format!("chmod {:o} {}", mode, p.display())) {
+    if !interp.mutation(&format!(
+        "chmod {:o} {}",
+        mode,
+        crate::command::display_arg(&p.display())
+    )) {
         return Ok(Value::Null);
     }
     #[cfg(unix)]

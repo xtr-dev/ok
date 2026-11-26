@@ -139,10 +139,10 @@ fn zip(interp: &mut Interp, mut args: Args) -> R<Value> {
     if !interp.mutation(&format!(
         "zip {} {}",
         srcs.iter()
-            .map(OkPath::display)
+            .map(|p| crate::command::display_arg(&p.display()))
             .collect::<Vec<_>>()
             .join(" "),
-        dst.display()
+        crate::command::display_arg(&dst.display())
     )) {
         return Ok(Value::Null);
     }
@@ -218,7 +218,11 @@ fn unzip(interp: &mut Interp, mut args: Args) -> R<Value> {
     count_args(&args, "unzip", 2, 2)?;
     let archive = path_at(&args, 0, "unzip")?;
     let dst = path_at(&args, 1, "unzip")?;
-    if !interp.mutation(&format!("unzip {} {}", archive.display(), dst.display())) {
+    if !interp.mutation(&format!(
+        "unzip {} {}",
+        crate::command::display_arg(&archive.display()),
+        crate::command::display_arg(&dst.display())
+    )) {
         return Ok(Value::Null);
     }
     let file = File::open(archive.native()).map_err(|e| {
@@ -311,10 +315,10 @@ fn tar(interp: &mut Interp, mut args: Args) -> R<Value> {
     if !interp.mutation(&format!(
         "tar {} {}",
         srcs.iter()
-            .map(OkPath::display)
+            .map(|p| crate::command::display_arg(&p.display()))
             .collect::<Vec<_>>()
             .join(" "),
-        dst.display()
+        crate::command::display_arg(&dst.display())
     )) {
         return Ok(Value::Null);
     }
@@ -461,7 +465,11 @@ fn untar(interp: &mut Interp, mut args: Args) -> R<Value> {
     count_args(&args, "untar", 2, 2)?;
     let archive = path_at(&args, 0, "untar")?;
     let dst = path_at(&args, 1, "untar")?;
-    if !interp.mutation(&format!("untar {} {}", archive.display(), dst.display())) {
+    if !interp.mutation(&format!(
+        "untar {} {}",
+        crate::command::display_arg(&archive.display()),
+        crate::command::display_arg(&dst.display())
+    )) {
         return Ok(Value::Null);
     }
     let mut file = File::open(archive.native()).map_err(|e| {

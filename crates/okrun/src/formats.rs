@@ -406,7 +406,7 @@ fn write(interp: &mut Interp, mut args: Args) -> R<Value> {
     let gzip = use_gzip(&opts, &p, &args)?;
     if !interp.mutation(&format!(
         "write {}{}",
-        p.display(),
+        crate::command::display_arg(&p.display()),
         if append { " (append)" } else { "" }
     )) {
         return Ok(Value::Null);

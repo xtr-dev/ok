@@ -67,7 +67,7 @@ impl Redirects {
     /// The redirects as written, for `--trace` and `--dry-run`:
     /// ` < in > out 2> err`.
     fn note(&self) -> String {
-        let show = |p: &PathBuf| OkPath::from_native(p).display();
+        let show = |p: &PathBuf| display_arg(&OkPath::from_native(p).display());
         let mut s = String::new();
         if let Some(p) = &self.stdin_from {
             s.push_str(&format!(" < {}", show(p)));
@@ -444,7 +444,7 @@ impl Interp {
         let cwd_note = opts
             .cwd
             .as_ref()
-            .map(|c| format!("(in {}) ", OkPath::from_native(c).display()))
+            .map(|c| format!("(in {}) ", display_arg(&OkPath::from_native(c).display())))
             .unwrap_or_default();
         let redirect_note = redirects.note();
         if self.run_opts.dry_run {
@@ -1080,21 +1080,75 @@ fn spawn_reason(e: &std::io::Error) -> String {
     }
 }
 
-/// Show an argument list as it would be typed, quoting where needed.
+/// Show an argument list as it would be typed, quoting where needed
+/// (SPEC.md 9.8).
 pub fn display_command(argv: &[String]) -> String {
     argv.iter()
-        .map(|a| {
-            let plain = !a.is_empty()
-                && a.chars()
-                    .all(|c| c.is_ascii_alphanumeric() || "-_./=:@%+,^~".contains(c));
-            if plain {
-                a.clone()
-            } else {
-                format!("\"{}\"", a.replace('\\', "\\\\").replace('"', "\\\""))
-            }
-        })
+        .map(|a| display_arg(a))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// One argument (or file-operation operand) as `--trace` shows it: as it
+/// is when it is plain, else in double quotes with `\\`, `"` and every
+/// character that is unsafe on a terminal escaped, so the line shows
+/// exactly what the program gets and cannot rewrite the terminal. The
+/// password of a URL (`https://user:secret@host`) is shown as `***`.
+pub fn display_arg(a: &str) -> String {
+    let a = redact_url(a);
+    let plain = !a.is_empty()
+        && a.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_./=:@%+,^~".contains(c));
+    if plain {
+        return a.into_owned();
+    }
+    let mut out = String::with_capacity(a.len() + 2);
+    out.push('"');
+    for c in a.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            c if crate::error::is_unsafe_char(c) => crate::error::escape_char(c, &mut out),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// A URL with the password in its user information replaced by `***`
+/// (`https://user:***@host/`), so that traces, dry runs and errors do not
+/// leak credentials into logs. Text that is not such a URL is unchanged.
+pub fn redact_url(s: &str) -> std::borrow::Cow<'_, str> {
+    let Some(scheme_end) = s.find("://") else {
+        return s.into();
+    };
+    let scheme = &s[..scheme_end];
+    if scheme.is_empty()
+        || !scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
+    {
+        return s.into();
+    }
+    let auth_start = scheme_end + 3;
+    let auth_end = s[auth_start..]
+        .find(['/', '?', '#'])
+        .map_or(s.len(), |i| auth_start + i);
+    let authority = &s[auth_start..auth_end];
+    let Some(at) = authority.rfind('@') else {
+        return s.into();
+    };
+    let Some(colon) = authority[..at].find(':') else {
+        return s.into();
+    };
+    format!(
+        "{}{}:***{}",
+        &s[..auth_start],
+        &authority[..colon],
+        &s[auth_start + at..]
+    )
+    .into()
 }
 
 /// Find the program to run (SPEC.md 9.3).
@@ -1319,6 +1373,35 @@ mod tests {
             display_command(&argv),
             r#"cargo build --target=x86 "two words" "" "say \"hi\"""#
         );
+    }
+
+    #[test]
+    fn traced_arguments_escape_control_characters_and_hide_passwords() {
+        let argv: Vec<String> = [
+            "echo",
+            "a\x1b]52;c;eA==\x07",
+            "x\ry",
+            "tab\there",
+            "\u{202e}",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(
+            display_command(&argv),
+            r#"echo "a\u{1b}]52;c;eA==\u{7}" "x\ry" "tab\there" "\u{202e}""#
+        );
+        assert_eq!(
+            display_arg("https://bot:s3cr3t@example.com/x?y=1"),
+            r#""https://bot:***@example.com/x?y=1""#
+        );
+        assert_eq!(
+            display_arg("https://bot@example.com/a"),
+            "https://bot@example.com/a"
+        );
+        assert_eq!(redact_url("https://h/p?u=a:b@c"), "https://h/p?u=a:b@c");
+        assert_eq!(redact_url("user:pw@host"), "user:pw@host");
+        assert_eq!(display_arg("my file.txt"), r#""my file.txt""#);
     }
 
     #[test]
