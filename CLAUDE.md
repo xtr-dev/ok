@@ -174,6 +174,11 @@ test --workspace` and review the diff.
   repo for `run` tests.
 - Comments explain purpose and reasoning so they make sense without the
   conversation that produced them.
+- Do not hard-wrap `CHANGELOG.md`: write each paragraph and each bullet on
+  one line. `release.yml` copies a version's section verbatim into the
+  GitHub release notes, and GitHub renders every newline there as a line
+  break. The same goes for any text passed to `gh release create/edit
+  --notes` or `gh pr create --body`.
 
 ## Working rules (from the brief)
 

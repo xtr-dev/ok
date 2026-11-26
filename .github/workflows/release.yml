@@ -152,6 +152,9 @@ jobs:
           done
           sha256sum ok-* > SHA256SUMS
           cat SHA256SUMS
+      # The notes are the version's CHANGELOG.md section, copied verbatim;
+      # GitHub shows every newline in them as a line break, so the
+      # CHANGELOG is not hard-wrapped.
       - name: Create draft release
         if: startsWith(github.ref, 'refs/tags/')  # run by hand on a tag ref
         env:
