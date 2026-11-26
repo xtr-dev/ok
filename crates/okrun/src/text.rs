@@ -285,6 +285,12 @@ fn pad(_: &mut Interp, mut args: Args) -> R<Value> {
 
 // ----- regex -------------------------------------------------------------------
 
+/// Compiled regexes kept for reuse. A script that builds patterns from data
+/// (one per input line, say) would otherwise grow the cache without bound,
+/// so it is emptied when it reaches this many entries; patterns written in
+/// the source are few and are compiled again on their next use.
+const REGEX_CACHE_LIMIT: usize = 256;
+
 thread_local! {
     static REGEXES: RefCell<HashMap<String, regex::Regex>> = RefCell::new(HashMap::new());
 }
@@ -313,7 +319,11 @@ fn regex_at(args: &Args, i: usize, fname: &str) -> R<regex::Regex> {
                 "ok regexes use the Rust regex syntax; write them in single quotes, like '\\d+'",
             )
         })?;
-        cache.borrow_mut().insert(pattern.to_string(), r.clone());
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= REGEX_CACHE_LIMIT {
+            cache.clear();
+        }
+        cache.insert(pattern.to_string(), r.clone());
         Ok(r)
     })
 }
@@ -402,5 +412,18 @@ fn sub(interp: &mut Interp, mut args: Args) -> R<Value> {
                 other.a_type()
             ),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_regex_cache_stays_bounded() {
+        let mut i = Interp::new(vec![]);
+        let src = "for n in range(1000) { let _ = \"x{n}\".matches(\"x{n}\") }";
+        assert!(i.run_source("<test>", src, std::env::temp_dir()).is_ok());
+        assert!(REGEXES.with(|c| c.borrow().len()) <= REGEX_CACHE_LIMIT);
     }
 }
