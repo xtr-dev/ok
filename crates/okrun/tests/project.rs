@@ -1055,3 +1055,78 @@ fn env_files_cannot_set_ok_or_loader_variables() {
         );
     }
 }
+
+#[test]
+fn an_unreadable_trust_store_is_an_error_and_is_not_overwritten() {
+    let p = Proj::new("badstore", &[("ok.ok", BASIC)]);
+    // A directory where trust.json should be cannot be read as a file.
+    std::fs::create_dir_all(p.store.join("trust.json")).unwrap();
+    let o = p.run(&["trust"]);
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    assert!(
+        err(&o).contains("cannot read the trust store"),
+        "{}",
+        err(&o)
+    );
+    assert!(p.store.join("trust.json").is_dir(), "left as it was");
+    std::fs::remove_dir(p.store.join("trust.json")).unwrap();
+    std::fs::write(p.store.join("trust.json"), b"{\"entries\": [\xff]}").unwrap();
+    let o = p.run(&["gen"]);
+    assert!(
+        err(&o).contains("is damaged: it is not UTF-8"),
+        "{}",
+        err(&o)
+    );
+    assert_eq!(
+        std::fs::read(p.store.join("trust.json")).unwrap(),
+        b"{\"entries\": [\xff]}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn the_trust_store_is_private_to_the_user() {
+    use std::os::unix::fs::PermissionsExt;
+    let p = Proj::new("private", &[("ok.ok", BASIC)]);
+    assert!(p.run(&["trust"]).status.success());
+    let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&p.store), 0o700);
+    assert_eq!(mode(&p.store.join("trust.json")), 0o600);
+    let snaps = p.store.join("snapshots");
+    assert_eq!(mode(&snaps), 0o700);
+    let snap = std::fs::read_dir(&snaps)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    assert_eq!(mode(&snap), 0o700);
+    assert_eq!(mode(&snap.join("ok.ok")), 0o600);
+}
+
+#[test]
+fn trusting_projects_at_the_same_time_keeps_every_entry() {
+    let projects: Vec<Proj> = (0..6)
+        .map(|i| Proj::new(&format!("concurrent{i}"), &[("ok.ok", BASIC)]))
+        .collect();
+    // One store for all of them.
+    let store = projects[0].store.clone();
+    let children: Vec<std::process::Child> = projects
+        .iter()
+        .map(|p| {
+            p.cmd(&["trust"])
+                .env("OK_CONFIG_DIR", &store)
+                .stdout(Stdio::null())
+                .spawn()
+                .unwrap()
+        })
+        .collect();
+    for mut c in children {
+        assert!(c.wait().unwrap().success());
+    }
+    let list = out(&projects[0].run(&["trust", "--list"]));
+    for i in 0..6 {
+        let name = format!("ok-proj-concurrent{i}-");
+        assert!(list.contains(&name), "{name} missing from\n{list}");
+    }
+}

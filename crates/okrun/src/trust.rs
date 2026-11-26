@@ -149,6 +149,146 @@ fn store_err(msg: String) -> OkError {
     OkError::new(ErrKind::Trust, msg)
 }
 
+/// The entries of the store in `dir`. A missing store is empty; any other
+/// failure to read it is an error, never an empty store, which the next
+/// save would write over the user's approvals.
+fn read_entries(dir: &Path) -> Result<Vec<Entry>, OkError> {
+    let file = dir.join("trust.json");
+    let shown = OkPath::from_native(&file).display();
+    let text = match std::fs::read(&file) {
+        Ok(bytes) => String::from_utf8(bytes).map_err(|_| {
+            store_err(format!(
+                "the trust store {shown} is damaged: it is not UTF-8"
+            ))
+        })?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(store_err(format!(
+                "cannot read the trust store {shown}: {}",
+                io_reason(&e)
+            ))
+            .with_help(
+                "fix the file's permissions, or move it away to start with an empty store",
+            ));
+        }
+    };
+    let v: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| store_err(format!("the trust store {shown} is damaged: {e}")))?;
+    let mut entries = Vec::new();
+    for e in v
+        .get("entries")
+        .and_then(|e| e.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let s = |k: &str| e.get(k).and_then(|x| x.as_str()).map(str::to_string);
+        if let (Some(root), Some(mode)) = (s("root"), s("mode")) {
+            entries.push(Entry {
+                root,
+                mode,
+                fingerprint: s("fingerprint"),
+                at: s("at").unwrap_or_default(),
+            });
+        }
+    }
+    Ok(entries)
+}
+
+/// Create `dir` and its missing parents, private to the user on Unix
+/// (0700): the store says which projects may run code, and snapshots copy
+/// project files.
+fn private_dir(dir: &Path) -> std::io::Result<()> {
+    let mut b = std::fs::DirBuilder::new();
+    b.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        b.mode(0o700);
+    }
+    b.create(dir)
+}
+
+/// Write `path` readable only by the user on Unix (0600). The content goes
+/// to a temporary file first and is renamed into place, so readers never
+/// see a half-written file.
+fn private_write(path: &Path, content: &[u8]) -> std::io::Result<()> {
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(format!(".{}.tmp", crate::files::process_id()));
+    let tmp = PathBuf::from(tmp);
+    let _ = std::fs::remove_file(&tmp);
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600);
+    }
+    let written = o.open(&tmp).and_then(|mut f| f.write_all(content));
+    if let Err(e) = written.and_then(|()| std::fs::rename(&tmp, path)) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// An exclusive hold on the store while it is read, changed and written,
+/// so that two `ok` processes trusting at the same time do not lose each
+/// other's entries: a lock file created with `create_new`, removed when
+/// the hold ends.
+struct Lock {
+    path: PathBuf,
+}
+
+impl Lock {
+    /// How long to wait for another process before giving up, and how old
+    /// a lock file must be to count as left behind by a crashed process.
+    const WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+    const STALE: std::time::Duration = std::time::Duration::from_secs(30);
+
+    fn take(dir: &Path) -> Result<Lock, OkError> {
+        let path = dir.join("trust.json.lock");
+        let started = std::time::Instant::now();
+        loop {
+            let mut o = std::fs::OpenOptions::new();
+            o.write(true).create_new(true);
+            match o.open(&path) {
+                Ok(_) => return Ok(Lock { path }),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let stale = std::fs::metadata(&path)
+                        .and_then(|m| m.modified())
+                        .ok()
+                        .and_then(|t| t.elapsed().ok())
+                        .is_some_and(|age| age > Lock::STALE);
+                    if stale {
+                        let _ = std::fs::remove_file(&path);
+                        continue;
+                    }
+                    if started.elapsed() > Lock::WAIT {
+                        return Err(store_err(format!(
+                            "the trust store is locked by another ok process ({} exists)",
+                            OkPath::from_native(&path).display()
+                        ))
+                        .with_help("try again; if no other ok is running, remove the lock file"));
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(e) => {
+                    return Err(store_err(format!(
+                        "cannot lock the trust store: {}",
+                        io_reason(&e)
+                    )));
+                }
+            }
+        }
+    }
+}
+
+impl Drop for Lock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 impl Store {
     fn load() -> Result<Store, OkError> {
         let dir = store_dir().ok_or_else(|| {
@@ -157,43 +297,28 @@ impl Store {
                     .into(),
             )
         })?;
-        let file = dir.join("trust.json");
-        let mut entries = Vec::new();
-        if let Ok(text) = std::fs::read_to_string(&file) {
-            let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
-                store_err(format!(
-                    "the trust store {} is damaged: {e}",
-                    file.display()
-                ))
-            })?;
-            for e in v
-                .get("entries")
-                .and_then(|e| e.as_array())
-                .into_iter()
-                .flatten()
-            {
-                let s = |k: &str| e.get(k).and_then(|x| x.as_str()).map(str::to_string);
-                if let (Some(root), Some(mode)) = (s("root"), s("mode")) {
-                    entries.push(Entry {
-                        root,
-                        mode,
-                        fingerprint: s("fingerprint"),
-                        at: s("at").unwrap_or_default(),
-                    });
-                }
-            }
-        }
+        let entries = read_entries(&dir)?;
         Ok(Store { dir, entries })
     }
 
-    fn save(&self) -> Result<(), OkError> {
-        std::fs::create_dir_all(&self.dir).map_err(|e| {
+    /// Change the entries and save them: under the lock, the store is read
+    /// again and `change` applied to what is on disk, so entries another
+    /// process saved since [`Store::load`] are kept.
+    fn update(&mut self, change: impl FnOnce(&mut Vec<Entry>)) -> Result<(), OkError> {
+        private_dir(&self.dir).map_err(|e| {
             store_err(format!(
                 "cannot create {}: {}",
                 self.dir.display(),
                 io_reason(&e)
             ))
         })?;
+        let _lock = Lock::take(&self.dir)?;
+        self.entries = read_entries(&self.dir)?;
+        change(&mut self.entries);
+        self.save()
+    }
+
+    fn save(&self) -> Result<(), OkError> {
         let entries: Vec<serde_json::Value> = self
             .entries
             .iter()
@@ -210,13 +335,7 @@ impl Store {
             .collect();
         let doc = serde_json::json!({ "version": 1, "entries": entries });
         let text = serde_json::to_string_pretty(&doc).unwrap_or_default() + "\n";
-        // Write to a temporary file and rename, so the store is never half-written.
-        let tmp = self
-            .dir
-            .join(format!("trust.json.{}.tmp", crate::files::process_id()));
-        std::fs::write(&tmp, text)
-            .map_err(|e| store_err(format!("cannot write the trust store: {}", io_reason(&e))))?;
-        std::fs::rename(&tmp, self.dir.join("trust.json"))
+        private_write(&self.dir.join("trust.json"), text.as_bytes())
             .map_err(|e| store_err(format!("cannot write the trust store: {}", io_reason(&e))))
     }
 
@@ -251,8 +370,8 @@ impl Store {
                 .collect();
             let text = serde_json::to_string_pretty(&map).unwrap_or_default() + "\n";
             let dst = self.env_snapshot(fp);
-            crate::files::ensure_parent(&dst)
-                .and_then(|_| std::fs::write(&dst, text))
+            private_dir(&self.dir.join("snapshots"))
+                .and_then(|_| private_write(&dst, text.as_bytes()))
                 .map_err(|e| {
                     store_err(format!("cannot save the env file names: {}", io_reason(&e)))
                 })?;
@@ -260,8 +379,10 @@ impl Store {
         let files = &inputs.code;
         for (rel, path) in files {
             let dst = dir.join(OkPath::parse(rel).native());
-            crate::files::ensure_parent(&dst)
-                .and_then(|_| std::fs::copy(path, &dst).map(|_| ()))
+            let parent = dst.parent().unwrap_or(&dir);
+            private_dir(parent)
+                .and_then(|_| std::fs::read(path))
+                .and_then(|content| private_write(&dst, &content))
                 .map_err(|e| {
                     store_err(format!("cannot save a copy of {rel}: {}", io_reason(&e)))
                 })?;
@@ -290,24 +411,26 @@ impl Store {
             .and_then(|e| e.fingerprint.clone())
     }
 
-    fn add(&mut self, root: &str, mode: &str, fp: Option<String>) {
-        self.entries.retain(|e| {
-            !(e.root == root && e.mode == mode && (mode == "dir" || e.fingerprint == fp))
-        });
+    /// Record trust for `root` and save the store.
+    fn add(&mut self, root: &str, mode: &str, fp: Option<String>) -> Result<(), OkError> {
         let at = crate::system::format_time_local(jiff::Timestamp::now().as_nanosecond() as i64);
-        self.entries.push(Entry {
-            root: root.to_string(),
-            mode: mode.to_string(),
-            fingerprint: fp,
-            at,
-        });
+        self.update(|entries| {
+            entries.retain(|e| {
+                !(e.root == root && e.mode == mode && (mode == "dir" || e.fingerprint == fp))
+            });
+            entries.push(Entry {
+                root: root.to_string(),
+                mode: mode.to_string(),
+                fingerprint: fp,
+                at,
+            });
+        })
     }
 }
 
 fn now_trusting(store: &mut Store, root: &str, fp: &str, inputs: &Inputs) -> Result<(), OkError> {
     store.snapshot(fp, inputs)?;
-    store.add(root, "content", Some(fp.to_string()));
-    store.save()
+    store.add(root, "content", Some(fp.to_string()))
 }
 
 fn root_key(p: &Project) -> String {
@@ -633,10 +756,13 @@ pub fn command(
     };
     let key = OkPath::from_native(&root).display();
     if untrust {
-        let before = store.entries.len();
-        store.entries.retain(|e| e.root != key);
-        store.save()?;
-        if store.entries.len() == before {
+        let mut removed = false;
+        store.update(|entries| {
+            let before = entries.len();
+            entries.retain(|e| e.root != key);
+            removed = entries.len() != before;
+        })?;
+        if !removed {
             println!("{} was not trusted", terminal_safe_line(&key));
         } else {
             println!("no longer trusting {}", terminal_safe_line(&key));
@@ -644,8 +770,7 @@ pub fn command(
         return Ok(());
     }
     if dir_mode {
-        store.add(&key, "dir", None);
-        store.save()?;
+        store.add(&key, "dir", None)?;
         println!(
             "trusting {} whatever its content (for your own projects)",
             terminal_safe_line(&key)

@@ -2185,7 +2185,13 @@ macOS, `%APPDATA%\ok\` on Windows. `OK_CONFIG_DIR` overrides the location
 (tests use it to get an empty store). `ok untrust` removes every entry for
 the project's root, content and directory trust alike. It holds `trust.json` (entries of root,
 fingerprint or directory mode, and time) and `snapshots/<fingerprint>/`, a
-copy of each trusted version used for diffs. Writes are atomic.
+copy of each trusted version used for diffs (for env files, only their
+variable names, 16.2). Writes are atomic, and a change is made under a lock
+file (`trust.json.lock`) after reading the store again, so that `ok`
+processes trusting at the same time keep each other's entries. On Unix the
+store's directories are created with mode 0700 and its files with 0600. A
+store that exists but cannot be read (permissions, not UTF-8, not valid
+JSON, not a file) is an error, never treated as empty.
 
 ### 16.6 Import confinement
 
