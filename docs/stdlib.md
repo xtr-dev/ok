@@ -522,7 +522,7 @@ dist/app/main.js
 
 ### parts
 
-`p.parts()` returns a list of the components of `p` as strings.
+`p.parts()` returns a list of the components of `p` as strings. For an absolute path the first part is its root (`"/"`, or `"C:/"` on Windows), so joining the parts in order with `/` rebuilds the path.
 
 ### is_abs
 

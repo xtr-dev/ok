@@ -964,7 +964,7 @@ fn parts(_: &mut Interp, mut args: Args) -> R<Value> {
     count_args(&args, "parts", 1, 1)?;
     let p = path_at(&args, 0, "parts")?;
     Ok(Value::list(
-        p.parts().iter().map(|s| Value::str(s.as_str())).collect(),
+        p.parts_with_root().iter().map(|s| Value::str(s.as_str())).collect(),
     ))
 }
 

@@ -158,6 +158,14 @@ impl OkPath {
     pub fn parts(&self) -> &[String] {
         &self.parts
     }
+
+    /// The parts as `p.parts()` returns them (SPEC.md 12.2): the prefix
+    /// (`/`, `C:/`, `C:`, `//server/share/`) first when there is one, so
+    /// that joining the parts in order rebuilds the path.
+    pub fn parts_with_root(&self) -> Vec<String> {
+        let root = (!self.prefix.is_empty()).then(|| self.prefix.clone());
+        root.into_iter().chain(self.parts.iter().cloned()).collect()
+    }
 }
 
 /// `p` made absolute against the working directory, with `.` and `..`
@@ -191,6 +199,26 @@ pub fn canonical(p: &std::path::Path) -> std::io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parts_start_with_the_root_and_rebuild_the_path() {
+        let rebuild = |p: &OkPath| {
+            p.parts_with_root()
+                .iter()
+                .fold(OkPath::parse_with(".", false), |acc, x| acc.join(&OkPath::parse_with(x, true)))
+        };
+        for (s, parts) in [
+            ("/a/b", vec!["/", "a", "b"]),
+            ("a/b", vec!["a", "b"]),
+            ("/", vec!["/"]),
+            ("C:/x", vec!["C:/", "x"]),
+            ("//srv/share/x", vec!["//srv/share/", "x"]),
+        ] {
+            let p = OkPath::parse_with(s, true);
+            assert_eq!(p.parts_with_root(), parts, "{s}");
+            assert_eq!(rebuild(&p), p, "{s}");
+        }
+    }
 
     fn unix(s: &str) -> String {
         OkPath::parse_with(s, false).display()

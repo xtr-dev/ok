@@ -1340,7 +1340,7 @@ a failed append adds nothing.
 | `p.abs()` | `path` | joined to the working directory and normalised |
 | `p.relative_to(base: path)` | `path` | lexical; error if `p` is not under `base` |
 | `p.with_ext(ext: string)` | `path` | `path("a.csv").with_ext("json")` |
-| `p.parts()` | `list[string]` | |
+| `p.parts()` | `list[string]` | `path("a/b").parts() == ["a", "b"]`; an absolute path starts with its root: `["/", "a", "b"]` for `/a/b`, `"C:/"` or `"//server/share/"` on Windows, so joining the parts in order rebuilds the path |
 | `p.is_abs()` | `bool` | |
 
 Values: `home` (the user's home directory), `cwd` (ok's working directory:

@@ -36,7 +36,7 @@ The file functions accept strings too, so `read("config.toml")` is fine. A path 
 | `p.ext` | last extension, without the dot | `"gz"` |
 | `p.parent` | the directory part | `build` |
 | `p.with_ext(e)` | the path with another extension | `p.with_ext("zip")` is `build/app.tar.zip` |
-| `p.parts()` | the components | `["build", "app.tar.gz"]` |
+| `p.parts()` | the components, starting with the root `"/"` for an absolute path | `["build", "app.tar.gz"]` |
 | `p.is_abs()` | whether it is absolute | `false` |
 | `p.abs()` | joined to the working directory | depends on the machine |
 | `p.relative_to(base)` | the part below `base` | `p.relative_to("build")` is `app.tar.gz` |

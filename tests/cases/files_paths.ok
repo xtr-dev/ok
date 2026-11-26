@@ -24,6 +24,12 @@ let t = tempfile(ext: "json")
 print(t.ext, exists(t))
 let p = path("build/out/app.tar.gz")
 print(p.name, p.stem, p.ext, p.parent, p.with_ext("zip"), p.parts(), p.is_abs())
+print(path("/srv/app").parts(), path("/").parts())
+var rebuilt = path(".")
+for part in path("/srv/app").parts() {
+  rebuilt = rebuilt / part
+}
+print(rebuilt)
 print(path("a/b").relative_to("a"), path("/srv/app/x").relative_to(path("/srv")), path("x").abs().is_abs())
 print(type(home), type(cwd), type(script_dir), script_dir.name, type(invocation_dir))
 print(path("dist") / "x" / "../y.txt", path("rel") / path("/abs"))
