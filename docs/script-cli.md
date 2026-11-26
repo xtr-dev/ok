@@ -75,7 +75,7 @@ Parameters that start with `--` are flags. They are given by name, in any order,
 
 - A flag with a value is written `--name value` or `--name=value`.
 - A `bool` flag is a switch: `--verbose` makes it `true`, and leaving it out makes it `false`.
-- A `bool` flag whose default is `true` is turned off with `--no-name`, and its help shows it that way.
+- A `bool` flag whose default is `true` is turned off with `--no-name`; its help lists it as `--[no-]name`.
 - A `list[T]` flag is repeated: `--tag a --tag b` gives `["a", "b"]`. Not giving it at all gives `[]`.
 - An optional flag, `--label: string?`, is `null` when it is not given.
 - A flag without a default and not optional, such as `--token: string`, is required.
@@ -224,7 +224,7 @@ Options:
       --dest <path>       where to put the archive [default: env.get("BACKUP_DIR", ".")]
   -k, --keep <int>        how many archives to keep [default: 7]
       --format <zip|tar>  archive format [default: tar]
-      --no-compress       compress the archive [default: true]
+      --[no-]compress     compress the archive [default: true]
   -h, --help              print this help
 ```
 
@@ -232,7 +232,7 @@ A few details to notice:
 
 - A literal default is shown as its value. Any other default, like the `env.get(...)` call, is shown as its source text, because printing help never runs your code.
 - The usage line always uses the long flag names, which say what they do.
-- A `bool` flag that defaults to `true` is listed as `--no-name`. The help text is still the comment you wrote for the parameter, so phrase it to describe the setting (here "compress the archive") rather than the act of turning it off.
+- A `bool` flag that defaults to `true` is listed as `--[no-]name`: `--compress` keeps the default and `--no-compress` turns it off, and the usage line shows `--no-compress`, the form that changes something. The help text is the comment you wrote for the parameter, so phrase it to describe the setting (here "compress the archive") rather than the act of turning it off.
 - `--help` is only recognised before `--`; `ok backup.ok -- --help` passes `--help` as the source directory.
 
 A script without `main` gets help too: the first comment block of the file (after a `#!` line) is its description, and the usage line is `ok script.ok [ARGS...]`.

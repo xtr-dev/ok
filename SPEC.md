@@ -1284,8 +1284,8 @@ import "frontend/ok.ok" as fe # in project mode: mount a sub-project (15.8)
   `_`.
 - `import` without `as` brings every exported name into scope; a clash with a
   local declaration or another import is a load-time error. Importing the
-  same file (the same resolved path) again into the same file is a no-op. With `as`, the
-  module is a namespace value; `lib.f(x)` calls its function, and a name
+  same file (the same resolved path) again into the same file is a no-op.
+  With `as`, the module is a namespace value; `lib.f(x)` calls its function, and a name
   the library does not export is a `name` error (``"`lib` has no function
   `f`"``, with a did-you-mean among its exports).
 - Each file is loaded once per run. Import cycles are a load-time error that
@@ -1757,6 +1757,12 @@ Options:
 ```
 
 The usage line always uses the long names, which say what they do.
+
+A `bool` flag whose default is `true` is shown as `[--no-name]` in the usage
+line, the form that changes something, and as `--[no-]name` under Options,
+so that its help, which describes the setting, reads next to the positive
+name: `--[no-]compress  compress the archive [default: true]`. Both
+`--name` and `--no-name` are accepted.
 
 A flag with a choice type (5.11) shows its choices as the value placeholder,
 in the usage line and under Options: `--role <admin|user>`. A positional

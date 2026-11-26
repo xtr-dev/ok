@@ -15,7 +15,7 @@ Options:
   --wait <duration>  how long to wait [default: 2s]
   --tag <value>      tags to add (repeatable)
   --verbose          say more
-  --no-color         use colors [default: true]
+  --[no-]color       use colors [default: true]
   --label <value>    an optional label
   --dry-run          a flag with a dash
   -h, --help         print this help

@@ -168,8 +168,11 @@ pub fn help(t: &Target, sources: &SourceMap) -> String {
                     .default
                     .as_ref()
                     .is_some_and(|d| matches!(d.kind, ExprKind::Bool(true)));
+                // `--[no-]name`: the help text describes the setting, so it
+                // must sit next to the positive name; `--no-name` alone read
+                // as if `--no-compress` would compress (SPEC.md 14.2).
                 if default_true {
-                    format!("--no-{}", p.cli_name)
+                    format!("--[no-]{}", p.cli_name)
                 } else {
                     format!("--{}", p.cli_name)
                 }
