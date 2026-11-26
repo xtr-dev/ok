@@ -65,6 +65,120 @@ pub(crate) fn ensure_parent(p: &Path) -> std::io::Result<()> {
     }
 }
 
+/// A file being written beside its final path, so that a failure before
+/// `commit` leaves an existing file untouched.
+///
+/// `write` (without `append`), `zip`, `tar` and `fetch(to:)` serialise into a
+/// hidden temporary file in the target's directory and rename it over the
+/// target at the end. Writing through a symlink replaces the file it points
+/// to, and the new file keeps the old file's permissions. A target that
+/// exists but is not a regular file (`/dev/null`, a named pipe), or sits in
+/// a directory where no new file may be created, is written directly.
+/// Dropping the value without committing removes the temporary file.
+pub(crate) struct Replacement {
+    /// `None` when the target is written directly.
+    tmp: Option<PathBuf>,
+    target: PathBuf,
+    done: bool,
+}
+
+impl Replacement {
+    /// Create the temporary file for `target`, whose parent must exist.
+    /// Fails as writing `target` itself would when it is a directory or
+    /// cannot be written.
+    pub(crate) fn create(target: &Path) -> std::io::Result<(Replacement, std::fs::File)> {
+        let target = match std::fs::symlink_metadata(target) {
+            Ok(m) if m.file_type().is_symlink() => {
+                crate::path::canonical(target).unwrap_or_else(|_| target.to_path_buf())
+            }
+            _ => target.to_path_buf(),
+        };
+        if let Ok(meta) = std::fs::metadata(&target) {
+            if meta.is_dir() {
+                return Err(std::io::ErrorKind::IsADirectory.into());
+            }
+            if !meta.is_file() {
+                let file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .truncate(true)
+                    .open(&target)?;
+                let r = Replacement {
+                    tmp: None,
+                    target,
+                    done: true,
+                };
+                return Ok((r, file));
+            }
+            // A read-only file stays protected: renaming over it would
+            // otherwise succeed wherever its directory is writable.
+            std::fs::OpenOptions::new().write(true).open(&target)?;
+        }
+        let name = target
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let n = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let tmp = target.with_file_name(format!(".{name}.ok-tmp-{}-{n}", process_id()));
+        let file = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+        {
+            Ok(f) => f,
+            // A writable file in a directory where no new file may be
+            // created can still be written, as before, just not safely.
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && target.is_file() => {
+                let file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .truncate(true)
+                    .open(&target)?;
+                let r = Replacement {
+                    tmp: None,
+                    target,
+                    done: true,
+                };
+                return Ok((r, file));
+            }
+            Err(e) => return Err(e),
+        };
+        Ok((
+            Replacement {
+                tmp: Some(tmp),
+                target,
+                done: false,
+            },
+            file,
+        ))
+    }
+
+    /// Move the finished file into place. The caller must have flushed and
+    /// dropped its handle (Windows cannot rename an open file).
+    pub(crate) fn commit(mut self) -> std::io::Result<()> {
+        let Some(tmp) = self.tmp.clone() else {
+            return Ok(());
+        };
+        if let Ok(meta) = std::fs::metadata(&self.target) {
+            let _ = std::fs::set_permissions(&tmp, meta.permissions());
+        }
+        if std::fs::rename(&tmp, &self.target).is_err() {
+            // Some WASI hosts cannot rename; the bytes are complete, so
+            // copying them over the target is the next best thing.
+            std::fs::copy(&tmp, &self.target)?;
+            let _ = std::fs::remove_file(&tmp);
+        }
+        self.done = true;
+        Ok(())
+    }
+}
+
+impl Drop for Replacement {
+    fn drop(&mut self) {
+        if let (false, Some(tmp)) = (self.done, &self.tmp) {
+            let _ = std::fs::remove_file(tmp);
+        }
+    }
+}
+
 fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
     let meta = std::fs::symlink_metadata(src)?;
     if meta.is_dir() {
@@ -87,7 +201,8 @@ fn copy(interp: &mut Interp, mut args: Args) -> R<Value> {
     if !interp.mutation(&format!("copy {} {}", src.display(), dst.display())) {
         return Ok(Value::Null);
     }
-    if !src.native().exists() {
+    let (s, d) = (src.native(), dst.native());
+    if !s.exists() {
         return Err(OkError::at(
             ErrKind::Io,
             args.span,
@@ -95,8 +210,90 @@ fn copy(interp: &mut Interp, mut args: Args) -> R<Value> {
         )
         .into());
     }
-    copy_tree(&src.native(), &dst.native()).map_err(|e| io_fail(&args, "copy to", &dst, &e))?;
+    check_not_into_itself(&args, "copy", &src, &dst)?;
+    match (s.is_dir(), std::fs::metadata(&d).map(|m| m.is_dir())) {
+        (false, Ok(true)) => {
+            // `dst` is the exact destination (SPEC.md 12.1): a file cannot
+            // replace a directory, and ok never copies "into" one.
+            return Err(OkError::at(
+                ErrKind::Io,
+                args.span,
+                format!(
+                    "cannot copy {} to {}: {} is a directory",
+                    src.display(),
+                    dst.display(),
+                    dst.display()
+                ),
+            )
+            .with_help(format!(
+                "`copy` names the exact destination; to copy into the directory, write copy({}, {})",
+                Value::str(src.display()).repr(),
+                Value::str(dst.join_str(&src.name()).display()).repr()
+            ))
+            .into());
+        }
+        (true, Ok(false)) => {
+            return Err(OkError::at(
+                ErrKind::Io,
+                args.span,
+                format!(
+                    "cannot copy the directory {} to {}: {} is a file",
+                    src.display(),
+                    dst.display(),
+                    dst.display()
+                ),
+            )
+            .with_help(format!(
+                "remove the file first: remove({})",
+                Value::str(dst.display()).repr()
+            ))
+            .into());
+        }
+        _ => {}
+    }
+    copy_tree(&s, &d).map_err(|e| io_fail(&args, "copy to", &dst, &e))?;
     Ok(Value::Null)
+}
+
+/// Where `p` is or would be: the canonical form of its nearest existing
+/// ancestor with the rest of the path joined on.
+fn resolved_target(p: &Path) -> PathBuf {
+    let mut cur = crate::path::lexical_absolute(p);
+    let mut tail = Vec::new();
+    loop {
+        if std::fs::symlink_metadata(&cur).is_ok() {
+            let mut out = crate::path::canonical(&cur).unwrap_or(cur);
+            out.extend(tail.iter().rev());
+            return out;
+        }
+        match cur.file_name() {
+            Some(name) => tail.push(name.to_os_string()),
+            None => return crate::path::lexical_absolute(p),
+        }
+        cur.pop();
+    }
+}
+
+/// Refuse to copy or move a path onto itself or a directory into itself:
+/// copying a file onto itself would truncate it, and copying a directory
+/// into itself would never end.
+fn check_not_into_itself(args: &Args, what: &str, src: &OkPath, dst: &OkPath) -> R<()> {
+    let (s, d) = (
+        resolved_target(&src.native()),
+        resolved_target(&dst.native()),
+    );
+    let msg = if s == d {
+        format!("cannot {what} {} onto itself", src.display())
+    } else if d.starts_with(&s) {
+        format!(
+            "cannot {what} {} into itself: {} is inside it",
+            src.display(),
+            dst.display()
+        )
+    } else {
+        return Ok(());
+    };
+    Err(OkError::at(ErrKind::Io, args.span, msg).into())
 }
 
 fn move_(interp: &mut Interp, mut args: Args) -> R<Value> {
@@ -114,6 +311,11 @@ fn move_(interp: &mut Interp, mut args: Args) -> R<Value> {
             format!("cannot move {}: no such file or directory", src.display()),
         )
         .into());
+    }
+    if resolved_target(&s) != resolved_target(&d) {
+        // Moving a path onto itself is a harmless no-op, but moving a
+        // directory into itself would end in the copy fallback below.
+        check_not_into_itself(&args, "move", &src, &dst)?;
     }
     ensure_parent(&d).map_err(|e| io_fail(&args, "move to", &dst, &e))?;
     if std::fs::rename(&s, &d).is_err() {
@@ -135,7 +337,23 @@ fn remove_path(p: &Path) -> std::io::Result<()> {
 
 /// Paths `remove` refuses to delete (SPEC.md 12.1).
 fn is_protected(interp: &Interp, p: &Path) -> Option<&'static str> {
-    let canon = crate::path::canonical(p).ok()?;
+    let meta = std::fs::symlink_metadata(p).ok()?;
+    let canon = crate::path::canonical(p).unwrap_or_else(|_| crate::path::lexical_absolute(p));
+    // Removing a symlink removes only the link, so the directory it points
+    // to is safe; a real directory may hold the working directory, which
+    // `remove(".")`, `remove("..")` or `remove(cwd)` would delete from under
+    // the script.
+    if meta.is_dir()
+        && let Ok(cwd) = std::env::current_dir()
+    {
+        let cwd = crate::path::canonical(&cwd).unwrap_or(cwd);
+        if cwd == canon {
+            return Some("the working directory");
+        }
+        if cwd.starts_with(&canon) {
+            return Some("a directory that contains the working directory");
+        }
+    }
     if canon.parent().is_none() {
         return Some("the root of the file system");
     }
@@ -162,12 +380,23 @@ fn remove(interp: &mut Interp, mut args: Args) -> R<Value> {
     let p = path_at(&args, 0, "remove")?;
     let native = p.native();
     if let Some(what) = is_protected(interp, &native) {
-        return Err(OkError::at(
+        let err = OkError::at(
             ErrKind::Io,
             args.span,
             format!("refusing to remove {} because it is {what}", p.display()),
-        )
-        .into());
+        );
+        let err = match what {
+            "the working directory" => err.with_help(format!(
+                "to empty it, remove its entries instead: for f in list_dir({}) {{ remove(f) }}",
+                Value::str(p.display()).repr()
+            )),
+            "a directory that contains the working directory" => err.with_help(format!(
+                "run the script from a directory outside {}, or remove the entries you mean one by one",
+                p.display()
+            )),
+            _ => err,
+        };
+        return Err(err.into());
     }
     if std::fs::symlink_metadata(&native).is_err() {
         return Ok(Value::Bool(false));
@@ -743,4 +972,68 @@ fn is_abs(_: &mut Interp, mut args: Args) -> R<Value> {
     named(&mut args, "is_abs", &[])?;
     count_args(&args, "is_abs", 1, 1)?;
     Ok(Value::Bool(path_at(&args, 0, "is_abs")?.is_abs()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("ok-files-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn replacement_dropped_keeps_the_old_file() {
+        let dir = scratch("drop");
+        let target = dir.join("keep.txt");
+        std::fs::write(&target, "old").unwrap();
+        let (pending, mut file) = Replacement::create(&target).unwrap();
+        file.write_all(b"half of the new").unwrap();
+        drop(file);
+        drop(pending);
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "old");
+        let names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("keep.txt")]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn replacement_commit_replaces_and_keeps_permissions() {
+        let dir = scratch("commit");
+        let target = dir.join("tool.sh");
+        std::fs::write(&target, "old").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o750)).unwrap();
+        }
+        let (pending, mut file) = Replacement::create(&target).unwrap();
+        file.write_all(b"new").unwrap();
+        drop(file);
+        pending.commit().unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "new");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&target).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o750);
+        }
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn replacement_refuses_a_directory() {
+        let dir = scratch("dir");
+        let err = Replacement::create(&dir).err().unwrap();
+        assert_eq!(err.kind(), std::io::ErrorKind::IsADirectory);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

@@ -101,6 +101,36 @@ fn set_mode(p: &Path, mode: u32) {
 #[cfg(not(unix))]
 fn set_mode(_: &Path, _: u32) {}
 
+/// The members of every source, listed before the archive file is created
+/// so that an archive written inside a source directory does not contain
+/// itself.
+fn all_members(args: &Args, srcs: &[OkPath]) -> R<Vec<(PathBuf, String, bool)>> {
+    let mut out = Vec::new();
+    for src in srcs {
+        out.extend(members(src).map_err(|e| {
+            fail(
+                args,
+                format!("cannot read {}: {}", src.display(), io_reason(&e)),
+            )
+        })?);
+    }
+    Ok(out)
+}
+
+/// Start writing the archive `dst` through a temporary file, so that a
+/// failure halfway leaves an existing archive as it was.
+fn create_archive(args: &Args, dst: &OkPath) -> R<(crate::files::Replacement, File)> {
+    let native = dst.native();
+    ensure_parent(&native)
+        .and_then(|()| crate::files::Replacement::create(&native))
+        .map_err(|e| {
+            fail(
+                args,
+                format!("cannot write {}: {}", dst.display(), io_reason(&e)),
+            )
+        })
+}
+
 fn zip(interp: &mut Interp, mut args: Args) -> R<Value> {
     named(&mut args, "zip", &[])?;
     count_args(&args, "zip", 2, 2)?;
@@ -116,57 +146,45 @@ fn zip(interp: &mut Interp, mut args: Args) -> R<Value> {
     )) {
         return Ok(Value::Null);
     }
-    let native = dst.native();
-    ensure_parent(&native).map_err(|e| {
-        fail(
-            &args,
-            format!("cannot write {}: {}", dst.display(), io_reason(&e)),
-        )
-    })?;
-    let file = File::create(&native).map_err(|e| {
-        fail(
-            &args,
-            format!("cannot write {}: {}", dst.display(), io_reason(&e)),
-        )
-    })?;
+    let list = all_members(&args, &srcs)?;
+    let (pending, file) = create_archive(&args, &dst)?;
     let mut w = zip::ZipWriter::new(file);
-    for src in &srcs {
-        let list = members(src).map_err(|e| {
-            fail(
-                &args,
-                format!("cannot read {}: {}", src.display(), io_reason(&e)),
-            )
-        })?;
-        for (path, name, is_dir) in list {
-            let mut opts = zip::write::SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated);
-            if let Some(m) = mode_of(&path) {
-                opts = opts.unix_permissions(m);
-            }
-            let zerr = |e: zip::result::ZipError| {
-                fail(&args, format!("cannot write {}: {e}", dst.display()))
-            };
-            if is_dir {
-                w.add_directory(format!("{name}/"), opts).map_err(zerr)?;
-            } else {
-                w.start_file(name.as_str(), opts).map_err(zerr)?;
-                let mut f = File::open(&path).map_err(|e| {
-                    fail(
-                        &args,
-                        format!(
-                            "cannot read {}: {}",
-                            OkPath::from_native(&path).display(),
-                            io_reason(&e)
-                        ),
-                    )
-                })?;
-                std::io::copy(&mut f, &mut w)
-                    .map_err(|e| fail(&args, format!("cannot write {}: {e}", dst.display())))?;
-            }
+    for (path, name, is_dir) in list {
+        let mut opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        if let Some(m) = mode_of(&path) {
+            opts = opts.unix_permissions(m);
+        }
+        let zerr =
+            |e: zip::result::ZipError| fail(&args, format!("cannot write {}: {e}", dst.display()));
+        if is_dir {
+            w.add_directory(format!("{name}/"), opts).map_err(zerr)?;
+        } else {
+            w.start_file(name.as_str(), opts).map_err(zerr)?;
+            let mut f = File::open(&path).map_err(|e| {
+                fail(
+                    &args,
+                    format!(
+                        "cannot read {}: {}",
+                        OkPath::from_native(&path).display(),
+                        io_reason(&e)
+                    ),
+                )
+            })?;
+            std::io::copy(&mut f, &mut w)
+                .map_err(|e| fail(&args, format!("cannot write {}: {e}", dst.display())))?;
         }
     }
-    w.finish()
+    let file = w
+        .finish()
         .map_err(|e| fail(&args, format!("cannot write {}: {e}", dst.display())))?;
+    drop(file);
+    pending.commit().map_err(|e| {
+        fail(
+            &args,
+            format!("cannot write {}: {}", dst.display(), io_reason(&e)),
+        )
+    })?;
     Ok(Value::Null)
 }
 
@@ -300,19 +318,8 @@ fn tar(interp: &mut Interp, mut args: Args) -> R<Value> {
     )) {
         return Ok(Value::Null);
     }
-    let native = dst.native();
-    ensure_parent(&native).map_err(|e| {
-        fail(
-            &args,
-            format!("cannot write {}: {}", dst.display(), io_reason(&e)),
-        )
-    })?;
-    let file = File::create(&native).map_err(|e| {
-        fail(
-            &args,
-            format!("cannot write {}: {}", dst.display(), io_reason(&e)),
-        )
-    })?;
+    let list = all_members(&args, &srcs)?;
+    let (pending, file) = create_archive(&args, &dst)?;
     let name = dst.name();
     let gzip = name.ends_with(".gz") || name.ends_with(".tgz");
     let writer: Box<dyn Write> = if gzip {
@@ -325,35 +332,31 @@ fn tar(interp: &mut Interp, mut args: Args) -> R<Value> {
     };
     let mut b = tar::Builder::new(writer);
     b.follow_symlinks(false);
-    for src in &srcs {
-        let list = members(src).map_err(|e| {
+    for (path, member, is_dir) in list {
+        let r = append_member(&mut b, &path, &member, is_dir);
+        r.map_err(|e| {
             fail(
                 &args,
-                format!("cannot read {}: {}", src.display(), io_reason(&e)),
+                format!(
+                    "cannot add {} to {}: {}",
+                    OkPath::from_native(&path).display(),
+                    dst.display(),
+                    io_reason(&e)
+                ),
             )
         })?;
-        for (path, member, is_dir) in list {
-            let r = append_member(&mut b, &path, &member, is_dir);
-            r.map_err(|e| {
-                fail(
-                    &args,
-                    format!(
-                        "cannot add {} to {}: {}",
-                        OkPath::from_native(&path).display(),
-                        dst.display(),
-                        io_reason(&e)
-                    ),
-                )
-            })?;
-        }
     }
-    let inner = b.into_inner().map_err(|e| {
+    let write_fail = |e: std::io::Error| {
         fail(
             &args,
             format!("cannot write {}: {}", dst.display(), io_reason(&e)),
         )
-    })?;
+    };
+    let mut inner = b.into_inner().map_err(write_fail)?;
+    // Dropping a gzip encoder would finish the stream but swallow an error.
+    inner.flush().map_err(write_fail)?;
     drop(inner);
+    pending.commit().map_err(write_fail)?;
     Ok(Value::Null)
 }
 

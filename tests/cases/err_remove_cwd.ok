@@ -1,0 +1,3 @@
+# `remove` refuses the working directory (SPEC.md 12.1). Run with --dry-run
+# (err_remove_cwd.flags) so that a regression cannot delete tests/cases.
+remove(".")

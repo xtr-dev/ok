@@ -1,0 +1,7 @@
+error[io]: refusing to remove . because it is the working directory
+ --> err_remove_cwd.ok:3:1
+  |
+3 | remove(".")
+  | ^^^^^^^^^^^
+  |
+  = help: to empty it, remove its entries instead: for f in list_dir(".") { remove(f) }

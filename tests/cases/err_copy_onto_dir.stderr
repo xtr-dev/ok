@@ -1,0 +1,7 @@
+error[io]: cannot copy out/copy-onto-dir.txt to out/copy-onto-dir: out/copy-onto-dir is a directory
+ --> err_copy_onto_dir.ok:5:1
+  |
+5 | copy("out/copy-onto-dir.txt", "out/copy-onto-dir")
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: `copy` names the exact destination; to copy into the directory, write copy("out/copy-onto-dir.txt", "out/copy-onto-dir/copy-onto-dir.txt")

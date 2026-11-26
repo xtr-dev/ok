@@ -2222,6 +2222,13 @@ pub fn io_reason(e: &std::io::Error) -> String {
         std::io::ErrorKind::NotFound => "no such file".into(),
         std::io::ErrorKind::PermissionDenied => "permission denied".into(),
         std::io::ErrorKind::InvalidData => "the file is not valid UTF-8 text".into(),
+        // The OS wording of these differs between Linux, macOS and Windows;
+        // ok's messages are the same everywhere (SPEC.md 19).
+        std::io::ErrorKind::IsADirectory => "it is a directory".into(),
+        std::io::ErrorKind::NotADirectory => "a part of the path is not a directory".into(),
+        std::io::ErrorKind::DirectoryNotEmpty => "the directory is not empty".into(),
+        std::io::ErrorKind::AlreadyExists => "it already exists".into(),
+        std::io::ErrorKind::Unsupported => "not supported on this system".into(),
         _ => {
             let s = e.to_string();
             match s.find(" (os error") {

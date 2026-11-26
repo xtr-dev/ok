@@ -218,21 +218,22 @@ fn fetch(interp: &mut Interp, mut args: Args) -> R<Value> {
     let ok = (200..400).contains(&status);
     let body_value = if let (Some(dest), true) = (&to, ok) {
         let native = dest.native();
-        crate::files::ensure_parent(&native).map_err(|e| {
+        let write_fail = |e: std::io::Error| {
             net_err(
                 &args,
                 format!("cannot write {}: {}", dest.display(), io_reason(&e)),
             )
-        })?;
-        let mut file = std::fs::File::create(&native).map_err(|e| {
-            net_err(
-                &args,
-                format!("cannot write {}: {}", dest.display(), io_reason(&e)),
-            )
-        })?;
+        };
+        // The download goes to a temporary file first, so a broken
+        // connection leaves an earlier copy of the file intact.
+        let (pending, mut file) = crate::files::ensure_parent(&native)
+            .and_then(|()| crate::files::Replacement::create(&native))
+            .map_err(write_fail)?;
         let mut reader = resp.body_mut().with_config().limit(u64::MAX).reader();
         std::io::copy(&mut reader, &mut file)
             .map_err(|e| net_err(&args, format!("download of {url} failed: {e}")))?;
+        drop(file);
+        pending.commit().map_err(write_fail)?;
         Value::Null
     } else {
         let mut buf = Vec::new();

@@ -431,7 +431,7 @@ true false
 
 ### copy
 
-`copy(src: path, dst: path)` returns `null`. Copies a file, or a directory with everything in it. `dst` is the exact destination, never a directory to copy into: `copy("a.txt", "out")` creates a file named `out`. Existing files are overwritten and parent directories are created. A missing `src` is an `io` error.
+`copy(src: path, dst: path)` returns `null`. Copies a file, or a directory with everything in it. `dst` is the exact destination, never a directory to copy into: `copy("a.txt", "out")` creates a file named `out`. Existing files are overwritten and parent directories are created. Copying a directory onto an existing directory merges them: files with the same name are replaced, the other files in `dst` stay. A missing `src`, a file copied onto an existing directory (or a directory onto a file), and a path copied onto itself or a directory into itself are `io` errors.
 
 ### move
 
@@ -439,7 +439,7 @@ true false
 
 ### remove
 
-`remove(p: path)` returns a `bool`: `true` if it removed something, `false` if nothing existed. Removes a file or a whole directory tree. It refuses to remove the root of the file system, your home directory and the project root (an `io` error).
+`remove(p: path)` returns a `bool`: `true` if it removed something, `false` if nothing existed. Removes a file or a whole directory tree. A symlink is removed itself, not what it points to. It refuses, before deleting anything, to remove the root of the file system, your home directory, the project root, the working directory and any directory that contains the working directory, such as `remove(".")` or `remove("..")` (an `io` error).
 
 ### mkdir
 
@@ -561,7 +561,7 @@ print(read("log.txt", "lines"))
 
 ### write
 
-`write(value, p: path, format: string? = null, --append: bool = false, --compact: bool = false, --delimiter: string = ",", --header: bool = true, --gzip: bool? = null)` returns `null`. Writes `value` to a file in the chosen format, creating parent directories, with `\n` line endings. `append: true` adds to the end of the file (for CSV, the header is only written to an empty file). `compact: true` writes JSON on one line. For CSV, the header is the keys of the first record; with `header: false` the rows are lists. A value the format cannot hold, such as a string written to `.csv`, is a `type` error. The value comes first: `write("out.txt", "x")` is refused with a hint, because the arguments look swapped.
+`write(value, p: path, format: string? = null, --append: bool = false, --compact: bool = false, --delimiter: string = ",", --header: bool = true, --gzip: bool? = null)` returns `null`. Writes `value` to a file in the chosen format, creating parent directories, with `\n` line endings. `append: true` adds to the end of the file (for CSV, the header is only written to an empty file). `compact: true` writes JSON on one line. For CSV, the header is the keys of the first record; with `header: false` the rows are lists. A value the format cannot hold, such as a string written to `.csv`, is a `type` error. A failed write leaves an existing file as it was: the new contents go to a temporary file next to it, which replaces the file only when it is complete, so `read(p) | ... | write(p)` can also rewrite a file in place. The value comes first: `write("out.txt", "x")` is refused with a hint, because the arguments look swapped.
 
 ### parse
 

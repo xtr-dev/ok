@@ -432,20 +432,6 @@ fn write(interp: &mut Interp, mut args: Args) -> R<Value> {
         && std::fs::metadata(&native)
             .map(|m| m.len() > 0)
             .unwrap_or(false);
-    let file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .append(append)
-        .truncate(!append)
-        .open(&native)
-        .map_err(|e| {
-            OkError::at(
-                ErrKind::Io,
-                span,
-                format!("cannot write {}: {}", p.display(), io_reason(&e)),
-            )
-        })?;
-    let out = std::io::BufWriter::new(file);
     let value = std::mem::replace(&mut args.pos[0], Value::Null);
     let write_err = |e: std::io::Error| {
         OkError::at(
@@ -454,38 +440,62 @@ fn write(interp: &mut Interp, mut args: Args) -> R<Value> {
             format!("cannot write {}: {}", p.display(), io_reason(&e)),
         )
     };
-    if gzip {
-        // A fixed header (no name, no time, OS "unknown") and a fixed level
-        // make the compressed bytes identical on every OS (SPEC.md 13.1.1).
-        let mut enc = flate2::GzBuilder::new()
-            .operating_system(255)
-            .write(out, flate2::Compression::new(6));
-        serialize(
+    // A value that fails to serialise (a function in JSON, a string as CSV,
+    // an error in a lazy stream) must not cost the existing file its
+    // contents: appends are serialised in memory first, and other writes go
+    // to a temporary file that replaces the target only once it is complete.
+    if append {
+        let mut buf = Vec::new();
+        encode(
             interp,
             value,
             fmt,
             &opts,
             &args,
-            &mut enc,
+            gzip,
+            &mut buf,
             existing_nonempty,
         )?;
-        enc.finish()
-            .and_then(|mut w| w.flush())
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&native)
             .map_err(write_err)?;
+        file.write_all(&buf).map_err(write_err)?;
     } else {
-        let mut out = out;
-        serialize(
-            interp,
-            value,
-            fmt,
-            &opts,
-            &args,
-            &mut out,
-            existing_nonempty,
-        )?;
-        out.flush().map_err(write_err)?;
+        let (pending, file) = crate::files::Replacement::create(&native).map_err(write_err)?;
+        let mut out = std::io::BufWriter::new(file);
+        encode(interp, value, fmt, &opts, &args, gzip, &mut out, false)?;
+        out.into_inner()
+            .map_err(|e| write_err(e.into_error()))
+            .map(drop)?;
+        pending.commit().map_err(write_err)?;
     }
     Ok(Value::Null)
+}
+
+/// Serialise `value` into `out`, through gzip when `gzip` is set.
+#[allow(clippy::too_many_arguments)]
+fn encode(
+    interp: &mut Interp,
+    value: Value,
+    fmt: &str,
+    opts: &HashMap<String, Value>,
+    args: &Args,
+    gzip: bool,
+    out: &mut dyn Write,
+    appending: bool,
+) -> R<()> {
+    if !gzip {
+        return serialize(interp, value, fmt, opts, args, out, appending);
+    }
+    // A fixed header (no name, no time, OS "unknown") and a fixed level
+    // make the compressed bytes identical on every OS (SPEC.md 13.1.1).
+    let mut enc = flate2::GzBuilder::new()
+        .operating_system(255)
+        .write(out, flate2::Compression::new(6));
+    serialize(interp, value, fmt, opts, args, &mut enc, appending)?;
+    enc.finish().map(drop).map_err(|e| io_err(args.span, e))
 }
 
 fn stdin(interp: &mut Interp, mut args: Args) -> R<Value> {

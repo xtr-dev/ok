@@ -1254,10 +1254,10 @@ directory (the project root in project mode).
 | Function | Returns | Notes |
 |---|---|---|
 | `read(p: path, format: string? = null, --gzip: bool? = null)` | value | Format from the extension or `format` (13); a `.gz` file is decompressed (13.1.1). |
-| `write(value, p: path, format: string? = null, --append: bool, --gzip: bool? = null)` | `null` | Creates parent directories. A `.gz` file is compressed (13.1.1). Writes `\n` line endings. Streams lazy values. When the value is a short string that looks like a file name (`"out.txt"`) and the path has no extension, the arguments are almost certainly swapped, and `write` refuses with a hint; `ok self check` warns about literal arguments that look swapped before the script runs (17.1). |
-| `copy(src: path, dst: path)` | `null` | Files or directories (recursive). `dst` is the exact destination, never "into". Overwrites files. |
-| `move(src: path, dst: path)` | `null` | Rename; falls back to copy and remove across file systems. |
-| `remove(p: path)` | `bool` | File or directory tree. `false` if nothing existed. Refuses the file-system root, the home directory and the project root. |
+| `write(value, p: path, format: string? = null, --append: bool, --gzip: bool? = null)` | `null` | Creates parent directories. A `.gz` file is compressed (13.1.1). Writes `\n` line endings. Streams lazy values. When the value is a short string that looks like a file name (`"out.txt"`) and the path has no extension, the arguments are almost certainly swapped, and `write` refuses with a hint; `ok self check` warns about literal arguments that look swapped before the script runs (17.1). A failed `write` leaves an existing file as it was (12.1.2). |
+| `copy(src: path, dst: path)` | `null` | Files or directories (recursive). `dst` is the exact destination, never "into". Overwrites files. Copying a file onto an existing directory, or a directory onto an existing file, is an error. Copying a directory onto an existing directory merges the two: files from `src` replace files with the same name, everything else in `dst` stays. Copying a path onto itself or a directory into itself is an error. |
+| `move(src: path, dst: path)` | `null` | Rename; falls back to copy and remove across file systems. Moving a directory into itself is an error. |
+| `remove(p: path)` | `bool` | File or directory tree; a symlink is removed itself, not what it points to. `false` if nothing existed. Refuses, before deleting anything, the file-system root, the home directory, the project root, the working directory and any directory that contains the working directory (as in `remove(".")` or `remove("..")`); paths are compared after making them absolute and resolving `..` and symlinks. |
 | `mkdir(p: path)` | `path` | Creates parents; no error if it exists. |
 | `exists(p: path)` | `bool` | |
 | `is_file(p: path)`, `is_dir(p: path)` | `bool` | |
@@ -1290,6 +1290,21 @@ joined to `root` (so with the default root they are relative to the working
 directory and usable directly). `exclude` patterns are matched the same way;
 an excluded directory is not descended into, which keeps `**` fast in trees
 with `node_modules` or `target`.
+
+#### 12.1.2 Writing files safely
+
+`write` without `append`, `zip`, `tar` and `fetch(..., to: p)` write to a
+hidden temporary file in the target's directory and rename it over the
+target only once it is complete. A failure halfway (a value that cannot be
+serialised, a broken stream, a missing source file) leaves an existing
+target as it was and removes the temporary file. Writing through a symlink
+replaces the file it points to, the new file keeps the old file's
+permission bits, and a read-only target stays an error. A target that is
+not a regular file (`/dev/null`, a named pipe), or an existing file in a
+directory where no new file may be created, is written directly.
+Because the target is replaced only at the end, `read(p) | ... | write(p)`
+rewrites a file in place. `write(..., append: true)` serialises the whole value before appending, so
+a failed append adds nothing.
 
 ### 12.2 Paths
 
@@ -1441,7 +1456,9 @@ Archive members are stored with `/` paths relative to the source's parent
 directory (for a directory `src`, members are `src/...`). Extraction refuses
 members whose path is absolute or escapes `dst` ("zip slip"), and does not
 create symlinks that point outside `dst`. Unix permission bits are stored and
-restored where the OS has them.
+restored where the OS has them. `zip` and `tar` list their sources before
+they create the archive, so an archive written inside a source directory
+does not contain itself, and they write it as 12.1.2 describes.
 
 #### 12.9.1 fetch
 

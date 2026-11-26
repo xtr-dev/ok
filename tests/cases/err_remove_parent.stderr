@@ -1,0 +1,7 @@
+error[io]: refusing to remove .. because it is a directory that contains the working directory
+ --> err_remove_parent.ok:4:1
+  |
+4 | remove("..")
+  | ^^^^^^^^^^^^
+  |
+  = help: run the script from a directory outside .., or remove the entries you mean one by one

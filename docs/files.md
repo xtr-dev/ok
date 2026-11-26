@@ -195,9 +195,9 @@ true false
 ```
 
 - `write` and `mkdir` create missing parent directories. `mkdir` returns the path and is not an error when the directory exists.
-- `copy(src, dst)` copies a file or a whole directory tree, overwriting files. `dst` is always the exact destination, never a directory to copy into: `copy("a.txt", "dist")` does not create `dist/a.txt`; write `copy("a.txt", "dist/a.txt")`. This avoids the `cp` ambiguity where the result depends on whether `dist` already exists.
+- `copy(src, dst)` copies a file or a whole directory tree, overwriting files. `dst` is always the exact destination, never a directory to copy into: `copy("a.txt", "dist")` does not create `dist/a.txt`; write `copy("a.txt", "dist/a.txt")`. This avoids the `cp` ambiguity where the result depends on whether `dist` already exists: copying a file onto an existing directory is an error, and copying a directory onto an existing directory merges the two, replacing files with the same name and keeping the rest.
 - `move(src, dst)` renames, and falls back to copying and removing when the destination is on another file system.
-- `remove(p)` removes a file or a directory tree and returns `false` when there was nothing to remove, so cleaning up twice is not an error. It refuses the file-system root, your home directory and the project root.
+- `remove(p)` removes a file or a directory tree and returns `false` when there was nothing to remove, so cleaning up twice is not an error. It refuses the file-system root, your home directory, the project root, and the working directory or any directory that contains it, so `remove(".")` and `remove("..")` are errors that delete nothing.
 - `touch(p)` creates an empty file or updates its modification time; `chmod(p, 0o755)` sets Unix permission bits and does nothing on Windows.
 
 ### Previewing with --dry-run and --trace

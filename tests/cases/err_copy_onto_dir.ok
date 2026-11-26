@@ -1,0 +1,5 @@
+# `copy` names the exact destination, so a file cannot replace a directory
+# (SPEC.md 12.1).
+mkdir("out/copy-onto-dir")
+write("x\n", "out/copy-onto-dir.txt")
+copy("out/copy-onto-dir.txt", "out/copy-onto-dir")

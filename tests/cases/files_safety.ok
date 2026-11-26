@@ -1,0 +1,37 @@
+# Failed writes keep existing files, and copy and move refuse destinations
+# that would lose data (SPEC.md 12.1, 12.1.2).
+let msg = (f) => try { f() } catch e { "{e.kind}: {e.message}" }
+
+# A value that cannot be serialised leaves the old file as it was.
+write({kept: true}, "out/safety-keep.json")
+print(msg(() => write({f: x => x}, "out/safety-keep.json")))
+print(read("out/safety-keep.json"))
+write("a,b\n1,2\n", "out/safety-rows.csv", "text")
+print(msg(() => write("not rows", "out/safety-rows.csv")))
+print(msg(() => write("not rows", "out/safety-rows.csv", append: true)))
+print(read("out/safety-rows.csv", "text"))
+
+# The target is replaced only at the end, so a file can be rewritten in place.
+write(read("out/safety-rows.csv") | map(r => {a: r.b, b: r.a}), "out/safety-rows.csv")
+print(read("out/safety-rows.csv", "text"))
+print(list_dir("out") | map(.name) | where(n => "ok-tmp" in n))
+
+# A missing source leaves an existing archive as it was.
+write("v1\n", "out/safety-src/a.txt")
+tar("out/safety-src", "out/safety.tar")
+zip("out/safety-src", "out/safety.zip")
+let before = [hash(path("out/safety.tar")), hash(path("out/safety.zip"))]
+print(msg(() => tar(["out/safety-src", "out/safety-missing"], "out/safety.tar")))
+print(msg(() => zip(["out/safety-src", "out/safety-missing"], "out/safety.zip")))
+print([hash(path("out/safety.tar")), hash(path("out/safety.zip"))] == before)
+
+# copy and move
+print(msg(() => copy("out/safety-keep.json", "out/./safety-keep.json")))
+print(msg(() => copy("out/safety-src", "out/safety-src/inner")))
+print(msg(() => move("out/safety-src", "out/safety-src/inner")))
+print(msg(() => copy("out/safety-src", "out/safety-keep.json")))
+remove("out/safety-merge")
+write("mine\n", "out/safety-merge/b.txt")
+write("old\n", "out/safety-merge/a.txt")
+copy("out/safety-src", "out/safety-merge")
+print(list_dir("out/safety-merge") | map(.name), read("out/safety-merge/a.txt"))

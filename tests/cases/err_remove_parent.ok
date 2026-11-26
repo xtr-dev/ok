@@ -1,0 +1,4 @@
+# `remove` refuses a directory that contains the working directory
+# (SPEC.md 12.1). Run with --dry-run (err_remove_parent.flags) so that a
+# regression cannot delete the repository's tests.
+remove("..")

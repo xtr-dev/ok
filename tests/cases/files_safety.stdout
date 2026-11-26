@@ -1,0 +1,20 @@
+format: a function cannot be written as JSON
+{kept: true}
+type: CSV output needs a list, got a string
+type: CSV output needs a list, got a string
+a,b
+1,2
+
+a,b
+2,1
+
+[]
+io: cannot read out/safety-missing: no such file
+io: cannot read out/safety-missing: no such file
+true
+io: cannot copy out/safety-keep.json onto itself
+io: cannot copy out/safety-src into itself: out/safety-src/inner is inside it
+io: cannot move out/safety-src into itself: out/safety-src/inner is inside it
+io: cannot copy the directory out/safety-src to out/safety-keep.json: out/safety-keep.json is a file
+["a.txt", "b.txt"] v1
+

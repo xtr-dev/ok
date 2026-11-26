@@ -4,6 +4,9 @@
 //! (absent means empty) and `NAME.exit` (absent means 0).
 //!
 //! Optional `NAME.args` holds extra command-line arguments, one per line.
+//! Optional `NAME.flags` holds options for ok itself, one per line, put
+//! before the script name (for example `--dry-run`, which cases that test
+//! `remove` protections use so that a regression cannot delete anything).
 //!
 //! Regenerate the expectations with `OK_BLESS=1 cargo test --test golden`
 //! (or `ok bless`) and review every diff before committing it.
@@ -82,8 +85,12 @@ fn golden_cases() {
             .env("NO_COLOR", "1")
             .env("TZ", "UTC")
             .env("PATH", &path)
-            .env("OK_TEST_VAR", "from the test")
-            .arg(&name);
+            .env("OK_TEST_VAR", "from the test");
+        let flags_file = dir.join(format!("{stem}.flags"));
+        if flags_file.exists() {
+            cmd.args(read_or_empty(&flags_file).lines().filter(|l| !l.is_empty()));
+        }
+        cmd.arg(&name);
         let args_file = dir.join(format!("{stem}.args"));
         if args_file.exists() {
             cmd.args(read_or_empty(&args_file).lines().filter(|l| !l.is_empty()));
