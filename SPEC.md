@@ -1330,7 +1330,9 @@ skipped by `--dry-run`.
 
 `*` matches within one path component, `?` one character, `[abc]` and
 `[a-z]` a character class, `**` zero or more whole components, `{a,b}`
-alternatives. Patterns use `/` on every OS. Matching is case-sensitive on
+alternatives. In a double-quoted string `{` starts an interpolation (3.5),
+so a pattern with alternatives is written single-quoted, `'*.{md,txt}'`, or
+with escaped braces, `"*.\{md,txt\}"`. Patterns use `/` on every OS. Matching is case-sensitive on
 every OS. Names starting with `.` are skipped, at every level, unless the
 pattern has a component that starts with `.` (as in `.*` or `**/.env*`) or
 `hidden: true` is given. Results are sorted by their `/`

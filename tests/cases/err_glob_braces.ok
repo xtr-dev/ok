@@ -1,0 +1,4 @@
+# Glob alternatives in a double-quoted string start an interpolation; the
+# help says to escape the brace or use a single-quoted string (SPEC.md 12.1.1).
+
+print(glob("data/*.{csv,tsv}"))

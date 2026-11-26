@@ -1,0 +1,7 @@
+error[syntax]: expected `}` to end the interpolation, found `,`
+ --> err_glob_braces.ok:4:24
+  |
+4 | print(glob("data/*.{csv,tsv}"))
+  |                        ^
+  |
+  = help: `{` starts an interpolation; for a literal brace write `\{`, or use a single-quoted string

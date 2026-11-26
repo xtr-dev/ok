@@ -1853,7 +1853,11 @@ impl Parser {
         let mut p = self.sub(tokens, span);
         let e = p.expr()?;
         if !p.at(&Tok::Eof) {
-            return Err(p.unexpected("`}` to end the interpolation"));
+            // Most often a brace meant literally, such as glob alternatives
+            // `*.{md,txt}` or CSS, so the help says how to write one.
+            return Err(p.unexpected("`}` to end the interpolation").with_help(
+                "`{` starts an interpolation; for a literal brace write `\\{`, or use a single-quoted string",
+            ));
         }
         p.check_no_it(&e)?;
         Ok(e)
