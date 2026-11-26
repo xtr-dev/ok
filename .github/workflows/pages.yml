@@ -22,7 +22,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The github-pages environment only accepts deployments from main, and a
+  # release event runs on its tag. So a published release starts this
+  # workflow again on main (which builds from the latest release anyway)
+  # instead of deploying from the tag.
+  redeploy:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main
+
   install:
+    if: github.event_name != 'release'
     name: install script (${{ matrix.os }})
     strategy:
       fail-fast: false
