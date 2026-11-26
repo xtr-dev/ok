@@ -227,7 +227,7 @@ error[type]: `if` needs a bool, got a list
 2 | if files {
   |    ^^^^^
   |
-  = help: to test for an empty list use `len(xs) > 0` or `xs != []`
+  = help: to test for an empty list use `if len(files) > 0` or `if files != []`
 ```
 
 `if files == []` or `if len(files) == 0` says what you mean. The symbols `!`, `&&` and `||` are not ok operators; the error for each one points you to `not`, `and` and `or`.

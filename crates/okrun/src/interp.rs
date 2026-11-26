@@ -681,15 +681,34 @@ impl Interp {
         match v {
             Value::Bool(b) => Ok(*b),
             other => {
+                // The help repeats the condition as written when it is short
+                // and has no spaces (`files`, `opts.items`), so it can be
+                // pasted back; otherwise it uses a placeholder name.
+                let text = &self.sources.file(span.file).text[span.start as usize..span.end as usize];
+                let simple = !text.is_empty()
+                    && text.chars().count() <= 30
+                    && !text.chars().any(char::is_whitespace);
+                let name = |fallback: &'static str| if simple { text } else { fallback };
+                let kw = match what {
+                    "`if`" => "if ",
+                    "`while`" => "while ",
+                    _ => "",
+                };
                 let help = match other {
-                    Value::List(_) => "to test for an empty list use `len(xs) > 0` or `xs != []`",
-                    Value::Str(_) => "to test for an empty string use `s != \"\"`",
-                    Value::Null => "to test for null use `x != null`",
-                    Value::Int(_) | Value::Float(_) => {
-                        "compare explicitly, like `n > 0` or `n != 0`"
+                    Value::List(_) => {
+                        let x = name("xs");
+                        format!("to test for an empty list use `{kw}len({x}) > 0` or `{kw}{x} != []`")
                     }
-                    Value::Record(_) => "to test for an empty record use `len(r) > 0`",
-                    _ => "use a comparison that gives true or false",
+                    Value::Str(_) => format!("to test for an empty string use `{kw}{} != \"\"`", name("s")),
+                    Value::Null => format!("to test for null use `{kw}{} != null`", name("x")),
+                    Value::Int(_) | Value::Float(_) => {
+                        let n = name("n");
+                        format!("compare explicitly, like `{kw}{n} > 0` or `{kw}{n} != 0`")
+                    }
+                    Value::Record(_) => {
+                        format!("to test for an empty record use `{kw}len({}) > 0`", name("r"))
+                    }
+                    _ => "use a comparison that gives true or false".to_string(),
                 };
                 Err(OkError::at(
                     ErrKind::Type,

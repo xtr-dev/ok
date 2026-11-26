@@ -479,6 +479,9 @@ error: `if` needs a bool, got a list
   = help: to test for an empty list use `if len(files) > 0` or `if files != []`
 ```
 
+The help repeats the condition as written when it is short and has no
+spaces, and uses a placeholder (`xs`, `s`, `n`, ...) otherwise.
+
 ### 5.4 Equality and ordering
 
 `==` and `!=` compare structurally; records are equal when they have the

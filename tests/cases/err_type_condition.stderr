@@ -4,4 +4,4 @@ error[type]: `if` needs a bool, got a list
 2 | if files { print(1) }
   |    ^^^^^
   |
-  = help: to test for an empty list use `len(xs) > 0` or `xs != []`
+  = help: to test for an empty list use `if len(files) > 0` or `if files != []`
