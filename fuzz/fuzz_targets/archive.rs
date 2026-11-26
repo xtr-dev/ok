@@ -3,7 +3,8 @@
 //! destination. The first byte picks zip, tar or gzip-compressed tar; the
 //! rest is the archive. Each run extracts into `box/work/out` and then checks
 //! that `box` holds nothing but `work`, that `work` holds nothing but the
-//! archive and `out`, and that no symlink under `out` exists.
+//! archive and `out`, and that every link under `out` resolves to a place
+//! inside `out` (SPEC.md 12.9 allows only those).
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
@@ -24,13 +25,39 @@ fn names(dir: &Path) -> Vec<String> {
     v
 }
 
-fn no_links(dir: &Path) {
+/// Resolve `p` the way the operating system would, following links one
+/// component at a time, so dangling links are judged by where they point.
+fn resolve(p: &Path, depth: usize) -> PathBuf {
+    let mut out = PathBuf::new();
+    for comp in p.components() {
+        match comp {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => {
+                out.push(other);
+                if depth < 40
+                    && let Ok(target) = std::fs::read_link(&out)
+                {
+                    out.pop();
+                    out = resolve(&out.join(target), depth + 1);
+                }
+            }
+        }
+    }
+    out
+}
+
+fn links_stay_inside(dir: &Path, out: &Path) {
     for entry in std::fs::read_dir(dir).unwrap() {
         let entry = entry.unwrap();
         let kind = entry.file_type().unwrap();
-        assert!(!kind.is_symlink(), "extraction created a link: {}", entry.path().display());
-        if kind.is_dir() {
-            no_links(&entry.path());
+        if kind.is_symlink() {
+            let to = resolve(&entry.path(), 0);
+            assert!(to.starts_with(out), "link {} points outside to {}", entry.path().display(), to.display());
+        } else if kind.is_dir() {
+            links_stay_inside(&entry.path(), out);
         }
     }
 }
@@ -57,7 +84,8 @@ fuzz_target!(|data: &[u8]| {
     for name in names(&work) {
         assert!(name == file || name == "out", "extraction wrote {name} next to its destination");
     }
-    if work.join("out").is_dir() {
-        no_links(&work.join("out"));
+    let out = work.join("out");
+    if out.is_dir() {
+        links_stay_inside(&out, &out);
     }
 });
