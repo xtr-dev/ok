@@ -1,6 +1,6 @@
 # The ok language specification
 
-Version: 0.2.0 (2026-11-26).
+Version: 0.3.0 (2026-11-26).
 
 This document is normative. When the implementation and this document
 disagree, one of them is a bug; `SPEC.md` is changed first, in the same
@@ -2160,7 +2160,7 @@ The only reserved first arguments are `trust`, `untrust` and `self`.
 
 | Command | Meaning |
 |---|---|
-| `ok self init [--checksums FILE]` | Write a starter `ok.ok` (with `requires` set to this version's major.minor, such as `"0.2"`) and the wrappers `./ok`, `ok.cmd`, `ok.ps1` (18) in the current directory. The checksums of this version's release are downloaded from the release (`SHA256SUMS`), or read from `FILE`. Refuses to overwrite. |
+| `ok self init [--checksums FILE]` | Write a starter `ok.ok` (with `requires` set to this version's major.minor, such as `"0.3"`) and the wrappers `./ok`, `ok.cmd`, `ok.ps1` (18) in the current directory. The checksums of this version's release are downloaded from the release (`SHA256SUMS`), or read from `FILE`. Refuses to overwrite. |
 | `ok self completions SHELL` | Print a completion script for `zsh`, `bash`, `fish` or `powershell`. |
 | `ok self complete -- WORDS...` | Used by completion scripts; prints candidates. |
 | `ok self fmt [--check] [FILES...]` | Format ok files in the canonical layout (17.2). Default: the project files. `--check` lists files that would change and exits with 1. |

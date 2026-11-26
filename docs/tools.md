@@ -199,14 +199,14 @@ Findings and the summary go to stderr; a clean summary goes to stdout. Bad usage
 
 ```text
 $ ok self init
-wrote ok.ok, ./ok, ok.cmd and ok.ps1 (pinned to ok 0.2.0)
+wrote ok.ok, ./ok, ok.cmd and ok.ps1 (pinned to ok 0.3.0)
 run ./ok hello (or ok.cmd hello on Windows)
 ```
 
-The starter file has one task to build on, and requires the version of ok that wrote it (here 0.2):
+The starter file has one task to build on, and requires the version of ok that wrote it (here 0.3):
 
 ```ok
-requires "0.2"
+requires "0.3"
 
 # Say hello
 task hello(name: string = "world") {
@@ -238,7 +238,7 @@ The wrappers are the only shell code ok produces, and they stay short enough to 
 | `ok self tasks` | Print the task listing, the same as `ok` with no arguments. `--all` includes [hidden tasks](tasks.md#hidden-tasks). |
 | `ok self completions SHELL` | Print a completion script for `bash`, `zsh`, `fish` or `powershell` (see [Tasks](tasks.md#shell-completions)). |
 | `ok self complete -- WORDS...` | What the completion scripts call: prints the candidates for the last word. |
-| `ok self version` | Print the version, such as `ok 0.2.0`. `ok --version` does the same. |
+| `ok self version` | Print the version, such as `ok 0.3.0`. `ok --version` does the same. |
 
 `ok self complete` is handy for checking what Tab will offer, without a shell:
 

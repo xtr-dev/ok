@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-26
+
+Some of these changes can break scripts written for 0.2.0: compact JSON no longer has spaces, `parts()` of an absolute path starts with its root, `remove` refuses the working directory and the directories above it, copying a file onto a directory is an error, an import that leaves the project stops the project from loading, and `--env NAME` with a missing file exits with 2.
+
 ### Added
 
 - A user guide at https://okrun.dev/docs/: from a first script to tasks, with a standard library reference. Every example is tested against ok, and runs in the browser with a Run button.
@@ -31,7 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Unsafe: an import that leaves the project root was only refused when a task ran; listing the tasks and `ok self check` accepted it, and `ok trust` recorded a fingerprint without the outside file, which could then change unnoticed. It is now a load-time error everywhere the project is loaded, before anything is trusted.
 - Without a terminal, an untrusted project fails with `error[trust]: this project is not trusted` and a note naming the root, as the spec shows; when an earlier version was trusted, it says the project files changed since you trusted them and names the changed files.
 - `ok self check` on a project whose loading fails (for example a bad `needs` argument) now ends with the summary line `ok: the project failed to load: 1 error`, and the spec describes the project form of the summary (`ok: 2 files and 3 tasks checked ...`).
-- `ok self init` writes `requires` with the running version's major.minor (`"0.2"`) instead of `"0.1"`.
+- `ok self init` writes `requires` with the running version's major.minor (`"0.3"` in this release) instead of `"0.1"`.
 - `ok self --help`, `ok trust --help` and `ok untrust --help` print their commands instead of failing with an unknown option.
 - `--env NAME` with a missing `.env.NAME` exits with 2, the code for bad usage, instead of 1, and the help line says how to fix it.
 - Error traces: a script's `main` and the task named on the command line end with ``= in `main`, started by ok`` instead of pointing at their own declaration, and a dependency that fails in a parallel worker is traced to its `needs` entry, as with `-j1`.

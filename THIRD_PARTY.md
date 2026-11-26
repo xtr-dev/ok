@@ -3558,7 +3558,7 @@ limitations under the License.
 
 Used by:
 
-- [okrun 0.2.0](https://github.com/xtr-dev/ok)
+- [okrun 0.3.0](https://github.com/xtr-dev/ok)
 - [arraydeque 0.5.1](https://github.com/andylokandy/arraydeque)
 - [constant_time_eq 0.6.1](https://codeberg.org/cesarb/constant_time_eq)
 - [itoa 1.0.19](https://github.com/dtolnay/itoa)
