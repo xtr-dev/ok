@@ -39,7 +39,7 @@ cargo deny check                    # licences, advisories, sources
 cargo about generate -m crates/okrun/Cargo.toml about.hbs > THIRD_PARTY.md
 OK_BLESS=1 cargo test --test golden # regenerate golden expectations, then review git diff
 cargo run -p okdocs -- build docs _site   # the guide, into a copy of site/ in _site/
-cargo +nightly fuzz run parse -- -max_total_time=300   # needs nightly + cargo-fuzz
+ok fuzz --minutes 30                # long local fuzzing of every target (needs nightly + cargo-fuzz)
 ```
 
 ## Local checks
@@ -56,8 +56,10 @@ cargo deny check
 cargo about generate -m crates/okrun/Cargo.toml about.hbs > THIRD_PARTY.md && git diff --exit-code THIRD_PARTY.md
 ```
 
-and at the end of a milestone also `cargo +nightly fuzz run lex -- -max_total_time=60`
-and the same for `parse`. Local checks cover only the machine they run on;
+and at the end of a milestone, and before every release, `ok fuzz` (30
+minutes per target by default; CI only runs 45 seconds per target).
+Crashes are saved in `fuzz/artifacts/TARGET/`; turn each into a
+regression test before fixing it. Local checks cover only the machine they run on;
 CI is what covers macOS and Windows, so check its result after pushing.
 
 ## Security upkeep
@@ -79,7 +81,9 @@ crates/okrun/           the published package `okrun`
   tests/                integration tests that run the real binary
 examples/<name>/        real scripts rewritten in ok, original alongside
 tests/cases/            golden tests (from M1)
-fuzz/                   cargo-fuzz targets for lexer and parser (from M1)
+fuzz/                   cargo-fuzz targets: lex, parse, fmt (formatter and
+                        checker), data (every format, gzip), archive
+                        (unzip/untar must stay inside the destination)
 ok.ok                   the repo's own tasks (dogfooding)
 site/                   landing page, playground (playground.js, playground-worker.js)
                         and install.sh / install.ps1, published to

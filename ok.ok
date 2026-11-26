@@ -21,10 +21,13 @@ task bless {
   run git diff --stat -- tests/cases
 }
 
-# Fuzz the lexer and parser for a while (cargo +nightly fuzz run parse -- -max_total_time=300)
-task fuzz(--seconds: int = 300) {
-  for target in ["lex", "parse"] {
-    run cargo +nightly fuzz run {target} -- -max_total_time={seconds}
+# Fuzz every target for a while on this machine (CI only runs a minute per push).
+# Each target runs in --forks processes; inputs are kept in fuzz/corpus/ between
+# runs, and crashes land in fuzz/artifacts/TARGET/ with a stop.
+task fuzz(--minutes: int = 30, --forks: int = 4, --target: string? = null) {
+  let targets = if target == null { ["lex", "parse", "fmt", "data", "archive"] } else { [target] }
+  for t in targets {
+    run cargo +nightly fuzz run {t} -- -max_total_time={minutes * 60} -fork={forks} -timeout=10 -rss_limit_mb=4096 -close_fd_mask=3
   }
 }
 
