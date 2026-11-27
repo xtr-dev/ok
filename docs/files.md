@@ -2,11 +2,11 @@
 
 Work with paths that print the same on every OS, find files with glob, copy, move and remove them, use temporary files, and pack zip and tar archives.
 
-File work is where shell scripts break most often across systems: `/` against `\`, `cp -r` semantics, `find` flags, `rm -rf` on the wrong variable. ok has a `path` type and a small set of file functions that behave the same on Linux, macOS and Windows. The fine print is in [section 12.1](../SPEC.md#121-files) and [section 12.2](../SPEC.md#122-paths) of the spec.
+ok has a `path` type and a small set of file functions that behave the same on Linux, macOS and Windows. They replace the parts of a shell script that differ between systems, such as `/` against `\`, the rules of `cp -r` and the flags of `find`. The exact rules are in [section 12.1](../SPEC.md#121-files) and [section 12.2](../SPEC.md#122-paths) of the spec.
 
-## Path values
+## Making a path and reading its parts
 
-`path("src/main.rs")` makes a path. Paths are stored normalised and always print with `/`, so a script's output is identical on every OS. When a path is handed to the operating system (a file function, a command argument) it is converted to the native form.
+`path("src/main.rs")` makes a path. A path is stored normalised and always prints with `/`, so the output of a script is identical on every OS. When ok hands a path to the operating system, in a file function or as a command argument, it converts the path to the native form.
 
 ```ok file=paths.ok
 print(path("a//b/./c/../d/"))
@@ -25,9 +25,11 @@ reports/2026 reports/2026/summary.json
 [path("reports/2026/summary.csv")] reports/2026/summary.csv
 ```
 
-Normalisation is purely textual: repeated separators collapse, `.` disappears, and `..` cancels the component before it. Nothing on disk is consulted and symlinks are not resolved. On Windows, `\` is also accepted as a separator in input; on other systems it is an ordinary character.
+Normalisation works on the text of the path only. Repeated separators collapse, `.` disappears, and `..` cancels the component before it. ok does not look at the disk and does not resolve symlinks. On Windows, `\` is also accepted as a separator in input. On other systems it is an ordinary character.
 
-The file functions accept strings too, so `read("config.toml")` is fine. A path and a string are different values, though: `path("docs") == "docs"` is `false`. Compare `str(p)` with a string, or compare two paths.
+The file functions accept strings too, so `read("config.toml")` works. A path and a string are still different values, and `path("docs") == "docs"` is `false`. Compare `str(p)` with a string, or compare two paths.
+
+A path has these members:
 
 | Member | Gives | For `path("build/app.tar.gz")` |
 |---|---|---|
@@ -43,7 +45,7 @@ The file functions accept strings too, so `read("config.toml")` is fine. A path 
 
 ## Joining paths
 
-`/` joins a path with a string or another path. Start from a path value; joining two strings is an error, because `"a" / "b"` could just as well be a typo for division.
+`/` joins a path with a string or with another path. The left side must be a path. `"a" / "b"` is an error, because it could be a mistyped division.
 
 ```ok file=join.ok
 let out = path("build")
@@ -58,7 +60,9 @@ dist/app.js
 /etc/app.conf
 ```
 
-When the right side is absolute it replaces the left side, as the last line shows. This is handy for options that accept either a relative or an absolute path. `p.relative_to(base)` goes the other way and is an error when `p` is not inside `base`; it is how you print short paths below a root:
+When the right side is absolute, it replaces the left side, as the last line shows. An option that accepts either a relative or an absolute path therefore needs no special case.
+
+`p.relative_to(base)` removes `base` from the front of `p`, and is an error when `p` is not inside `base`. Use it to print short paths below a root:
 
 ```ok file=relative.ok
 let root = path("site")
@@ -74,7 +78,7 @@ css/main.css
 
 ## Where relative paths point
 
-Relative paths are resolved against the working directory, `cwd`. In a script that is the directory you ran `ok` from; in a project task it is the project root, so `read("Cargo.toml")` in a task finds the project's file wherever you started it. Four values give you the directories you might need:
+A relative path is resolved against the working directory, `cwd`. In a script, the working directory is the directory you ran `ok` from. In a project task it is the project root, so `read("Cargo.toml")` in a task finds the project's file from any directory of the project. Four values hold the directories that a script can start from:
 
 | Value | Is |
 |---|---|
@@ -85,7 +89,9 @@ Relative paths are resolved against the working directory, `cwd`. In a script th
 
 Use `script_dir / "templates"` for files that ship next to a script, and `cwd` or plain relative paths for the files the script works on. [Tasks](tasks.md) has more on project mode.
 
-## Checking files
+## Checking whether a file exists and reading its details
+
+`exists`, `is_file` and `is_dir` each return a bool, and `stat` returns a record of details:
 
 ```ok file=check.ok
 write("hello\n", "notes/today.txt")
@@ -101,13 +107,23 @@ true true
 6 true time
 ```
 
-`stat` gives `size`, `modified`, `created` (or `null` where the file system does not record it), `is_file`, `is_dir`, `is_symlink` and `mode` (the Unix permission bits, `null` on Windows). `modified` is a `time`, so `now() - info.modified` is a duration you can compare with `7d`.
+The record that `stat` returns has these fields:
 
-`hash(path("file"))` gives a file's SHA-256 as lowercase hex, read in a streaming way. It needs a `path` (or bytes), not a string, because a string could mean either the file name or the text itself.
+| Field | Holds |
+|---|---|
+| `size` | the size in bytes |
+| `modified` | the time of the last change |
+| `created` | the time of creation, or `null` where the file system does not record it |
+| `is_file`, `is_dir`, `is_symlink` | what kind of entry it is |
+| `mode` | the Unix permission bits, or `null` on Windows |
+
+`modified` is a `time`, so `now() - info.modified` is a duration that you can compare with `7d`.
+
+`hash(path("file"))` gives the SHA-256 of a file as lowercase hex, without loading the whole file into memory. `hash` needs a `path` or bytes. A string is an error, because it could mean either the file name or the text itself.
 
 ## Finding files with glob
 
-`glob(pattern)` returns the matching paths as a sorted list. Sorting is by the `/` form, so the order is the same on every OS.
+`glob(pattern)` returns the matching paths as a sorted list. The list is sorted by the `/` form of the paths, so the order is the same on every OS. A pattern can contain:
 
 | Pattern | Matches |
 |---|---|
@@ -116,6 +132,8 @@ true true
 | `[abc]`, `[a-z]` | one character from the class |
 | `**` | zero or more whole components |
 | `{a,b}` | either alternative |
+
+This script writes four files below `site/` and searches them in five ways:
 
 ```ok file=glob.ok
 write("<h1>hi</h1>\n", "site/index.html")
@@ -138,21 +156,21 @@ print(glob("*.pdf"))
 []
 ```
 
-Points to know:
+`glob` follows these rules:
 
-- Names that start with `.` are skipped at every level, unless the pattern itself has a component starting with `.` (such as `**/.env*`) or you pass `hidden: true`.
-- `**/*` matches directories as well as files. Add `| where is_file` when you only want files.
-- `root:` sets the directory to search. The pattern is matched below it, and the results are joined to it, so they are ready to use as they are.
-- `exclude:` patterns are matched the same way, and an excluded directory is not entered at all. Excluding `**/node_modules` or `**/target` keeps a search of a big tree fast.
-- Matching is case-sensitive on every OS, even on file systems that are not.
-- A pattern that matches nothing gives `[]`, not an error and not the pattern itself.
-- Write patterns with `{a,b}` in single quotes. In a double-quoted string `{` starts an interpolation.
+- A name that starts with `.` is skipped at every level. To include such names, pass `hidden: true` or give the pattern a component that starts with `.`, such as `**/.env*`.
+- `**/*` matches directories as well as files. Add `| where is_file` when you want only files.
+- `root:` sets the directory to search. The pattern is matched below `root`, and the results are joined to it, so you can pass them to the file functions unchanged.
+- `exclude:` patterns are matched the same way, and an excluded directory is not entered at all. Excluding `**/node_modules` or `**/target` saves the time of walking those trees.
+- Matching is case-sensitive on every OS, also on file systems that are not.
+- A pattern that matches nothing gives `[]`. It is not an error, and `glob` does not return the pattern itself as a shell does.
+- Write a pattern with `{a,b}` in single quotes. In a double-quoted string, `{` starts an interpolation.
 
-The `largest-files` example in the repository combines these: `glob("**/*", root: root, hidden: true, exclude: ["**/.git", "**/node_modules", "**/target"])`, then `where is_file`, `stat` and `sort`.
+The `largest-files` example in the repository combines several of these rules. It calls `glob("**/*", root: root, hidden: true, exclude: ["**/.git", "**/node_modules", "**/target"])` and then uses `where is_file`, `stat` and `sort`.
 
 ## Listing a directory
 
-`list_dir(p)` gives the entries of one directory, joined to `p` and sorted by name. Unlike `glob` it includes hidden entries and does not descend.
+`list_dir(p)` gives the entries of one directory, joined to `p` and sorted by name. Unlike `glob`, it includes hidden entries and does not go into subdirectories.
 
 ```ok file=list.ok
 write("a", "photos/b.jpg")
@@ -168,6 +186,8 @@ print(list_dir("photos") | where is_file | map .name)
 ```
 
 ## Creating, copying, moving and removing
+
+`mkdir`, `copy`, `move`, `remove` and `touch` change the file system. This script uses each of them:
 
 ```ok file=manage.ok
 write("v1\n", "src/app.txt")
@@ -194,15 +214,19 @@ true false
 [".keep", "assets"]
 ```
 
-- `write` and `mkdir` create missing parent directories. `mkdir` returns the path and is not an error when the directory exists.
-- `copy(src, dst)` copies a file or a whole directory tree, overwriting files. `dst` is always the exact destination, never a directory to copy into: `copy("a.txt", "dist")` does not create `dist/a.txt`; write `copy("a.txt", "dist/a.txt")`. This avoids the `cp` ambiguity where the result depends on whether `dist` already exists: copying a file onto an existing directory is an error, and copying a directory onto an existing directory merges the two, replacing files with the same name and keeping the rest.
-- `move(src, dst)` renames, and falls back to copying and removing when the destination is on another file system.
-- `remove(p)` removes a file or a directory tree and returns `false` when there was nothing to remove, so cleaning up twice is not an error. It refuses the file-system root, your home directory, the project root, and the working directory or any directory that contains it, so `remove(".")` and `remove("..")` are errors that delete nothing.
-- `touch(p)` creates an empty file or updates its modification time; `chmod(p, 0o755)` sets Unix permission bits and does nothing on Windows.
+`write` and `mkdir` create missing parent directories. `mkdir` returns the path and is not an error when the directory exists.
 
-### Previewing with --dry-run and --trace
+`copy(src, dst)` copies a file or a whole directory tree and overwrites existing files. `dst` is the exact destination, never a directory to copy into. `copy("a.txt", "dist")` does not create `dist/a.txt`. For that, write `copy("a.txt", "dist/a.txt")`. With `cp`, the result depends on whether `dist` already exists. With `copy`, a file copied onto an existing directory is an error. A directory copied onto an existing directory merges the two: files with the same name are replaced, and the other files stay.
 
-All the functions that change files (`write`, `copy`, `move`, `remove`, `mkdir`, `touch`, `chmod` and the archive functions) are printed by `--trace` and skipped by `--dry-run`. A dry run shows what a script would change without changing anything:
+`move(src, dst)` renames. When the destination is on another file system, it copies and then removes the source.
+
+`remove(p)` removes a file or a directory tree. It returns `false` when there was nothing to remove, so cleaning up twice is not an error. `remove` refuses the file-system root, your home directory, the project root, and the working directory or any directory that contains it. `remove(".")` and `remove("..")` are therefore errors that delete nothing.
+
+`touch(p)` creates an empty file, or updates the modification time of an existing one. `chmod(p, 0o755)` sets Unix permission bits and does nothing on Windows.
+
+### Previewing changes with --dry-run and --trace
+
+`ok --dry-run` shows what a script would change without changing anything. It prints every call of a function that changes files and skips the call. Those functions are `write`, `copy`, `move`, `remove`, `mkdir`, `touch`, `chmod` and the archive functions. In this example, `build/old.txt` exists before the script runs:
 
 ```text file=build/old.txt
 left over from the last build
@@ -220,11 +244,13 @@ print(exists("build/stamp.txt"))
 false
 ```
 
-The script keeps running, so its reads see the files as they were. A `remove` of something that does not exist changes nothing and is not printed. `ok --trace clean.ok` runs everything and prints each change with a `+`.
+The script keeps running after a skipped call, so its reads see the files as they were. That is why the last line prints `false`. A call is printed also when it would have nothing to do, such as a `remove` of something that does not exist.
+
+`ok --trace clean.ok` runs everything and prints each change with a `+` in place of the `~`.
 
 ## Temporary files
 
-`tempdir()` creates a new directory and `tempfile()` a new empty file. Both are removed when the script exits, also when it fails or you press Ctrl-C, so you do not need to clean up yourself. Other users of the machine cannot look inside them.
+`tempdir()` creates a new directory and `tempfile()` a new empty file. ok removes both when the script exits, also when the script fails or you press Ctrl-C, so you do not need to clean up yourself. Other users of the machine cannot look inside them.
 
 ```ok file=temp.ok
 let work = tempdir()
@@ -241,13 +267,13 @@ print(t.ext, read(t))
 json {ok: true}
 ```
 
-Their location depends on the system, so print paths below them with `relative_to` rather than printing them whole.
+The location of a temporary directory or file depends on the system and is different in every run. When the output of a script must be repeatable, print a path below a temporary directory with `relative_to`.
 
-## Archives
+## Packing and unpacking zip and tar archives
 
-`zip(src, dst)` and `tar(src, dst)` pack a file, a directory or a list of paths; `unzip(archive, dst)` and `untar(archive, dst)` unpack into a directory. `tar` compresses with gzip when `dst` ends in `.gz` or `.tgz`, and `untar` detects compression by the content.
+`zip(src, dst)` and `tar(src, dst)` pack a file, a directory or a list of paths. `unzip(archive, dst)` and `untar(archive, dst)` unpack an archive into a directory. `tar` compresses with gzip when `dst` ends in `.gz` or `.tgz`, and `untar` detects compression from the content.
 
-Members are stored with `/` paths relative to the source's parent, so packing the directory `report` gives members `report/...`, and packing `report/summary.txt` on its own gives `summary.txt`:
+Members are stored with `/` paths relative to the parent of the source. Packing the directory `report` gives members named `report/...`, and packing `report/summary.txt` on its own gives a member named `summary.txt`:
 
 ```ok file=archive.ok
 write("one\n", "report/summary.txt")
@@ -271,25 +297,31 @@ print(list_dir("single"), read("single/summary.txt"))
 [path("single/summary.txt")] one
 ```
 
-Extraction refuses members with an absolute path or one that escapes the destination (the "zip slip" attack), never writes through a symlink already in the destination, and does not create symlinks that point outside it, so unpacking a downloaded archive cannot write elsewhere on your disk. Member names must also be portable: a name with `:` or `\`, one ending in a dot or space, or a Windows device name such as `NUL` or `con.txt` is refused on every OS, so an archive unpacks the same everywhere. Extracted files get your usual permissions (the umask applies); an executable member stays executable, but setuid and similar bits are dropped.
+### What unpacking refuses
 
-An archive whose files would hold more than 4 GiB, or that has more than a million members, is refused partway through; pass `max_size:` (in bytes) or `max_entries:` to change a limit, or `null` to lift it:
+Unpacking an archive that you downloaded cannot write outside the destination directory. `unzip` and `untar` refuse a member with an absolute path, and a member whose path leaves the destination (the "zip slip" attack). They never write through a symlink that is already in the destination, and they do not create symlinks that point outside it.
+
+Member names must also be portable, so that an archive unpacks the same on every OS. A name with `:` or `\`, a name that ends in a dot or a space, and a Windows device name such as `NUL` or `con.txt` are refused on every OS.
+
+Extracted files get your usual permissions, because the umask applies. An executable member stays executable, but setuid and similar bits are dropped.
+
+An archive whose files would hold more than 4 GiB, or that has more than a million members, is refused partway through unpacking. To change a limit, pass `max_size:` (in bytes) or `max_entries:`. Pass `null` for no limit:
 
 ```ok
 unzip("out/report.zip", "big", max_size: 20_000_000_000)
 ```
 
-For gzip-compressed data files, such as `events.jsonl.gz`, you do not need archives at all: see [Compressed files](data.md#compressed-files).
+A single data file compressed with gzip, such as `events.jsonl.gz`, is not an archive. `read` and `write` handle it directly, as [Compressed files](data.md#compressed-files) describes.
 
-## Portability rules
+## What is the same on every OS
 
-ok keeps file work identical across operating systems:
+These rules make file work give the same result on Linux, macOS and Windows:
 
 - Paths print with `/`, and `glob` and `list_dir` sort the same way everywhere.
 - `write` uses `\n` line endings on every OS, and `read` accepts both `\n` and `\r\n`.
 - File names are compared case-sensitively, also on macOS and Windows, whose file systems usually are not. A glob for `*.TXT` does not find `notes.txt` on any OS.
-- File names are text. A name that is not valid UTF-8, which Linux allows, is an error in `list_dir`, and in `glob` when the pattern selects it, rather than being turned into the name of some other file.
+- File names are text. A name that is not valid UTF-8, which Linux allows, is an error in `list_dir`, and in `glob` when the pattern selects it. ok does not replace the invalid bytes, because the result would be the name of a different file.
 - Where an OS lacks a feature, the behaviour is defined: `chmod` succeeds and does nothing on Windows, and `stat().mode` is `null` there.
 - Nothing depends on a Unix shell or on tools such as `cp`, `find` or `tar` being installed.
 
-If you need a native path for a program that is not ok, `str(p)` gives the `/` form, and passing the path value itself to `run` converts it to the native form. See [Running commands](commands.md) and [section 19](../SPEC.md#19-portability-rules) of the spec.
+To give a path to another program, pass the path value itself to `run`, which converts it to the native form. `str(p)` gives the `/` form. See [Running commands](commands.md) and [section 19](../SPEC.md#19-portability-rules) of the spec.

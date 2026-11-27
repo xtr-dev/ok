@@ -1,24 +1,10 @@
 # Command-line scripts
 
-Give a script a command line by declaring `fn main(...)`: parameters become arguments and flags, with types, defaults, short flags and `--help`.
-
-## Arguments without main
-
-A script without a `main` function gets its command-line arguments as the list `args`, exactly as they were given:
-
-```ok file=echo-args.ok
-print(args, len(args))
-```
-
-```output run="ok echo-args.ok one 'two words' --three"
-["one", "two words", "--three"] 3
-```
-
-That is fine for a quick script. As soon as a script takes a flag or two, though, you end up parsing `args` by hand, checking types and writing a usage message. `main` does all of that for you.
+Declare `fn main(...)` to give a script a command line. Its parameters become positional arguments and flags, with types, defaults, short flags and a `--help` text.
 
 ## Declaring main
 
-When a script has a `fn main`, ok reads its parameters and builds the command line from them. The arguments are checked against the signature before any of your code runs, and then `main` is called with them:
+When a script has a `fn main`, ok builds the command line from its parameters. ok checks the arguments against the signature before any of your code runs, and then calls `main` with them. This script takes a name, a number and a switch:
 
 ```ok file=greet.ok
 # Greet someone, possibly loudly.
@@ -38,18 +24,20 @@ fn main(
 Hello, Ada!
 ```
 
+The flags are optional, and they can follow the name:
+
 ```output run="ok greet.ok Ada --times 2 --shout"
 HELLO, ADA!
 HELLO, ADA!
 ```
 
-The signature is the whole interface. There is nothing to keep in sync: the names, types, defaults and help text in one place are what the user sees, and what your code receives.
+The signature is the only description of the command line. The user sees its names, types, defaults and comments in `--help`, and your code receives the checked values. The sections below describe each part of the signature.
 
-Code at the top level of the script still runs first, before `main`. `main` does not need any parameters: a script with `fn main()` and no arguments simply runs it.
+Code at the top level of the script runs first, and `main` runs after it. `main` may have no parameters. A script with `fn main()` accepts no arguments.
 
 ## Positional parameters
 
-Parameters without `--` are positional, in the order you declare them:
+A parameter without `--` is positional. Positional arguments are given in the order of the parameters.
 
 - A parameter without a default is required. Leaving it out is an error.
 - A parameter with a default is optional.
@@ -71,16 +59,16 @@ target=build mode=slow files=["a.txt", "b.txt"]
 
 ## Flags
 
-Parameters that start with `--` are flags. They are given by name, in any order, before or after the positional arguments.
+A parameter that starts with `--` is a flag. Flags are given by name, in any order, before or after the positional arguments.
 
 - A flag with a value is written `--name value` or `--name=value`.
 - A `bool` flag is a switch: `--verbose` makes it `true`, and leaving it out makes it `false`.
-- A `bool` flag whose default is `true` is turned off with `--no-name`; its help lists it as `--[no-]name`.
-- A `list[T]` flag is repeated: `--tag a --tag b` gives `["a", "b"]`. Not giving it at all gives `[]`.
+- A `bool` flag whose default is `true` is turned off with `--no-name`. Its help lists it as `--[no-]name`.
+- A `list[T]` flag is repeated: `--tag a --tag b` gives `["a", "b"]`. Leaving it out gives `[]`.
 - An optional flag, `--label: string?`, is `null` when it is not given.
-- A flag without a default and not optional, such as `--token: string`, is required.
+- A flag that has no default and is not optional, such as `--token: string`, is required.
 
-Inside the function, a dash in a flag name becomes an underscore: `--dry-run` is the variable `dry_run`.
+Inside the function, a dash in a flag name becomes an underscore, so `--dry-run` is the variable `dry_run`. This script declares one flag of each kind except a required one:
 
 ```ok file=build.ok
 fn main(
@@ -98,13 +86,13 @@ fn main(
 release ["a", "b"] null true false
 ```
 
-`--` ends the flags: everything after it is a positional argument, even if it starts with a dash. That is how you pass a value like `-x`, or a file actually named `--help`.
+`--` ends the flags. Everything after it is a positional argument, also when it starts with a dash. Use `--` to pass a value such as `-x`, or a file that is named `--help`.
 
-ok's own options, such as `--trace` and `--dry-run`, go before the script name. Everything after the name belongs to the script, so a script can declare a `--dry-run` flag of its own. If you put one of ok's options after the name by mistake, and the script does not declare it, the error tells you where it goes.
+ok's own options, such as `--trace` and `--dry-run`, go before the script name. Everything after the name belongs to the script, so a script can declare a `--dry-run` flag of its own. If you put one of ok's options after the name and the script does not declare it, the error says where the option goes.
 
-## Types
+## Parameter types
 
-A parameter's type says how its text is turned into a value. The value is checked before the script runs, so `main` never sees a malformed number.
+The type of a parameter says how ok turns the text of an argument into a value. ok checks the text before the script runs, so `main` never receives a malformed number.
 
 | Type | Accepts |
 |---|---|
@@ -127,6 +115,8 @@ fn main(host: string, --port: int = 80, --timeout: duration = 30s) {
 ```output run="ok wait.ok db.internal --port 5432 --timeout 2m"
 waiting up to 2m for db.internal:5432
 ```
+
+A value of the wrong type is an error:
 
 ```output run="ok wait.ok db.internal --port fivefourthreetwo" exit=2
 error: --port expects an integer, got "fivefourthreetwo"
@@ -152,6 +142,8 @@ fn main(
 deploying to production as admin
 ```
 
+A value that is not among the choices is an error:
+
 ```output run="ok deploy.ok prod" exit=2
 error: <env> expects one of "staging", "production", got "prod"
   = help: did you mean "production"?
@@ -159,7 +151,7 @@ usage: ok deploy.ok <env> [--role <admin|user>]
 run with --help for details
 ```
 
-A choice type is a checked string: inside `main`, `env` is the string `"production"`. A default must be one of the choices, and an optional choice is written with `null` among them, as in `--region: "eu" | "us" | null`. Shell completion offers the choices too (see [Tasks](tasks.md)).
+Inside `main`, a choice is an ordinary string, so `env` is `"production"` here. A default must be one of the choices. For an optional choice, write `null` among the choices, as in `--region: "eu" | "us" | null`. Shell completion offers the choices too, as [Tasks](tasks.md) describes.
 
 ## Short flags
 
@@ -180,7 +172,7 @@ fn main(
 data.csv result.json true true
 ```
 
-Switches combine, so `-vq` is `-v -q`. A short flag that takes a value takes the next argument: `-o result.json`. It does not combine with other letters, and `-oresult.json` is an error that shows the right form:
+Switches combine, so `-vq` is `-v -q`. A short flag that takes a value takes the next argument, as in `-o result.json`. It does not combine with other letters, and `-oresult.json` is an error that shows the right form:
 
 ```output run="ok convert.ok data.csv -oresult.json" exit=2
 error: -o takes a value, given as the next argument
@@ -189,11 +181,11 @@ usage: ok convert.ok <input> [--out <path>] [--verbose] [--quiet]
 run with --help for details
 ```
 
-Short letters are case-sensitive. Some are not allowed: `-h` is always help, and `-C` and `-e` are ok's own options, so they mean the same before and after the script name. A switch whose default is `true` has no short form, because it can only be turned off with `--no-name`. Negative numbers such as `-5` are values, not flags.
+Short letters are case-sensitive. Three letters are reserved: `-h` is always help, and `-C` and `-e` are ok's own options. A switch whose default is `true` has no short form, because it can only be turned off with `--no-name`. A negative number such as `-5` is a value, not a flag.
 
-## Help from doc comments
+## Writing the --help text
 
-`--help` (or `-h`) prints help built from the signature and its comments. The comment block right above `main` is the description, and the comment at the end of a parameter's line is that parameter's help:
+`--help` (or `-h`) prints help that ok builds from the signature and its comments. The comment block right above `main` is the description, and the comment at the end of a parameter's line is the help for that parameter:
 
 ```ok file=backup.ok
 # Back up a directory into a dated archive.
@@ -228,18 +220,19 @@ Options:
   -h, --help              print this help
 ```
 
-A few details to notice:
+In this help text:
 
-- A literal default is shown as its value. Any other default, like the `env.get(...)` call, is shown as its source text, because printing help never runs your code.
-- The usage line always uses the long flag names, which say what they do.
-- A `bool` flag that defaults to `true` is listed as `--[no-]name`: `--compress` keeps the default and `--no-compress` turns it off, and the usage line shows `--no-compress`, the form that changes something. The help text is the comment you wrote for the parameter, so phrase it to describe the setting (here "compress the archive") rather than the act of turning it off.
-- `--help` is only recognised before `--`; `ok backup.ok -- --help` passes `--help` as the source directory.
+- A literal default is shown as its value. Any other default, such as the `env.get(...)` call, is shown as its source text, because printing help never runs your code.
+- The usage line always uses the long flag names.
+- A `bool` flag that defaults to `true` is listed as `--[no-]name`. `--compress` keeps the default and `--no-compress` turns it off. The usage line shows `--no-compress`, the form that changes something. The same comment stands next to both forms, so write it to describe the setting, here "compress the archive".
 
-A script without `main` gets help too: the first comment block of the file (after a `#!` line) is its description, and the usage line is `ok script.ok [ARGS...]`.
+`--help` is only recognised before `--`. `ok backup.ok -- --help` passes `--help` as the source directory.
+
+A script without `main` gets help too. The first comment block of the file, after a `#!` line if there is one, is its description, and the usage line is `ok script.ok [ARGS...]`.
 
 ## Argument errors and exit codes
 
-A missing, unknown or malformed argument prints one error line, a hint when there is one, and the usage line, all to stderr, and exits with code 2 without running any of the script:
+For a missing, unknown or malformed argument, ok prints one error line, a hint when there is one, and the usage line, all to stderr. It exits with code 2 without running any of the script:
 
 ```ok file=greet.ok
 print("this line never runs")
@@ -256,7 +249,23 @@ usage: ok greet.ok <name> [--shout]
 run with --help for details
 ```
 
-Exit code 2 is the usual signal for "you called it wrong", which lets a caller tell it apart from code 1, an error inside the script. Once the arguments are accepted, the script's exit code follows the rules on the [Errors](errors.md#exit-codes) page: 0 when `main` returns, 1 for an uncaught error, a failed command's own code, or whatever you pass to `exit()`. The value `main` returns is ignored.
+By convention, exit code 2 means that a program was called with wrong arguments. A caller can tell it apart from code 1, which is an error inside the script.
+
+Once the arguments are accepted, the exit code of the script follows the rules on the [Errors](errors.md#exit-codes) page. It is 0 when `main` returns, 1 for an uncaught error, the code of a failed command, or the code that you pass to `exit()`. The value that `main` returns is ignored.
+
+## Reading the arguments without main
+
+A script without a `main` function gets its command-line arguments as the list of strings `args`, exactly as they were given:
+
+```ok file=echo-args.ok
+print(args, len(args))
+```
+
+```output run="ok echo-args.ok one 'two words' --three"
+["one", "two words", "--three"] 3
+```
+
+`args` is enough for a short script that takes a file name or two. For a script with flags, declare `main`. Otherwise you have to parse `args`, check the types and write a usage message yourself.
 
 ## Making a script executable
 
@@ -276,10 +285,10 @@ $ ./hello Ada
 hello, Ada
 ```
 
-ok treats the `#!` line as a comment. Windows ignores it, so there you run the file as `ok ./hello`. Note the `./`: `ok hello` would look for a task named `hello`, because ok treats a name as a script only when it ends in `.ok` or contains a path separator.
+ok treats the `#!` line as a comment. Windows ignores it, so there you run the file as `ok ./hello`. The `./` is required. `ok hello` looks for a task named `hello`, because ok treats a name as a script only when it ends in `.ok` or contains a path separator.
 
 ## Where to go next
 
 - [Tasks](tasks.md) uses the same signatures for project tasks, so `ok deploy production --role admin` works the same way.
-- [Running commands](commands.md) covers what most scripts do next: start programs.
-- The spec has the fine print on [the script command line](../SPEC.md#14-script-cli-main).
+- [Running commands](commands.md) explains how a script starts programs.
+- The spec defines [the script command line](../SPEC.md#14-script-cli-main) exactly.
