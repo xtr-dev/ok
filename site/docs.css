@@ -57,7 +57,7 @@ aside { position: sticky; top: 16px; align-self: start; max-height: calc(100vh -
 .nav-section { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 18px 0 6px; }
 .nav-section:first-child { margin-top: 4px; }
 aside ul { list-style: none; margin: 0; padding: 0; }
-aside li a { display: block; color: var(--text); text-decoration: none; padding: 3px 10px; border-radius: 6px; margin-left: -10px; }
+aside li a { display: block; color: var(--text); text-decoration: none; padding: 3px 10px; border-radius: 6px; }
 aside li a:hover { background: var(--code-bg); }
 aside li a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 @media (max-width: 860px) {
