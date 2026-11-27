@@ -1,26 +1,28 @@
 # Contributing
 
-Thanks for helping with ok. This file covers the practical parts; the
-maintainer handbook with all conventions is [`CLAUDE.md`](CLAUDE.md).
+This file covers building, testing and committing. The maintainer handbook
+with all conventions is [`CLAUDE.md`](CLAUDE.md).
 
 ## Ground rules
 
-- **Spec first.** Behaviour is defined by [`SPEC.md`](SPEC.md). A change in
-  behaviour changes `SPEC.md` in the same commit or the one before.
-- **Decisions are logged.** A design choice the spec did not settle gets a
-  dated paragraph in [`DECISIONS.md`](DECISIONS.md).
-- **No scope creep.** Ideas outside the current milestone go into
-  [`IDEAS.md`](IDEAS.md).
-- **Portability.** Nothing may depend on a Unix shell or coreutils. If
-  something cannot work on Windows, design it differently.
-- **Dependencies** must be permissively licensed; `cargo deny check` enforces
-  this. No `unsafe` without a logged reason.
+- Behaviour is defined by [`SPEC.md`](SPEC.md). A change in behaviour
+  changes `SPEC.md` in the same commit or the one before.
+- A design choice that the spec did not settle gets a dated paragraph in
+  [`DECISIONS.md`](DECISIONS.md).
+- Ideas outside the current milestone go into [`IDEAS.md`](IDEAS.md), not
+  into the code.
+- Nothing may depend on a Unix shell or coreutils. If something cannot work
+  on Windows, design it differently.
+- Dependencies must be permissively licensed, and `cargo deny check`
+  enforces this.
+- No `unsafe` without a reason logged in `DECISIONS.md`.
 
 ## Building and testing
 
-The toolchain is pinned in `rust-toolchain.toml`.
+The toolchain is pinned in `rust-toolchain.toml`. The repository's own tasks
+are in `ok.ok`, so each check runs with `ok` or with cargo:
 
-| What | With ok (from M5) | With cargo |
+| What | With ok | With cargo |
 |---|---|---|
 | build | `ok build` | `cargo build --workspace` |
 | test | `ok test` | `cargo test --workspace` |
@@ -29,21 +31,22 @@ The toolchain is pinned in `rust-toolchain.toml`.
 | licences | `ok deny` | `cargo deny check` |
 | notices | `ok third-party` | `cargo about generate -m crates/okrun/Cargo.toml about.hbs > THIRD_PARTY.md` |
 
-CI (format, clippy and tests on Linux, macOS and Windows, cargo-deny, a
-`THIRD_PARTY.md` check and fuzzing) is currently switched off and runs only
-when started by hand from the Actions tab. Run the checks listed in
-`CLAUDE.md` locally before committing.
+CI runs on every push to `main` and on every pull request: the format
+check, clippy and the tests on Linux, macOS and Windows, cargo-deny, a
+check that `THIRD_PARTY.md` is current, a WebAssembly build and a short
+fuzzing run. Run the checks listed under "Local checks" in `CLAUDE.md`
+before you commit.
 
 ## Golden tests
 
-From M1, most tests are golden tests in `tests/cases/`: `name.ok` with the
-expected `name.stdout`, and optionally `name.stderr` and `name.exit`. One
-command regenerates the expectations; review every regenerated diff before
-committing it.
+Most tests are golden tests in `tests/cases/`: `name.ok` with the expected
+`name.stdout`, and optionally `name.stderr` and `name.exit`. `ok bless` (or
+`OK_BLESS=1 cargo test --test golden`) regenerates the expectations. Review
+every regenerated diff before you commit it.
 
 ## Commits
 
-[Conventional Commits](https://www.conventionalcommits.org/): `feat:`,
+Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`,
 `fix:`, `docs:`, `test:`, `refactor:`, `chore:`, `ci:`. Keep commits small.
 Never rewrite pushed history. Add user-visible changes to `CHANGELOG.md`
 under `Unreleased`.

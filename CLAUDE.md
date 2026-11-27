@@ -8,8 +8,9 @@ how the repo is run. The language itself is defined in `SPEC.md`.
 
 `ok`: a portable scripting language and task runner, one static Rust binary.
 The project owners (the `xtr-dev` maintainers) decide what the language is;
-the maintainer working on the code decides how the repo and code are built. The original brief was `PROMPT.md`;
-it was removed before the first public release (it is in the git history).
+the maintainer working on the code decides how the repo and code are built.
+The original brief was `PROMPT.md`; it was removed before the first public
+release (it is in the git history).
 Its rules are kept below, and the language it described is now `SPEC.md`.
 
 ## Current state
@@ -26,8 +27,9 @@ Its rules are kept below, and the language it described is now `SPEC.md`.
 
 ## Commands
 
-Toolchain pinned in `rust-toolchain.toml` (1.100.0). Until M5, use cargo
-directly; from M5, `ok <task>` via the repo's `ok.ok`.
+The toolchain is pinned in `rust-toolchain.toml` (1.100.0). Use cargo
+directly, or run the tasks of the repo's `ok.ok` with `ok <task>` (`ok` with
+no arguments lists them).
 
 ```
 cargo build --workspace
@@ -59,8 +61,8 @@ cargo about generate -m crates/okrun/Cargo.toml about.hbs > THIRD_PARTY.md && gi
 and at the end of a milestone, and before every release, `ok fuzz` (30
 minutes per target by default; CI only runs 45 seconds per target).
 Crashes are saved in `fuzz/artifacts/TARGET/`; turn each into a
-regression test before fixing it. Local checks cover only the machine they run on;
-CI is what covers macOS and Windows, so check its result after pushing.
+regression test before fixing it. Local checks cover only the machine they
+run on. CI covers macOS and Windows, so check its result after pushing.
 
 ## Security upkeep
 
@@ -69,7 +71,8 @@ in by decision (DECISIONS.md, after v0.1.0), so their security is ours to
 keep: run `cargo deny check` (advisories) at the start of every session
 and before every release, update a crate with an advisory promptly, and
 ship a patch release. Keep the zip-slip and symlink tests in `archive.rs`
-passing and extend them when extraction code changes.
+passing (and those in `tests/archives.rs`), and extend them when extraction
+code changes.
 
 ## Layout
 
@@ -116,7 +119,7 @@ DECISIONS.md            dated design decisions
 IDEAS.md                out-of-scope ideas
 THIRD_PARTY.md          generated licence notices (cargo-about); shipped with binaries
 deny.toml, about.toml, about.hbs   licence tooling
-.github/workflows/      ci.yml (fmt, clippy, test x3 OS, wasm, deny, notices, fuzz), release.yml (6 targets, draft release), pages.yml (site)
+.github/workflows/      ci.yml (fmt, clippy, test x3 OS, wasm, deny, notices, fuzz), release.yml (6 targets, draft release), pages.yml (site), security.yml (daily cargo-deny advisories)
 ```
 
 Modules in `crates/okrun/src/`:
@@ -136,12 +139,6 @@ Modules in `crates/okrun/src/`:
 | `lazy.rs` | lazy values: `Source` trait, `force`, `cursor`, `adapt`, line sources |
 | `list.rs` | list and record functions; `named`/`count_args` helpers |
 | `formats.rs` | `read`/`write`/`parse`/`to`/`stdin` and every format converter |
-
-Laziness rule: `Interp::eval` always materialises; only `eval_lazy` (pipeline
-inputs, call arguments, `for` iterables) may return `Value::Lazy`, and
-`call_value` forces arguments unless the builtin is `streaming`. A new
-builtin that should stream must be declared with `streaming(...)` and pull
-from `lazy::cursor`.
 | `command.rs` | `run`: modes (live/captured/piped), program lookup, pipes, redirects, options |
 | `procs.rs` | process groups / job objects for `timeout`, the timeout watchdog, interrupt handling (Ctrl-C passes SIGTERM on, removes temporary files) |
 | `files.rs` | file and path functions, `glob` |
@@ -158,6 +155,12 @@ from `lazy::cursor`.
 | `tools.rs` | `ok self check`, `fmt`, `init`, `promote` and the bootstrap wrapper templates |
 | `cli.rs` | `ok` command line |
 
+Laziness rule: `Interp::eval` always materialises; only `eval_lazy` (pipeline
+inputs, call arguments, `for` iterables) may return `Value::Lazy`, and
+`call_value` forces arguments unless the builtin is `streaming`. A new
+builtin that should stream must be declared with `streaming(...)` and pull
+from `lazy::cursor`.
+
 Tests: unit tests next to the code; `tests/golden.rs` (cases in
 `tests/cases/`, libraries for import tests in `tests/cases/lib/`, data
 fixtures in `tests/cases/data/` (kept byte-exact by `.gitattributes`), and
@@ -171,6 +174,8 @@ wrappers, `ok self promote`), `tests/bootstrap.rs` (`ok self init
 `tests/no_panic.rs` (lexing, parsing and sandboxed evaluation of mutated
 programs), `tests/processes.rs` (timeouts, process trees,
 interrupts and pipeline failures, which depend on timing),
+`tests/archives.rs` (crafted zip and tar files must unpack inside the
+destination), `tests/fetch.rs` (`fetch` against HTTP servers on 127.0.0.1),
 `tests/format_repo.rs` (formatting every `.ok` file of
 the repository keeps its syntax tree and comments and is idempotent, also
 at narrow widths) and `tests/check_repo.rs` (`ok self check` finds nothing

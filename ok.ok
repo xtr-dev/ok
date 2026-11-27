@@ -1,7 +1,7 @@
 # Build and admin tasks for the ok repository itself.
 #
-# Runnable with `ok` from milestone M5 on. Until then, use the cargo command
-# shown in each task's comment (CLAUDE.md lists them too).
+# Run `ok` here to list them. Each task's comment shows the cargo command it
+# runs (CLAUDE.md lists them too).
 
 requires "0.1"
 
@@ -21,7 +21,7 @@ task bless {
   run git diff --stat -- tests/cases
 }
 
-# Fuzz every target for a while on this machine (CI only runs a minute per push).
+# Fuzz every target for a while on this machine (CI only runs 45 seconds per target).
 # Each target runs in --forks processes; inputs are kept in fuzz/corpus/ between
 # runs, and crashes land in fuzz/artifacts/TARGET/ with a stop.
 task fuzz(--minutes: int = 30, --forks: int = 4, --target: string? = null) {
