@@ -19,9 +19,9 @@ Usage:
   ok [OPTIONS] SCRIPT [ARGS...]   run a script (a path ending in .ok, or containing /)
   ok [OPTIONS] -e SOURCE          evaluate SOURCE and print the result
   ok [OPTIONS]                    list the tasks of the project
-  ok [OPTIONS] TASK [ARGS...]     run a project task (ok NAMESPACE TASK for ok/NAMESPACE.ok)
+  ok [OPTIONS] TASK [ARGS...]     run a project task (ok NAMESPACE TASK for .ok/NAMESPACE.ok)
   ok trust | untrust [DIR]        manage which projects may run tasks
-  ok self COMMAND                 init, completions, fmt, check, tasks, version
+  ok self COMMAND                 init, promote, completions, fmt, check, tasks, version
 
 Options (before the script or task name):
   -C DIR          discover the project from DIR
@@ -43,7 +43,8 @@ const SELF_USAGE: &str = "\
 ok self: ok's built-in tools
 
 Usage:
-  ok self init [--checksums FILE]      write a starter ok.ok and the ./ok wrappers
+  ok self init [--wrappers]            write a starter .ok/ok.ok (and the ./ok wrappers)
+  ok self promote                      move a .ok file to .ok/ok.ok and ok/ to .ok/
   ok self completions SHELL            print a completion script: bash, zsh, fish or powershell
   ok self complete -- WORDS...         print completion candidates (for completion scripts)
   ok self fmt [--check] [FILES...]     format files in the canonical layout
@@ -213,8 +214,10 @@ fn run(args: Vec<String>) -> i32 {
     }
     if let Some(spec) = &opts.worker {
         let Some(root) = crate::project::discover(&start) else {
-            return usage_error("no ok.ok found for the task worker", None);
+            return usage_error("no project found for the task worker", None);
         };
+        // The parent ok already warned about anything deprecated.
+        crate::project::quiet_deprecations();
         let mut interp = new_interp(Vec::new(), &opts);
         let task_opts = task_opts(&opts, color);
         let result = interp
@@ -271,8 +274,9 @@ fn run(args: Vec<String>) -> i32 {
     let Some(root) = crate::project::discover(&start) else {
         return usage_error(
             &format!(
-                "no ok.ok found in {} or its parents, so `{name}` is not a task",
-                crate::path::OkPath::from_native(&start).display()
+                "no project found in {} or its parents ({}), so `{name}` is not a task",
+                crate::path::OkPath::from_native(&start).display(),
+                crate::project::ROOT_FORMS
             ),
             Some(format!(
                 "to run a script, give its path: ok ./{name} or ok {name}.ok; to start a project, run ok self init"
@@ -334,7 +338,13 @@ fn self_command(args: &[String], opts: &Opts, start: &Path, color: Color) -> i32
                     Value::Null
                 }),
                 None => {
-                    return usage_error("no ok.ok found in this directory or its parents", None);
+                    return usage_error(
+                        &format!(
+                            "no project found in this directory or its parents ({})",
+                            crate::project::ROOT_FORMS
+                        ),
+                        None,
+                    );
                 }
             }
         }
@@ -356,6 +366,8 @@ fn self_command(args: &[String], opts: &Opts, start: &Path, color: Color) -> i32
         },
         Some("complete") => {
             let words: Vec<String> = rest.iter().skip_while(|w| *w == "--").cloned().collect();
+            // Completion scripts show stderr in the user's prompt.
+            crate::project::quiet_deprecations();
             let candidates = match crate::project::discover(start)
                 .and_then(|root| interp.load_project(&root).ok())
             {
@@ -377,14 +389,23 @@ fn self_command(args: &[String], opts: &Opts, start: &Path, color: Color) -> i32
         Some("check") => crate::tools::check(&mut interp, rest, start),
         Some("fmt") => crate::tools::fmt(&mut interp, rest, start),
         Some("init") => crate::tools::init(rest, start),
+        Some("promote") => crate::tools::promote(rest, start),
         Some(other) => {
-            let names = ["init", "completions", "fmt", "check", "tasks", "version"];
+            let names = [
+                "init",
+                "promote",
+                "completions",
+                "fmt",
+                "check",
+                "tasks",
+                "version",
+            ];
             let help = suggest(other, names).map(|s| format!("did you mean `ok self {s}`?"));
             return usage_error(&format!("unknown command `ok self {other}`"), help);
         }
         None => {
             return usage_error(
-                "`ok self` needs a command: init, completions, fmt, check, tasks or version",
+                "`ok self` needs a command: init, promote, completions, fmt, check, tasks or version",
                 None,
             );
         }

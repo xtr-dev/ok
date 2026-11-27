@@ -1,7 +1,8 @@
-//! `ok self fmt` over every `.ok` file in the repository: formatting must
-//! keep the syntax tree (positions aside) and the comments, and formatting
-//! the result again must change nothing. Files with deliberate syntax errors
-//! (some golden cases) are skipped, since the formatter refuses them.
+//! `ok self fmt` over every ok file (`*.ok`, or named `.ok`) in the
+//! repository: formatting must keep the syntax tree (positions aside) and
+//! the comments, and formatting the result again must change nothing.
+//! Files with deliberate syntax errors (some golden cases) are skipped,
+//! since the formatter refuses them.
 
 use std::path::{Path, PathBuf};
 
@@ -13,7 +14,9 @@ fn ok_files(dir: &Path, out: &mut Vec<PathBuf>) {
                 continue;
             }
             ok_files(&path, out);
-        } else if path.extension().is_some_and(|e| e == "ok") {
+        } else if path.extension().is_some_and(|e| e == "ok")
+            || path.file_name().is_some_and(|n| n == ".ok")
+        {
             out.push(path);
         }
     }

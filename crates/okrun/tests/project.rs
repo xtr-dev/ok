@@ -159,10 +159,10 @@ fn listing_hides_hidden_tasks_and_shows_descriptions() {
         &[
             ("ok.ok", BASIC),
             (
-                "ok/db.ok",
+                ".ok/db.ok",
                 "# Apply migrations\ntask migrate { print(\"migrate\") }\n",
             ),
-            ("ok/_lib.ok", "fn helper() { 1 }\n"),
+            (".ok/_lib.ok", "fn helper() { 1 }\n"),
         ],
     );
     let l = out(&p.run(&[]));
@@ -289,7 +289,7 @@ fn imports_of_imports_cannot_leave_the_project() {
         &[
             ("ok.ok", "import \"lib/a.ok\"\ntask a { print(1) }\n"),
             ("lib/a.ok", "import \"../../outside.ok\"\nfn g() { 2 }\n"),
-            ("ok/_helper.ok", "import \"../../outside.ok\"\n"),
+            (".ok/_helper.ok", "import \"../../outside.ok\"\n"),
         ],
     );
     std::fs::write(p.dir.parent().unwrap().join("outside.ok"), "fn f() { 1 }\n").unwrap();
@@ -297,7 +297,7 @@ fn imports_of_imports_cannot_leave_the_project() {
     let o = p.run_trusted(&["self", "check"]);
     // The snippet shows the importing file, which no task had loaded.
     assert!(
-        err(&o).contains(" --> lib/a.ok:1:8\n") || err(&o).contains(" --> ok/_helper.ok:1:8\n"),
+        err(&o).contains(" --> lib/a.ok:1:8\n") || err(&o).contains(" --> .ok/_helper.ok:1:8\n"),
         "{}",
         err(&o)
     );
@@ -309,14 +309,14 @@ fn symlinks_that_escape_the_project_are_refused() {
     let p = Proj::new("symlink", &[("ok.ok", "task a { print(1) }\n")]);
     let outside = p.dir.parent().unwrap().join("evil.ok");
     std::fs::write(&outside, "task boom { print(\"boom\") }\n").unwrap();
-    std::fs::create_dir_all(p.dir.join("ok")).unwrap();
-    std::os::unix::fs::symlink(&outside, p.dir.join("ok/evil.ok")).unwrap();
+    std::fs::create_dir_all(p.dir.join(".ok")).unwrap();
+    std::os::unix::fs::symlink(&outside, p.dir.join(".ok/evil.ok")).unwrap();
     assert_refused_everywhere(
         &p,
-        "error[trust]: ok/evil.ok is a link to a file outside the project",
+        "error[trust]: .ok/evil.ok is a link to a file outside the project",
     );
     // A symlinked import is refused the same way.
-    std::fs::remove_file(p.dir.join("ok/evil.ok")).unwrap();
+    std::fs::remove_file(p.dir.join(".ok/evil.ok")).unwrap();
     std::os::unix::fs::symlink(&outside, p.dir.join("lib.ok")).unwrap();
     p.write("ok.ok", "import \"lib.ok\"\ntask a { print(1) }\n");
     assert_refused_everywhere(&p, "error[trust]: \"lib.ok\" is outside the project");
@@ -455,7 +455,7 @@ fn mounted_sub_projects_run_in_their_directory() {
 fn unknown_tasks_and_namespaces_exit_with_2() {
     let p = Proj::new(
         "unknown",
-        &[("ok.ok", BASIC), ("ok/db.ok", "task migrate { }\n")],
+        &[("ok.ok", BASIC), (".ok/db.ok", "task migrate { }\n")],
     );
     let o = p.run(&["buidl"]);
     assert_eq!(o.status.code(), Some(2));
@@ -472,7 +472,7 @@ fn unknown_tasks_and_namespaces_exit_with_2() {
 fn completions_list_tasks_namespaces_and_flags() {
     let p = Proj::new(
         "complete",
-        &[("ok.ok", BASIC), ("ok/db.ok", "task migrate { }\n")],
+        &[("ok.ok", BASIC), (".ok/db.ok", "task migrate { }\n")],
     );
     assert_eq!(out(&p.run(&["self", "complete", "--", "b"])), "build\n");
     assert_eq!(
@@ -498,7 +498,7 @@ fn completions_offer_choices() {
                 "task deploy(env: \"staging\" | \"production\", --role: \"admin\" | \"user\" = \"user\", --note: string?, --force: bool) { }\n",
             ),
             (
-                "ok/db.ok",
+                ".ok/db.ok",
                 "task seed(--size: \"small\" | \"large\" = \"small\") { }\n",
             ),
         ],
@@ -630,11 +630,11 @@ fn check_finds_problems_in_every_project_file() {
         &[
             (
                 "ok.ok",
-                "import \"ok/_lib.ok\"\n\ntask build(--release: bool) {\n  print(relase, helper(1))\n}\n",
+                "import \".ok/_lib.ok\"\n\ntask build(--release: bool) {\n  print(relase, helper(1))\n}\n",
             ),
-            ("ok/_lib.ok", "fn helper() { 1 }\n"),
+            (".ok/_lib.ok", "fn helper() { 1 }\n"),
             (
-                "ok/db.ok",
+                ".ok/db.ok",
                 "task seed sources [glob(\"*.sql\", root: \"db\", recursive: true)] {\n  print(\"seeding\")\n}\n",
             ),
         ],
@@ -650,8 +650,8 @@ fn check_finds_problems_in_every_project_file() {
         e.contains("`helper` takes 0 positional arguments, got 1"),
         "{e}"
     );
-    assert!(e.contains("is declared at ok/_lib.ok:1:4"), "{e}");
-    assert!(e.contains("ok/db.ok:1:"), "{e}");
+    assert!(e.contains("is declared at .ok/_lib.ok:1:4"), "{e}");
+    assert!(e.contains(".ok/db.ok:1:"), "{e}");
     assert!(e.contains("`glob` has no parameter `recursive`"), "{e}");
     assert!(e.contains("3 files and 2 tasks checked: 3 errors"), "{e}");
     // An unknown dependency is a load error, reported before anything else.
@@ -1137,4 +1137,490 @@ fn trusting_projects_at_the_same_time_keeps_every_entry() {
         let name = format!("ok-proj-concurrent{i}-");
         assert!(list.contains(&name), "{name} missing from\n{list}");
     }
+}
+
+/// The fingerprint of SPEC.md 16.2 for `files` (path, content), computed
+/// independently of ok, so a test pins which paths trust covers.
+fn fingerprint(files: &[(&str, &str)]) -> String {
+    use sha2::Digest;
+    let mut sorted = files.to_vec();
+    sorted.sort();
+    let mut h = sha2::Sha256::new();
+    for (rel, content) in sorted {
+        h.update(rel.as_bytes());
+        h.update([0]);
+        h.update(content.len().to_string().as_bytes());
+        h.update([0]);
+        h.update(content.as_bytes());
+    }
+    hex::encode(h.finalize())
+}
+
+const HELLO: &str = "task hello { print(\"hello\") }\n";
+const MIGRATE: &str = "task migrate { print(\"migrate\") }\n";
+
+#[test]
+fn every_root_file_form_is_a_project_and_is_fingerprinted() {
+    let forms: [&[(&str, &str)]; 4] = [
+        &[("ok.ok", HELLO)],
+        &[(".ok", HELLO)],
+        &[(".ok/ok.ok", HELLO), (".ok/db.ok", MIGRATE)],
+        &[("ok.ok", HELLO), (".ok/db.ok", MIGRATE)],
+    ];
+    for (i, files) in forms.into_iter().enumerate() {
+        let p = Proj::new(&format!("form{i}"), files);
+        std::fs::create_dir_all(p.dir.join("sub")).unwrap();
+        // Discovery finds the root from a subdirectory too.
+        let o = p
+            .cmd(&["-C", "sub", "hello"])
+            .env("OK_TRUST", "1")
+            .output()
+            .unwrap();
+        assert_eq!(out(&o), "hello\n", "{files:?}: {}", err(&o));
+        assert_eq!(err(&o), "", "{files:?}");
+        if files.len() > 1 {
+            assert_eq!(out(&p.run_trusted(&["db", "migrate"])), "migrate\n");
+        }
+        // Trust covers exactly these files, under their paths from the
+        // root: a project that keeps `ok.ok` keeps its fingerprint.
+        let t = p.run(&["trust"]);
+        let mut names: Vec<&str> = files.iter().map(|(n, _)| *n).collect();
+        names.sort();
+        assert!(
+            out(&t).contains(&format!("  files:  {}\n", names.join(", "))),
+            "{}",
+            out(&t)
+        );
+        assert!(
+            out(&t).contains(&format!("sha256: {}\n", fingerprint(files))),
+            "{}",
+            out(&t)
+        );
+        assert_eq!(out(&p.run(&["hello"])), "hello\n");
+        // A change to any of them needs trust again.
+        let (last, body) = files[files.len() - 1];
+        p.write(last, &format!("{body}\n# changed\n"));
+        let o = p.run(&["hello"]);
+        assert_eq!(o.status.code(), Some(1), "{files:?}");
+        assert!(err(&o).contains(&format!("changed: {last}")), "{}", err(&o));
+    }
+}
+
+#[test]
+fn helpers_in_the_dot_ok_directory_are_fingerprinted() {
+    let p = Proj::new(
+        "dot-helpers",
+        &[
+            (
+                ".ok/ok.ok",
+                "import \"_lib.ok\"\ntask hello { print(greeting()) }\n",
+            ),
+            (".ok/_lib.ok", "fn greeting() { \"hi\" }\n"),
+            (".ok/_unused.ok", "fn unused() { 1 }\n"),
+            (".ok/tools/gen.ok", "fn gen() { 2 }\n"),
+        ],
+    );
+    let t = out(&p.run(&["trust"]));
+    assert!(
+        t.contains("files:  .ok/_lib.ok, .ok/_unused.ok, .ok/ok.ok\n"),
+        "{t}"
+    );
+    assert_eq!(out(&p.run(&["hello"])), "hi\n");
+    p.write(".ok/_lib.ok", "fn greeting() { \"changed\" }\n");
+    assert_eq!(p.run(&["hello"]).status.code(), Some(1));
+    // A file in a subdirectory of .ok/ is no namespace, and joins the
+    // project files once something imports it.
+    let l = out(&p.run(&[]));
+    assert!(!l.contains("tools") && !l.contains("gen"), "{l}");
+    p.write(
+        ".ok/ok.ok",
+        "import \"_lib.ok\"\nimport \"tools/gen.ok\"\ntask hello { print(greeting(), gen()) }\n",
+    );
+    let t = out(&p.run(&["trust"]));
+    assert!(t.contains(".ok/ok.ok, .ok/tools/gen.ok\n"), "{t}");
+}
+
+#[test]
+fn two_root_files_are_an_error() {
+    for (i, other) in [".ok", ".ok/ok.ok"].into_iter().enumerate() {
+        let p = Proj::new(
+            &format!("two-roots{i}"),
+            &[("ok.ok", HELLO), (other, HELLO)],
+        );
+        let root = p.dir.canonicalize().unwrap();
+        let root = okrun::path::OkPath::from_native(&root).display();
+        let expected = format!(
+            "error: this project has two root files, ok.ok and {other}\n  = note: the project is at {root}\n  = help: a project has one root file: move the tasks of ok.ok into {other}, or the other way round, and delete the one left empty\n"
+        );
+        for args in [&["hello"][..], &[], &["self", "check"], &["trust"]] {
+            let o = p.run_trusted(args);
+            assert_eq!(o.status.code(), Some(1), "{args:?}");
+            let e = err(&o);
+            let e = e.trim_end_matches("ok: the project failed to load: 1 error\n");
+            assert_eq!(e, expected, "{args:?}");
+            assert_eq!(out(&o), "", "{args:?}");
+        }
+        assert!(!p.store.join("trust.json").exists());
+    }
+}
+
+#[test]
+fn a_dot_ok_directory_without_a_root_file_is_no_project() {
+    let p = Proj::new("dot-dir-only", &[(".ok/db.ok", MIGRATE)]);
+    let o = p.run(&["migrate"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(
+        err(&o).contains("(no ok.ok, .ok or .ok/ok.ok), so `migrate` is not a task"),
+        "{}",
+        err(&o)
+    );
+    // With a root above it, that project is found instead.
+    let p = Proj::new(
+        "dot-dir-nested",
+        &[("ok.ok", HELLO), ("sub/.ok/db.ok", MIGRATE)],
+    );
+    let o = p.cmd(&["-C", "sub"]).output().unwrap();
+    assert!(out(&o).contains("hello"), "{}", out(&o));
+    assert!(!out(&o).contains("migrate"), "{}", out(&o));
+}
+
+#[test]
+fn the_old_ok_directory_still_works_with_a_warning() {
+    let p = Proj::new(
+        "old-dir",
+        &[
+            (
+                "ok.ok",
+                "task all needs [db.migrate, db.seed] { print(\"all\") }\n",
+            ),
+            (
+                "ok/db.ok",
+                "task migrate { print(\"migrate\") }\ntask seed { print(\"seed\") }\n",
+            ),
+            ("ok/_lib.ok", "fn f() { 1 }\n"),
+        ],
+    );
+    let warning = "warning: ok/ is deprecated: namespaces now live in .ok/\n  = help: run `ok self promote` to move them; that also frees the name ok for the ./ok wrapper\n";
+    // Task workers (parallel dependencies) leave the warning to their parent.
+    let o = p.run_trusted(&["-j", "4", "all"]);
+    let stdout = out(&o);
+    let mut lines: Vec<&str> = stdout.lines().collect();
+    lines.sort();
+    assert_eq!(
+        lines,
+        ["all", "db.migrate | migrate", "db.seed    | seed"],
+        "{}",
+        err(&o)
+    );
+    assert_eq!(err(&o), warning, "once per run");
+    let o = p.run(&[]);
+    assert!(out(&o).contains("db\n  migrate"), "{}", out(&o));
+    assert_eq!(err(&o), warning);
+    // Completions keep the prompt clean.
+    let o = p.run(&["self", "complete", "--", "d"]);
+    assert_eq!((out(&o).as_str(), err(&o).as_str()), ("db\n", ""));
+    let t = out(&p.run(&["trust"]));
+    assert!(t.contains("files:  ok.ok, ok/_lib.ok, ok/db.ok\n"), "{t}");
+    // Namespace files in both directories are an error.
+    p.write("ok.ok", "task all { }\n");
+    std::fs::create_dir_all(p.dir.join(".ok")).unwrap();
+    p.write(".ok/admin.ok", "task user { }\n");
+    let o = p.run_trusted(&[]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err(&o).contains(
+            "error: this project has namespace files in both .ok/ and the deprecated ok/\n"
+        ),
+        "{}",
+        err(&o)
+    );
+    assert!(
+        err(&o).contains("= help: move the files of ok/ into .ok/ (ok self promote does it when no names clash)\n"),
+        "{}",
+        err(&o)
+    );
+    // An ok/ directory without ok files is not ok's.
+    let p = Proj::new(
+        "old-dir-unrelated",
+        &[(".ok/ok.ok", HELLO), ("ok/readme.txt", "go code\n")],
+    );
+    let o = p.run_trusted(&["hello"]);
+    assert_eq!((out(&o).as_str(), err(&o).as_str()), ("hello\n", ""));
+}
+
+#[test]
+fn mounts_accept_every_root_file_form() {
+    let fe = "task build { print(\"fe build\") }\n";
+    let cases: [(&str, &str, &str); 3] = [
+        ("ok.ok", "import \"web/.ok/ok.ok\" as fe\n", "web/.ok/ok.ok"),
+        ("ok.ok", "import \"web/.ok\" as fe\n", "web/.ok"),
+        (".ok/ok.ok", "import \"../web/ok.ok\" as fe\n", "web/ok.ok"),
+    ];
+    for (i, (root, import, sub)) in cases.into_iter().enumerate() {
+        let p = Proj::new(&format!("mount-form{i}"), &[(root, import), (sub, fe)]);
+        let o = p.run_trusted(&["fe", "build"]);
+        assert_eq!(out(&o), "fe build\n", "{sub}: {}", err(&o));
+        let t = out(&p.run(&["trust"]));
+        assert!(t.contains(sub), "{t}");
+    }
+    // Only a project's root file can be mounted.
+    let p = Proj::new(
+        "mount-not-root",
+        &[
+            ("ok.ok", "import \"web/ok.ok\" as fe\n"),
+            ("web/ok.ok", fe),
+            ("web/.ok/ok.ok", fe),
+        ],
+    );
+    let o = p.run_trusted(&[]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err(&o).contains(
+            "cannot mount \"web/ok.ok\": this project has two root files, ok.ok and .ok/ok.ok"
+        ),
+        "{}",
+        err(&o)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_dot_ok_directory_linked_out_of_the_project_is_refused() {
+    let p = Proj::new("dot-link", &[]);
+    let outside = p.dir.parent().unwrap().join("elsewhere");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("ok.ok"), "task a { print(\"boom\") }\n").unwrap();
+    std::os::unix::fs::symlink(&outside, p.dir.join(".ok")).unwrap();
+    assert_refused_everywhere(
+        &p,
+        "error[trust]: .ok/ok.ok is a link to a file outside the project",
+    );
+    // A namespace file linked out of a real .ok/ is refused too.
+    std::fs::remove_file(p.dir.join(".ok")).unwrap();
+    std::fs::create_dir_all(p.dir.join(".ok")).unwrap();
+    p.write(".ok/ok.ok", "task a { print(1) }\n");
+    std::os::unix::fs::symlink(outside.join("ok.ok"), p.dir.join(".ok/evil.ok")).unwrap();
+    assert_refused_everywhere(
+        &p,
+        "error[trust]: .ok/evil.ok is a link to a file outside the project",
+    );
+}
+
+#[test]
+fn check_and_fmt_take_a_dot_ok_file() {
+    let p = Proj::new(
+        "check-dot",
+        &[(".ok", "requires \"0.1\"\n\ntask hello {\n  print( 1 )\n}\n")],
+    );
+    let o = p.run(&["self", "check", ".ok"]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert_eq!(out(&o), "ok: 1 file checked, no problems found\n");
+    let o = p.run(&["self", "fmt", "--check", ".ok"]);
+    assert_eq!(out(&o), "would reformat .ok\n");
+    let o = p.run(&["self", "fmt"]);
+    assert!(
+        out(&o).starts_with("formatted ") && out(&o).ends_with("/app/.ok\n"),
+        "{}",
+        out(&o)
+    );
+    // Inside .ok/, a namespace given by name is checked as a project file.
+    let p = Proj::new(
+        "check-dot-dir",
+        &[(".ok/ok.ok", HELLO), (".ok/db.ok", MIGRATE)],
+    );
+    let o = p
+        .cmd(&["self", "check", "db.ok"])
+        .current_dir(p.dir.join(".ok"))
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", err(&o));
+    let o = p.run(&["self", "check"]);
+    assert_eq!(
+        out(&o),
+        "ok: 2 files and 2 tasks checked, no problems found\n"
+    );
+}
+
+#[test]
+fn init_writes_dot_ok_slash_ok_ok_without_network() {
+    let p = Proj::new("init", &[]);
+    // An http mirror would be refused, so this shows nothing is downloaded.
+    let o = p
+        .cmd(&["self", "init"])
+        .env("OK_DOWNLOAD_URL", "http://mirror.example/ok")
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", err(&o));
+    assert_eq!(out(&o), "wrote .ok/ok.ok\nrun ok hello\n");
+    let names: Vec<String> = std::fs::read_dir(&p.dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, [".ok"]);
+    assert_eq!(out(&p.run_trusted(&["hello"])), "hello, world!\n");
+    // Refuses whenever a root file exists.
+    let o = p.run(&["self", "init"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err(&o).starts_with(
+            "error: .ok/ok.ok already exists; ok self init does not overwrite files\n"
+        ),
+        "{}",
+        err(&o)
+    );
+    for root in ["ok.ok", ".ok"] {
+        let p = Proj::new(&format!("init-{}", root.len()), &[(root, HELLO)]);
+        let o = p.run(&["self", "init"]);
+        assert!(
+            err(&o).starts_with(&format!("error: {root} already exists;")),
+            "{}",
+            err(&o)
+        );
+        assert_eq!(std::fs::read_to_string(p.dir.join(root)).unwrap(), HELLO);
+    }
+    // --checksums is only for the wrappers.
+    let p = Proj::new("init-sums", &[]);
+    let o = p.run(&["self", "init", "--checksums", "SHA256SUMS"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(
+        err(&o).contains("--checksums is only used for the wrappers"),
+        "{}",
+        err(&o)
+    );
+    // The ./ok wrapper cannot share its name with a directory.
+    let p = Proj::new("init-ok-dir", &[("ok/readme.txt", "")]);
+    let o = p.run(&["self", "init", "--wrappers"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err(&o).starts_with("error: ok/ is a directory, so the ./ok wrapper cannot be written\n"),
+        "{}",
+        err(&o)
+    );
+    assert!(!p.dir.join(".ok").exists(), "nothing is written");
+    // Without --wrappers, that directory is no obstacle.
+    assert!(p.run(&["self", "init"]).status.success());
+}
+
+#[test]
+fn promote_moves_a_dot_ok_file_into_the_folder() {
+    let body = "import \"lib/x.ok\"\n\ntask hello { print(x()) }\n";
+    let p = Proj::new(
+        "promote",
+        &[(".ok", body), ("lib/x.ok", "fn x() { \"x\" }\n")],
+    );
+    assert!(p.run(&["trust"]).status.success());
+    let o = p.run(&["self", "promote"]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert_eq!(
+        out(&o),
+        "moved .ok to .ok/ok.ok\nimports are relative to their file; these no longer point at the same file:\n  .ok/ok.ok:1: \"lib/x.ok\" should now be \"../lib/x.ok\"\nthe project files moved, so the next task run asks for trust again (or run ok trust)\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(p.dir.join(".ok/ok.ok")).unwrap(),
+        body
+    );
+    let leftovers: Vec<String> = std::fs::read_dir(&p.dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(".ok."))
+        .collect();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
+    p.write(".ok/ok.ok", &body.replace("lib/x.ok", "../lib/x.ok"));
+    // Trust does not move with the files.
+    let o = p.run(&["hello"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err(&o).contains("the project files changed since you trusted them"),
+        "{}",
+        err(&o)
+    );
+    assert_eq!(out(&p.run_trusted(&["hello"])), "x\n");
+    // A second run has nothing to do.
+    let o = p.run(&["self", "promote"]);
+    assert!(o.status.success());
+    assert_eq!(
+        out(&o),
+        "nothing to promote: the project already uses .ok/ok.ok\n"
+    );
+}
+
+#[test]
+fn promote_moves_the_old_ok_directory() {
+    let p = Proj::new(
+        "promote-old",
+        &[
+            ("ok.ok", "import \"ok/_lib.ok\"\ntask a { print(f()) }\n"),
+            ("ok/_lib.ok", "fn f() { 1 }\n"),
+            ("ok/db.ok", "import \"./_lib.ok\"\ntask m { print(f()) }\n"),
+            ("ok/data/seed.sql", "select 1;\n"),
+        ],
+    );
+    let o = p.run(&["self", "promote"]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert_eq!(
+        out(&o),
+        "moved ok/_lib.ok to .ok/_lib.ok\nmoved ok/data to .ok/data\nmoved ok/db.ok to .ok/db.ok\nimports are relative to their file; these no longer point at the same file:\n  ok.ok:1: \"ok/_lib.ok\" should now be \".ok/_lib.ok\"\nthe project files moved, so the next task run asks for trust again (or run ok trust)\n"
+    );
+    assert!(!p.dir.join("ok").exists());
+    assert!(p.dir.join(".ok/data/seed.sql").is_file());
+    p.write("ok.ok", "import \".ok/_lib.ok\"\ntask a { print(f()) }\n");
+    let o = p.run_trusted(&["db", "m"]);
+    assert_eq!((out(&o).as_str(), err(&o).as_str()), ("1\n", ""));
+    // The root ok.ok stays, so there is nothing left to do.
+    let o = p.run(&["self", "promote"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err(&o).starts_with("error: nothing to promote: the root file is ok.ok, not a .ok file, and there is no ok/ directory\n"),
+        "{}",
+        err(&o)
+    );
+}
+
+#[test]
+fn promote_refuses_before_moving_anything() {
+    // A name that exists in both directories.
+    let p = Proj::new(
+        "promote-clash",
+        &[
+            (".ok/ok.ok", HELLO),
+            (".ok/db.ok", MIGRATE),
+            ("ok/admin.ok", HELLO),
+            ("ok/db.ok", MIGRATE),
+        ],
+    );
+    let o = p.run(&["self", "promote"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err(&o).starts_with("error: cannot move ok/db.ok to .ok/db.ok: .ok/db.ok already exists; nothing was moved\n"),
+        "{}",
+        err(&o)
+    );
+    assert!(p.dir.join("ok/admin.ok").is_file(), "nothing moved");
+    // ok/ok.ok would become a second root file.
+    let p = Proj::new(
+        "promote-root-clash",
+        &[(".ok", HELLO), ("ok/ok.ok", MIGRATE)],
+    );
+    let o = p.run(&["self", "promote"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err(&o).starts_with("error: ok/ok.ok would become .ok/ok.ok, a second root file\n"),
+        "{}",
+        err(&o)
+    );
+    assert_eq!(std::fs::read_to_string(p.dir.join(".ok")).unwrap(), HELLO);
+    // A project with ok.ok and nothing else to move.
+    let p = Proj::new("promote-okok", &[("ok.ok", HELLO)]);
+    let o = p.run(&["self", "promote"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err(&o).contains("the root file is ok.ok, not a .ok file"),
+        "{}",
+        err(&o)
+    );
+    // No project at all.
+    let p = Proj::new("promote-none", &[]);
+    let o = p.run(&["self", "promote"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(err(&o).contains("nothing to promote"), "{}", err(&o));
 }

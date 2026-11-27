@@ -52,8 +52,15 @@ Some of these changes can stop a project or script from loading: source files ma
 - `pad`, `repeat` and `+` on strings and lists, and materialising a stream (`len(range(10_000_000_000))`), refuse results over 1 GiB with an error instead of aborting on allocation, and a value that would take more than 1 GiB written out, counting shared parts each time they occur (`x = [x, x]` in a loop), is a `value` error instead of aborting when it is printed or written.
 - A key lookup with a huge unknown name no longer allocates a quadratic table for its "did you mean" suggestion.
 
+### Added
+
+- `ok self promote` moves a project to the `.ok/` layout: a `.ok` root file to `.ok/ok.ok` and the files of an old `ok/` directory into `.ok/`. It checks every move first, undoes them if one fails, lists imports that need a new path, and says that the project needs trust again.
+
 ### Changed
 
+- **Project layout (can break projects and scripts):** a project's root file can be `.ok/ok.ok` (recommended), a single file named `.ok`, or `ok.ok` as before, and namespaces live in `.ok/` (`.ok/db.ok` is `ok db`). A directory with two root files is an error. Namespaces in `ok/` still load for one release, with a warning; `ok self promote` moves them. A project that keeps `ok.ok` keeps its trust; moving files means trusting them again.
+- `ok self init` writes `.ok/ok.ok`, and the wrappers `./ok`, `ok.cmd` and `ok.ps1` only with `--wrappers`; without it nothing is downloaded and `--checksums` is a usage error. It refuses when the directory already has a root file.
+- An import of a file named `.ok` (or `.ok/ok.ok`) mounts a sub-project, like one of `ok.ok`; mounts from `.ok/ok.ok` are relative to `.ok/`, like every import (`import "../web/ok.ok" as web`), and the mounted file must be that project's only root file.
 - `--trace` and `--dry-run` quote the paths of file operations and fetch like command arguments: `~ copy "my notes.txt" backup/`.
 - `ok --env NAME trust` trusts a project together with the env files of `--env NAME`.
 - A TOML offset date-time outside 1677-09-21 to 2262-04-11 is a `format` error instead of a wrong time (or a crash in debug builds).
@@ -75,8 +82,13 @@ Some of these changes can stop a project or script from loading: source files ma
 - `ok self fmt` keeps one blank after a `\` argument, or a word ending in `\`, at the end of a line (also where it breaks a pipeline); without it the `\` would continue the line.
 - `ok self fmt` keeps the spacing after a keyword used as a field name (`s.or[0]`, `x.and(1)`); it spaced them like the operators and failed with an internal error.
 
+### Fixed
+
+- A project can have both namespaces and the `./ok` wrapper: namespaces live in `.ok/`, so they no longer need a directory named `ok`, the wrapper's name (`ok self init` failed next to an `ok/` directory with "ok already exists").
+
 ### Documentation
 
+- The guide presents the `.ok/` directory as the project layout, the single `.ok` file for small projects, and `ok.ok` as still supported, with `ok self promote` for moving between them.
 - SECURITY.md and the guide say plainly that `./ok` is a script from the repository that runs before any trust check, so in a repository you have not reviewed, run your installed `ok`.
 - The commands guide warns that an interpolated value starting with `-` is read as an option by most programs, and shows `--`.
 - The spec and the data guide say that JSON and YAML integers beyond the signed 64-bit range become floats, and the spec states the range of `time` (1677 to 2262).

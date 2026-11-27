@@ -10,7 +10,7 @@ ok is meant to replace all three with one language that reads well and behaves t
 
 - **Instead of bash scripts.** Commands are run directly from a list of arguments, never through a shell, so a variable is always exactly one argument and there is nothing to quote. A failing command stops the script with an error that shows the command and the end of its output, without `set -euo pipefail`.
 - **Instead of Python or JavaScript scripts.** There is no runtime to install and no packages to manage. JSON, CSV, TOML, YAML and `.env` files are read and written by built-in functions, and a script's `main` signature is its command-line interface, with `--help` and argument checks included.
-- **Instead of Makefiles.** In a project, the file `ok.ok` declares tasks with parameters, dependencies and up-to-date checks. `ok` lists them, `ok build --release` runs one.
+- **Instead of Makefiles.** In a project, the file `.ok/ok.ok` declares tasks with parameters, dependencies and up-to-date checks. `ok` lists them, `ok build --release` runs one.
 
 The same script gives the same output on Linux, macOS and Windows, on x86-64 and arm64: paths print with `/`, written files use `\n` line endings, and sorting does not depend on the machine.
 
@@ -44,7 +44,7 @@ ok --version
 
 Because the name is short, a shell alias or another program could also be called `ok`. If `ok --version` prints something unexpected, `which ok` shows which one runs.
 
-In a project that uses ok, you may not need to install anything: `ok self init` adds small wrapper scripts (`./ok`, `ok.cmd`, `ok.ps1`) that download the pinned, checksum-verified version on first use. See [Formatter, checker and wrappers](tools.md).
+In a project that uses ok, you may not need to install anything: `ok self init --wrappers` adds small wrapper scripts (`./ok`, `ok.cmd`, `ok.ps1`) that download the pinned, checksum-verified version on first use. See [Formatter, checker and wrappers](tools.md).
 
 To complete task names and flags in your shell, add `eval "$(ok self completions bash)"` to your shell's start-up file (or use `zsh`, `fish` or `powershell`).
 
@@ -106,7 +106,7 @@ ok has two ways to run code.
 
 A **script** is any `.ok` file you run with `ok script.ok`. Its top-level code runs from top to bottom, and if it declares `fn main`, that is called with the command-line arguments.
 
-A **project** is a directory with an `ok.ok` file. That file only declares tasks and helper functions; it runs nothing by itself:
+A **project** is a directory with a root file: `.ok/ok.ok`, kept in a hidden `.ok/` directory with the rest of the project's ok files, or a single `.ok` file for a small project (`ok.ok` works too). That file only declares tasks and helper functions; it runs nothing by itself:
 
 ```ok
 # Build the app
@@ -142,9 +142,9 @@ Inside the project, `ok` lists the tasks with their descriptions and `ok build -
 
 **Projects**
 
-- [Tasks](tasks.md): `ok.ok`, dependencies, parameters, namespaces and up-to-date checks.
+- [Tasks](tasks.md): the `.ok/` directory, dependencies, parameters, namespaces and up-to-date checks.
 - [Trust](trust.md): why ok asks before running a project's tasks, and how to use it in CI.
-- [Formatter, checker and wrappers](tools.md): `ok self fmt`, `ok self check` and `ok self init`.
+- [Formatter, checker and wrappers](tools.md): `ok self fmt`, `ok self check`, `ok self init` and `ok self promote`.
 
 **Reference**
 

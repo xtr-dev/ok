@@ -10,7 +10,9 @@ fn ok_files(dir: &Path, out: &mut Vec<PathBuf>) {
         if path.is_dir() {
             ok_files(&path, out);
         } else if path.extension().is_some_and(|e| e == "ok")
-            || path.file_name().is_some_and(|n| n == "pre-commit")
+            || path
+                .file_name()
+                .is_some_and(|n| n == ".ok" || n == "pre-commit")
         {
             out.push(path);
         }

@@ -311,7 +311,7 @@ pub struct RunOpts {
 pub(crate) enum FileKind {
     Script,
     Library,
-    /// A project file (SPEC.md 15.2); `root` for the root `ok.ok`.
+    /// A project file (SPEC.md 15.2); `root` for the root file (15.1).
     Project {
         root: bool,
     },
@@ -709,15 +709,16 @@ impl Interp {
                 with_help(f, "write the path relative to this file, like \"./lib.ok\"")
             });
         }
-        if as_path.name() == "ok.ok" && self.project_root.is_some() {
+        let mount = crate::project::is_root_name(&as_path.name());
+        if mount && self.project_root.is_some() {
             // Mounts are handled by the project loader (SPEC.md 15.8).
             return Ok(());
         }
-        if as_path.name() == "ok.ok" {
+        if mount {
             return err(
                 ErrKind::Name,
                 span,
-                "importing an ok.ok file mounts a sub-project, which only a project's root ok.ok can do",
+                "importing a root file (ok.ok or .ok) mounts a sub-project, which only a project's root file can do",
             );
         }
         let native = dir.join(as_path.native());
@@ -2727,7 +2728,7 @@ pub(crate) fn check_items(prog: &Program, kind: FileKind) -> Result<(), OkError>
                 return Err(OkError::at(
                     ErrKind::Syntax,
                     t.name_span,
-                    "tasks can only be declared in project files (ok.ok and ok/*.ok)",
+                    "tasks can only be declared in project files (the root file and .ok/*.ok)",
                 )
                 .with_help("use fn for a function in a script"));
             }
@@ -2736,7 +2737,7 @@ pub(crate) fn check_items(prog: &Program, kind: FileKind) -> Result<(), OkError>
                 return Err(OkError::at(
                     ErrKind::Syntax,
                     stmt.span,
-                    "this declaration is only allowed in a project's root ok.ok",
+                    "this declaration is only allowed in a project's root file",
                 ));
             }
             (_, FileKind::Script) => {}

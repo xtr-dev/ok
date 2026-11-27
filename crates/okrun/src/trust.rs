@@ -757,8 +757,9 @@ pub fn command(
         let mut e = OkError::new(
             ErrKind::Arg,
             format!(
-                "no ok.ok found in {} or its parents",
-                OkPath::from_native(&start).display()
+                "no project found in {} or its parents ({})",
+                OkPath::from_native(&start).display(),
+                crate::project::ROOT_FORMS
             ),
         );
         e.exit_code = Some(2);

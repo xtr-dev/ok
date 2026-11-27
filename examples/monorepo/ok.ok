@@ -1,7 +1,7 @@
 requires "0.1"
 env file ".env"
 
-import "ok/_lib.ok"            # bin()
+import ".ok/_lib.ok"           # bin()
 import "frontend/ok.ok" as fe  # the frontend's tasks, as `ok fe build`
 
 # Run the server locally

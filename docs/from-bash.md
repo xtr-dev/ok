@@ -297,7 +297,7 @@ hello world
 ${HOME}/cache
 ```
 
-The leading `export` is accepted so existing files work, quotes are removed, comments are ignored, and `${HOME}` stays as written: there is no variable expansion. In a project, `env file ".env"` in `ok.ok` loads the file into the environment of every task, as shown below. Variables that are already set in your environment win over the file, so `PORT=9000 ok serve` still works.
+The leading `export` is accepted so existing files work, quotes are removed, comments are ignored, and `${HOME}` stays as written: there is no variable expansion. In a project, `env file ".env"` in the root file loads the file into the environment of every task, as shown below. Variables that are already set in your environment win over the file, so `PORT=9000 ok serve` still works.
 
 ## Arguments and help
 
@@ -329,7 +329,7 @@ run with --help for details
 
 ## From make to tasks
 
-A Makefile is usually less about building files than about naming the project's commands: `make test`, `make deploy`. ok's tasks are made for that. They live in `ok.ok` at the root of the project and are written in the same language as scripts:
+A Makefile is usually less about building files than about naming the project's commands: `make test`, `make deploy`. ok's tasks are made for that. They live in `.ok/ok.ok` (or a single `.ok` file) at the root of the project and are written in the same language as scripts:
 
 ```text file=VERSION
 1.4.0
@@ -339,7 +339,7 @@ A Makefile is usually less about building files than about naming the project's 
 PORT=8080
 ```
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 env file ".env"
 
 # Write the version file
@@ -387,7 +387,7 @@ Running `ok` on its own in the project lists the tasks with the first line of th
 | `make -j4` | `ok -j4 build` (independent dependencies already run in parallel) |
 | `make -B` | `ok --force build` |
 | `make help` (hand-written) | `ok` |
-| `$(MAKE) -C frontend build` | `import "frontend/ok.ok" as fe`, then `ok fe build` |
+| `$(MAKE) -C frontend build` | `import "../frontend/ok.ok" as fe`, then `ok fe build` |
 | `@echo` to hide the command | nothing: commands are not echoed; `ok --trace` shows them |
 | `$(shell git rev-parse HEAD)` | `(run git rev-parse HEAD).out` inside the task |
 
@@ -396,8 +396,8 @@ The differences that matter:
 - **Tasks are not files.** A make target is a file name, and a target whose file exists does nothing, which is why `.PHONY` exists. A task is a name. It is skipped only when it declares `outputs` and they are newer than its `sources`.
 - **One recipe, one process.** Every line of a make recipe runs in its own shell, so `cd` and variables do not carry over to the next line. A task body is ordinary code: variables, loops, functions and error handling work as in a script.
 - **Parameters, not variables.** Task parameters are declared like `main`'s, are checked, and appear in `ok build --help`. Dependencies can pass arguments: `needs [build(release: true)]`.
-- **Project files run nothing when they load.** The top level of `ok.ok` holds only tasks, functions, constant `let`s and imports, so listing tasks, printing help and completing names never run project code. Compute values inside the task that needs them.
+- **Project files run nothing when they load.** The top level of a project file holds only tasks, functions, constant `let`s and imports, so listing tasks, printing help and completing names never run project code. Compute values inside the task that needs them.
 - **Tasks run in the project root**, wherever in the project you type `ok`. Relative path arguments are resolved against the directory you typed them in.
 - **Trust.** The first time you run a task in a project you have not approved, ok shows you the project's files and asks. In CI, set `OK_TRUST=1`. See [Trust](trust.md).
 
-[Tasks](tasks.md) covers namespaces (`ok db migrate`), mounted sub-projects, `confirm`, hidden tasks and parallel runs. The [docker-image](../examples/docker-image/), [codegen-build](../examples/codegen-build/) and [monorepo](../examples/monorepo/) examples are real Makefiles next to their `ok.ok` versions, and [log-summary](../examples/log-summary/), [pre-commit](../examples/pre-commit/) and [tidy-names](../examples/tidy-names/) do the same for bash scripts.
+[Tasks](tasks.md) covers namespaces (`ok db migrate`), mounted sub-projects, `confirm`, hidden tasks and parallel runs. The [docker-image](../examples/docker-image/), [codegen-build](../examples/codegen-build/) and [monorepo](../examples/monorepo/) examples are real Makefiles next to their ok versions, and [log-summary](../examples/log-summary/), [pre-commit](../examples/pre-commit/) and [tidy-names](../examples/tidy-names/) do the same for bash scripts.

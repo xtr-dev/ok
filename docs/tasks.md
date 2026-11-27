@@ -1,14 +1,14 @@
 # Tasks
 
-Put an `ok.ok` file in your project and its tasks run with `ok NAME`: arguments, dependencies, parallel runs, up-to-date checks and namespaces.
+Put a `.ok/ok.ok` file in your project and its tasks run with `ok NAME`: arguments, dependencies, parallel runs, up-to-date checks and namespaces.
 
 A task is a named piece of ok code that lives in a project file. It is what `make` targets, `npm run` scripts and `just` recipes are elsewhere, but it is written in the same language as your scripts, it parses its own arguments, and it behaves the same on Linux, macOS and Windows. This page shows how to write tasks and run them. The exact rules are in [section 15 of the spec](../SPEC.md#15-project-mode).
 
 ## Your first project
 
-A project is a directory with a file called `ok.ok` in it. Each `task` in that file is something you can run:
+A project is a directory with a **root file**. The usual place for it is `.ok/ok.ok`, inside a hidden `.ok/` directory that keeps everything ok needs in one place, out of the way of your other tools (`ok self init` creates it). Each `task` in that file is something you can run:
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 # Say hello
 task hello {
   print("hello from a task")
@@ -40,15 +40,17 @@ myapp (/home/you/src/myapp)
 
 The first line is the project's directory name and root. Root tasks come first, in the order you declared them, then each namespace (see [below](#namespaces)) in alphabetical order. `ok self tasks` prints the same listing.
 
-You can run `ok` from any subdirectory: it walks up to the nearest `ok.ok` and treats that directory as the **project root**. Tasks always run with the project root as working directory, so `"out/stamp.txt"` means the same file wherever you started. The directory you started in is in `invocation_dir`. To run a project's tasks from somewhere else, give its directory with `-C`: `ok -C ../other build`.
+The root file can take two other forms. A small project with only root tasks can use a single file named `.ok` in its root instead; `ok self promote` moves it to `.ok/ok.ok` when the project grows. And a file named `ok.ok` in the root works too, which is how projects started before the `.ok/` directory existed. A directory has exactly one of these: two root files are an error that names both, so you never edit one while ok runs the other.
+
+You can run `ok` from any subdirectory: it walks up to the nearest directory with a root file and treats that directory as the **project root**. Tasks always run with the project root as working directory, so `"out/stamp.txt"` means the same file wherever you started. The directory you started in is in `invocation_dir`. To run a project's tasks from somewhere else, give its directory with `-C`: `ok -C ../other build`.
 
 The first time you run a task in a project, ok asks whether you trust the project's files. That is explained on the [Trust](trust.md) page; for your own projects you can answer once with `ok trust --dir`.
 
 ## Project files hold declarations
 
-A project file is read every time you list tasks, ask for help or press Tab, so it must not do anything on its own. At the top level you may only write `task`, `fn`, `let` with a constant value, `import`, and in the root `ok.ok` also `requires` and `env file`. Anything else is an error before any task runs:
+A project file is read every time you list tasks, ask for help or press Tab, so it must not do anything on its own. At the top level you may only write `task`, `fn`, `let` with a constant value, `import`, and in the root file also `requires` and `env file`. Anything else is an error before any task runs:
 
-```ok file=ok.ok nocheck
+```ok file=.ok/ok.ok nocheck
 let greeting = "hello"
 
 print("loading")
@@ -61,7 +63,7 @@ task greet {
 
 ```output run="ok greet" exit=1
 error[syntax]: project files cannot run code at the top level
- --> ok.ok:3:1
+ --> .ok/ok.ok:3:1
   |
 3 | print("loading")
   | ^^^^^^^^^^^^^^^^
@@ -73,7 +75,7 @@ A constant is built from literals, lists, records, operators, string interpolati
 
 In a project file, `task` is public and `fn` is private. A `fn` is a helper that tasks call; it never shows up in the listing and cannot be run from the command line. A task cannot be called like a function: share code through a `fn` instead.
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 let app = "shop"
 
 # Show the version
@@ -86,13 +88,13 @@ fn banner() {
 }
 ```
 
-`requires "0.2"` at the top of the root `ok.ok` declares the oldest ok version your tasks work with. An older ok refuses to load the project and says which version is needed.
+`requires "0.2"` at the top of the root file declares the oldest ok version your tasks work with. An older ok refuses to load the project and says which version is needed.
 
 ## Task arguments
 
 A task takes parameters exactly like a script's `main` function: positional parameters, flags with `--`, defaults, types, short forms and choices. The command-line rules and help output are described on the [Command-line scripts](script-cli.md) page; everything there applies to tasks.
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 # Greet someone
 #
 # Prints a greeting, louder on request.
@@ -150,7 +152,7 @@ A `path` parameter is resolved against the directory you ran `ok` from, not the 
 
 `needs [...]` lists tasks that must finish before this one starts. A task that several others need runs only once per invocation:
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 # Generate code
 task gen {
   print("gen")
@@ -179,7 +181,7 @@ test
 
 A dependency can be given arguments, written straight after its name. They are named, like the named arguments of a call, and that includes positional parameters:
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 # Compile for one target
 task build(--release: bool, --target: string = "native") {
   print("build {target} (release: {release})")
@@ -211,7 +213,7 @@ A task together with its arguments is an **instance**. Two entries with the same
 
 The values must be constants, so ok can plan the whole run without executing any of your code. Mistakes are found when the project loads, before anything runs:
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 # Deploy to one environment
 task deploy(target: string) {
   print("deploying to {target}")
@@ -225,7 +227,7 @@ task release needs [deploy] {
 
 ```output run="ok release" exit=1
 error[arg]: task `deploy` needs the argument `target`
- --> ok.ok:7:21
+ --> .ok/ok.ok:7:21
   |
 7 | task release needs [deploy] {
   |                     ^^^^^^
@@ -257,7 +259,7 @@ When a task fails, ok starts nothing new, lets the running workers finish (it ne
 ```text
 lint | lint ok
 test | error[fail]: 2 tests failed
-test |   --> ok.ok:10:3
+test |   --> .ok/ok.ok:10:3
 ...
 error: task `test` failed with exit code 1
   = its output is above, each line starting with `test |`
@@ -271,7 +273,7 @@ A task that turns some files into other files can say which they are with `sourc
 1.4.0
 ```
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 # Write src/version.rs from the VERSION file
 task gen sources ["VERSION"] outputs ["src/version.rs"] {
   let version = read("VERSION").trim()
@@ -296,24 +298,24 @@ List the files that affect the result in `sources`, including a helper module th
 
 ## Namespaces
 
-A larger project can split its tasks over several files. Each `.ok` file directly in an `ok/` directory next to the root `ok.ok` is a **namespace** named after the file:
+A larger project can split its tasks over several files. Each `.ok` file directly in the `.ok/` directory, other than `ok.ok` itself, is a **namespace** named after the file:
 
 ```text
 myapp/
-  ok.ok          root tasks: ok build, ok test
-  ok/db.ok       namespace db: ok db migrate, ok db seed
-  ok/admin.ok    namespace admin: ok admin create-user
-  ok/_lib.ok     helpers shared by the files above; not a namespace
+  .ok/ok.ok      root tasks: ok build, ok test
+  .ok/db.ok      namespace db: ok db migrate, ok db seed
+  .ok/admin.ok   namespace admin: ok admin create-user
+  .ok/_lib.ok    helpers shared by the files above; not a namespace
 ```
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 # Compile the server
 task build {
   print("build")
 }
 ```
 
-```ok file=ok/db.ok
+```ok file=.ok/db.ok
 # Apply pending migrations
 task migrate needs [build] {
   print("migrate")
@@ -331,14 +333,16 @@ migrate
 seed
 ```
 
-`migrate` needs `build`, which is not in `db.ok`, so ok finds it in the root. `ok db` on its own lists the tasks of that namespace. A file whose name starts with `_` is never a namespace: use it for functions the other files share, with `import "./_lib.ok"`. Files in subdirectories of `ok/` are only reachable through `import`. A namespace cannot have the same name as a root task, and cannot be called `trust`, `untrust` or `self`, which ok reserves for its own commands.
+`migrate` needs `build`, which is not in `db.ok`, so ok finds it in the root. `ok db` on its own lists the tasks of that namespace. A file whose name starts with `_` is never a namespace: use it for functions the other files share, with `import "./_lib.ok"`. Files in subdirectories of `.ok/` are only reachable through `import`. A namespace cannot have the same name as a root task, and cannot be called `trust`, `untrust` or `self`, which ok reserves for its own commands. A project whose root file is `ok.ok` can have namespaces in `.ok/` too.
+
+Older projects kept their namespaces in an `ok/` directory. That still works for now, with a warning on every run, because a directory named `ok` leaves no room for the `./ok` wrapper. `ok self promote` moves the files to `.ok/`; see [Formatter, checker and wrappers](tools.md#moving-to-ok-with-ok-self-promote).
 
 ### Mounting a sub-project
 
-In a monorepo, a subdirectory often is a project of its own, with its own `ok.ok`. The root `ok.ok` can **mount** it as a namespace:
+In a monorepo, a subdirectory often is a project of its own, with its own root file. The root file of the parent project can **mount** it as a namespace by importing that root file. Like every import, the path is relative to the importing file, so from `.ok/ok.ok` it starts with `../`:
 
-```ok file=ok.ok
-import "web/ok.ok" as web
+```ok file=.ok/ok.ok
+import "../web/ok.ok" as web
 
 # Build everything
 task build needs [web.bundle] {
@@ -359,13 +363,13 @@ bundle written
 server built
 ```
 
-`ok web bundle` runs the same task directly. A mounted task runs with the sub-project's directory as working directory, so `dist/bundle.js` above ends up in `web/dist/`, and its `sources` and `outputs` are relative to `web/` too. Only the root `ok.ok` may mount, and only the sub-project's root tasks are visible: for its own namespaces, use `ok -C web NAME TASK`. The [monorepo example](../examples/monorepo/) puts namespaces, a helper file and a mount together.
+`ok web bundle` runs the same task directly. A mounted task runs with the sub-project's directory as working directory, so `dist/bundle.js` above ends up in `web/dist/`, and its `sources` and `outputs` are relative to `web/` too. Only the root file may mount, the mounted file must be the sub-project's root file (`web/ok.ok`, `web/.ok/ok.ok` or `web/.ok`), and only the sub-project's root tasks are visible: for its own namespaces, use `ok -C web NAME TASK`. The [monorepo example](../examples/monorepo/) puts namespaces, a helper file and a mount together.
 
 ## Confirmations
 
 A task that does something hard to undo can ask first. Add `confirm` with a question:
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 # Wipe the local database
 task reset-db confirm "This wipes the local database" {
   print("database wiped")
@@ -407,7 +411,7 @@ Modifiers (`needs`, `sources`, `outputs`, `confirm`, `hidden`) may come in any o
 
 ## Environment files
 
-Many projects keep settings in a `.env` file. `env file ".env"` in the root `ok.ok` loads it into the environment before any task runs:
+Many projects keep settings in a `.env` file. `env file ".env"` in the root file loads it into the environment before any task runs:
 
 ```text file=.env
 GREETING=hello
@@ -418,7 +422,7 @@ DATABASE_URL=postgres://localhost/dev
 DATABASE_URL=postgres://staging.internal/app
 ```
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 env file ".env"
 
 # Show the settings
@@ -445,7 +449,7 @@ An env file changes what every program a task starts does (think of `PATH` or `N
 
 `--dry-run` prints the commands a task would run and the file changes it would make, without doing either. It is a good way to read what an unfamiliar task does:
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 # Package the release
 task package {
   write("1.4.0\n", "dist/VERSION")
@@ -522,7 +526,7 @@ Take it one rule at a time.
 1.4.0
 ```
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 requires "0.2"
 
 # Write src/version.rs from the VERSION file

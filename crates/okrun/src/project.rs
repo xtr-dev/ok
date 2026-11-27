@@ -112,26 +112,131 @@ pub struct Project {
     pub root: PathBuf,
     pub files: Vec<PFile>,
     pub tasks: Vec<Task>,
-    /// Namespace names: files in `ok/` and mounts.
+    /// Namespace names: files in `.ok/` (or the deprecated `ok/`) and mounts.
     pub namespaces: Vec<String>,
     pub env_files: Vec<String>,
-    /// Every project file for trust: root, `ok/*.ok`, mounts and imports.
+    /// Every project file for trust: root file, `.ok/*.ok`, mounts and imports.
     pub trust_files: Vec<(String, PathBuf)>,
     /// The content of those files and of the env files, as first read.
     pub store: Rc<FileStore>,
 }
 
-/// The nearest directory at or above `start` that holds an `ok.ok`.
+/// The forms a project's root file can take (SPEC.md 15.1), as paths
+/// relative to the project root, in the order messages name them.
+pub const ROOT_FILES: [&str; 3] = ["ok.ok", ".ok", ".ok/ok.ok"];
+
+/// The forms of [`ROOT_FILES`] for messages that found no project.
+pub const ROOT_FORMS: &str = "no ok.ok, .ok or .ok/ok.ok";
+
+/// Whether a file name is that of a root file (`ok.ok`, or `ok.ok` inside
+/// `.ok/`, or a file named `.ok`). Importing such a file mounts a
+/// sub-project (SPEC.md 15.8) instead of loading a library.
+pub fn is_root_name(name: &str) -> bool {
+    name == "ok.ok" || name == ".ok"
+}
+
+/// The root files that exist in `dir`, as relative paths with `/`.
+pub fn root_files_in(dir: &Path) -> Vec<&'static str> {
+    ROOT_FILES
+        .into_iter()
+        .filter(|f| dir.join(OkPath::parse(f).native()).is_file())
+        .collect()
+}
+
+/// The one root file of the project at `root`. Two root files are an
+/// error rather than a choice, because either one could be the file the
+/// author edits while ok silently runs the other.
+pub fn root_file(root: &Path) -> Result<&'static str, OkError> {
+    match root_files_in(root).as_slice() {
+        [one] => Ok(one),
+        [] => Err(OkError::new(
+            ErrKind::Name,
+            format!(
+                "no project in {} ({ROOT_FORMS})",
+                OkPath::from_native(root).display()
+            ),
+        )),
+        [a, b, ..] => Err(OkError::new(
+            ErrKind::Name,
+            format!("this project has two root files, {a} and {b}"),
+        )
+        .with_note(format!(
+            "the project is at {}",
+            OkPath::from_native(root).display()
+        ))
+        .with_help(format!(
+            "a project has one root file: move the tasks of {a} into {b}, or the other way round, and delete the one left empty"
+        ))),
+    }
+}
+
+/// The nearest directory at or above `start` that holds a root file
+/// (SPEC.md 15.1). A directory with more than one is still the project
+/// root; loading it reports the clash.
 pub fn discover(start: &Path) -> Option<PathBuf> {
     let mut dir = crate::path::canonical(start).ok()?;
     loop {
-        if dir.join("ok.ok").is_file() {
+        if !root_files_in(&dir).is_empty() {
             return Some(dir);
         }
         if !dir.pop() {
             return None;
         }
     }
+}
+
+/// Set once the deprecation warning for `ok/` has been printed, or when
+/// this process must not print it (a task worker, whose parent already
+/// did; completions, whose stderr would land in the user's prompt).
+static OLD_DIR_WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Keep this process from printing the deprecation warning for `ok/`.
+pub fn quiet_deprecations() {
+    OLD_DIR_WARNED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Warn, once per process, that the project keeps its namespaces in the
+/// deprecated `ok/` directory (SPEC.md 15.1).
+fn warn_old_ok_dir() {
+    if !OLD_DIR_WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        eprintln!(
+            "warning: ok/ is deprecated: namespaces now live in .ok/\n  = help: run `ok self promote` to move them; that also frees the name ok for the ./ok wrapper"
+        );
+    }
+}
+
+/// The `*.ok` files directly in `dir`, sorted, leaving out `ok.ok` when
+/// `skip_root` is set (`.ok/ok.ok` is the root file, not a namespace).
+/// A missing directory, or a path that is not one, has none.
+pub(crate) fn ok_files_in(dir: &Path, shown: &str, skip_root: bool) -> R<Vec<PathBuf>> {
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
+        .map_err(|e| {
+            OkError::new(
+                ErrKind::Io,
+                format!("cannot read {shown}: {}", crate::interp::io_reason(&e)),
+            )
+        })?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "ok") && p.is_file())
+        .filter(|p| !(skip_root && p.file_name().is_some_and(|n| n == "ok.ok")))
+        .collect();
+    entries.sort();
+    Ok(entries)
+}
+
+/// The directory of a mounted sub-project whose root file is `file`
+/// (canonical): the file's directory, or for `.ok/ok.ok` the one above.
+fn mounted_root(file: &Path) -> Option<PathBuf> {
+    let parent = file.parent()?;
+    if file.file_name().is_some_and(|n| n == "ok.ok")
+        && parent.file_name().is_some_and(|n| n == ".ok")
+    {
+        return parent.parent().map(Path::to_path_buf);
+    }
+    Some(parent.to_path_buf())
 }
 
 fn rel_of(root: &Path, p: &Path) -> String {
@@ -194,16 +299,18 @@ impl Interp {
         let mut files: Vec<PFile> = Vec::new();
         let mut file_ns: Vec<Option<String>> = Vec::new();
 
-        let root_path = root.join("ok.ok");
+        let root_rel = root_file(&root)?;
+        let root_path = root.join(OkPath::parse(root_rel).native());
         // The root file follows the same confinement as every other
         // project file (SPEC.md 16.6): a link to a file outside the root
-        // would let content nobody reviewed with the project stand in for it.
+        // (or a `.ok` directory linked out of it) would let content nobody
+        // reviewed with the project stand in for it.
         if let Ok(canon) = crate::path::canonical(&root_path)
             && !canon.starts_with(&root)
         {
             return Err(OkError::new(
                 ErrKind::Trust,
-                "ok.ok is a link to a file outside the project",
+                format!("{root_rel} is a link to a file outside the project"),
             )
             .with_help("project files must live inside the project root")
             .into());
@@ -235,7 +342,7 @@ impl Interp {
                     path,
                     alias,
                     path_span,
-                } if OkPath::parse(path).name() == "ok.ok" => match alias {
+                } if is_root_name(&OkPath::parse(path).name()) => match alias {
                     Some((a, _)) => mounts.push((path.clone(), a.clone(), *path_span)),
                     None => {
                         return Err(OkError::at(
@@ -250,8 +357,14 @@ impl Interp {
                 _ => {}
             }
         }
+        // Imports, mounts included, are relative to the importing file
+        // (SPEC.md 11), which for `.ok/ok.ok` is the `.ok/` directory.
+        let root_file_dir = root_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| root.clone());
         files.push(PFile {
-            rel: "ok.ok".into(),
+            rel: root_rel.into(),
             path: root_path,
             id,
             prog,
@@ -259,76 +372,82 @@ impl Interp {
         });
         file_ns.push(None);
 
-        // Namespaces: each *.ok directly in ok/, except names starting with _.
-        let ok_dir = root.join("ok");
+        // Namespaces: each *.ok directly in .ok/ (except the root file
+        // .ok/ok.ok), or in the deprecated ok/, except names starting with _.
+        let dot_files = ok_files_in(&root.join(".ok"), ".ok/", true)?;
+        let old_files = ok_files_in(&root.join("ok"), "ok/", false)?;
+        if !dot_files.is_empty() && !old_files.is_empty() {
+            return Err(OkError::new(
+                ErrKind::Name,
+                "this project has namespace files in both .ok/ and the deprecated ok/",
+            )
+            .with_note(format!(
+                "the project is at {}",
+                OkPath::from_native(&root).display()
+            ))
+            .with_help(
+                "move the files of ok/ into .ok/ (ok self promote does it when no names clash)",
+            )
+            .into());
+        }
+        let ns_dir = if old_files.is_empty() { ".ok" } else { "ok" };
+        let entries = if old_files.is_empty() {
+            dot_files
+        } else {
+            warn_old_ok_dir();
+            old_files
+        };
         let mut helper_files = Vec::new();
-        if ok_dir.is_dir() {
-            let mut entries: Vec<PathBuf> = std::fs::read_dir(&ok_dir)
-                .map_err(|e| {
-                    OkError::new(
-                        ErrKind::Io,
-                        format!("cannot read ok/: {}", crate::interp::io_reason(&e)),
-                    )
-                })?
-                .filter_map(|e| e.ok().map(|e| e.path()))
-                .filter(|p| p.extension().is_some_and(|x| x == "ok") && p.is_file())
-                .collect();
-            entries.sort();
-            for p in entries {
-                let canon = crate::path::canonical(&p).unwrap_or_else(|_| p.clone());
-                let rel = rel_of(&root, &p);
-                if !canon.starts_with(&root) {
-                    return Err(OkError::new(
-                        ErrKind::Trust,
-                        format!("{rel} is a link to a file outside the project"),
-                    )
-                    .with_help("project files must live inside the project root")
-                    .into());
-                }
-                let stem = p
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                if stem.starts_with('_') {
-                    helper_files.push((rel, canon));
-                    continue;
-                }
-                if !valid_name(&stem) {
-                    return Err(OkError::new(
-                        ErrKind::Syntax,
-                        format!("{rel}: `{stem}` is not a valid namespace name"),
-                    )
-                    .with_help("use letters, digits, `_` and `-`")
-                    .into());
-                }
-                if RESERVED.contains(&stem.as_str()) {
-                    return Err(OkError::new(
-                        ErrKind::Syntax,
-                        format!("{rel}: `{stem}` is reserved and cannot be a namespace"),
-                    )
-                    .with_help("rename the file")
-                    .into());
-                }
-                let (id, prog) = self.parse_project_file(
-                    &store,
-                    &root,
-                    &canon,
-                    FileKind::Project { root: false },
-                )?;
-                files.push(PFile {
-                    rel,
-                    path: canon,
-                    id,
-                    prog,
-                    run_dir: root.clone(),
-                });
-                file_ns.push(Some(stem));
+        for p in entries {
+            let canon = crate::path::canonical(&p).unwrap_or_else(|_| p.clone());
+            let rel = rel_of(&root, &p);
+            if !canon.starts_with(&root) {
+                return Err(OkError::new(
+                    ErrKind::Trust,
+                    format!("{rel} is a link to a file outside the project"),
+                )
+                .with_help("project files must live inside the project root")
+                .into());
             }
+            let stem = p
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if stem.starts_with('_') {
+                helper_files.push((rel, canon));
+                continue;
+            }
+            if !valid_name(&stem) {
+                return Err(OkError::new(
+                    ErrKind::Syntax,
+                    format!("{rel}: `{stem}` is not a valid namespace name"),
+                )
+                .with_help("use letters, digits, `_` and `-`")
+                .into());
+            }
+            if RESERVED.contains(&stem.as_str()) {
+                return Err(OkError::new(
+                    ErrKind::Syntax,
+                    format!("{rel}: `{stem}` is reserved and cannot be a namespace"),
+                )
+                .with_help("rename the file")
+                .into());
+            }
+            let (id, prog) =
+                self.parse_project_file(&store, &root, &canon, FileKind::Project { root: false })?;
+            files.push(PFile {
+                rel,
+                path: canon,
+                id,
+                prog,
+                run_dir: root.clone(),
+            });
+            file_ns.push(Some(stem));
         }
 
         // Mounted sub-projects: their root tasks become a namespace.
         for (path, alias, span) in mounts {
-            let target = root.join(OkPath::parse(&path).native());
+            let target = root_file_dir.join(OkPath::parse(&path).native());
             let canon = crate::path::canonical(&target).map_err(|e| {
                 OkError::at(
                     ErrKind::Io,
@@ -348,16 +467,34 @@ impl Interp {
                 return Err(OkError::at(
                     ErrKind::Name,
                     span,
-                    format!("the mount name `{alias}` is already the namespace ok/{alias}.ok"),
+                    format!(
+                        "the mount name `{alias}` is already the namespace {ns_dir}/{alias}.ok"
+                    ),
                 )
+                .into());
+            }
+            // The mounted file must be the sub-project's one root file
+            // (SPEC.md 15.8), so that the mount runs what `ok -C` there would.
+            let run_dir = mounted_root(&canon).unwrap_or_else(|| root.clone());
+            let own = root_file(&run_dir).map_err(|e| {
+                let mut e = e;
+                e.message = format!("cannot mount \"{path}\": {}", e.message);
+                e.span = Some(span);
+                e
+            })?;
+            if crate::path::canonical(&run_dir.join(OkPath::parse(own).native())).ok()
+                != Some(canon.clone())
+            {
+                return Err(OkError::at(
+                    ErrKind::Name,
+                    span,
+                    format!("cannot mount \"{path}\": the root file of that project is {own}"),
+                )
+                .with_help("mount the project's root file")
                 .into());
             }
             let (id, prog) =
                 self.parse_project_file(&store, &root, &canon, FileKind::Project { root: true })?;
-            let run_dir = canon
-                .parent()
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| root.clone());
             files.push(PFile {
                 rel: rel_of(&root, &canon),
                 path: canon,
@@ -784,7 +921,10 @@ impl Project {
             }
         }
         if self.tasks.iter().filter(visible).count() == 0 {
-            out.push_str("\n  no tasks yet: add one to ok.ok, like\n\n    # Say hello\n    task hello {\n      print(\"hello\")\n    }\n");
+            out.push_str(&format!(
+                "\n  no tasks yet: add one to {}, like\n\n    # Say hello\n    task hello {{\n      print(\"hello\")\n    }}\n",
+                self.files[0].rel
+            ));
         }
         // The listing needs no trust, so doc comments and directory names
         // of a fresh clone must not reach the terminal raw.

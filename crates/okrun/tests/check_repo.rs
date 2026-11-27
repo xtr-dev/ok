@@ -19,7 +19,9 @@ fn ok_files(dir: &Path, out: &mut Vec<PathBuf>) {
                 continue;
             }
             ok_files(&path, out);
-        } else if path.extension().is_some_and(|e| e == "ok") {
+        } else if path.extension().is_some_and(|e| e == "ok")
+            || path.file_name().is_some_and(|n| n == ".ok")
+        {
             out.push(path);
         }
     }

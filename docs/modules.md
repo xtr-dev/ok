@@ -240,10 +240,10 @@ Move the shared part into a third file that both import.
 
 ## Modules in a project
 
-Project files (`ok.ok` and the files in `ok/`) use the same `import`, with two additions:
+Project files (the root file, such as `.ok/ok.ok`, and the files in `.ok/`) use the same `import`, with two additions:
 
 - Every import must stay inside the project root, after following symlinks. A path that escapes with `..` or a symlink is an error, so the code you trust for a project is the code in that project. See [Trust](trust.md).
-- Importing another project's `ok.ok` with `as`, such as `import "frontend/ok.ok" as fe`, mounts that project's tasks under a namespace. See [Tasks](tasks.md).
+- Importing another project's root file with `as`, such as `import "../frontend/ok.ok" as fe` in `.ok/ok.ok`, mounts that project's tasks under a namespace. See [Tasks](tasks.md#mounting-a-sub-project).
 
 ## Where to go next
 

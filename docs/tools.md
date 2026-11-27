@@ -1,6 +1,6 @@
 # Formatter, checker and wrappers
 
-The tools built into the ok binary: `ok self fmt` formats code, `ok self check` finds mistakes without running it, `ok self init` adds the `./ok` wrappers.
+The tools built into the ok binary: `ok self fmt` formats code, `ok self check` finds mistakes without running it, `ok self init` starts a project and can add the `./ok` wrappers.
 
 ok ships its own tooling, so a project needs nothing besides the one binary to keep its scripts tidy and correct. All of it lives under `ok self`, a name no task can take. This page covers the formatter, the checker, the bootstrap wrappers that let people run your tasks without installing ok, and how to use them in an editor and in CI. The reference is [section 17](../SPEC.md#17-built-in-commands-ok-self-) and [section 18](../SPEC.md#18-bootstrap-wrappers) of the spec.
 
@@ -39,7 +39,7 @@ let r = {name: "app.log", size: 3}
 if r.size > 2 { print("big") }
 ```
 
-Running it again changes nothing and says `ok: 1 file already formatted`. Without file arguments, `ok self fmt` formats the project files around the current directory: the root `ok.ok`, the files in `ok/`, and what they import.
+Running it again changes nothing and says `ok: 1 file already formatted`. Without file arguments, `ok self fmt` formats the project files around the current directory: the root file, the files in `.ok/`, and what they import.
 
 ### What the formatter changes
 
@@ -117,7 +117,7 @@ A finding always means the code fails when it runs, so the checker stays quiet w
 
 Without file arguments, `ok self check` checks the project around the current directory. First it applies the rules for loading a project (namespaces, mounts, the tasks and arguments named in `needs`, dependency cycles); then it checks every project file and everything they import.
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 # Compile
 task build(--release: bool) {
   print("build")
@@ -131,7 +131,7 @@ task ship needs [build(relase: true)] {
 
 ```output run="ok self check" exit=1
 error[arg]: task `build` has no parameter `relase`
- --> ok.ok:7:24
+ --> .ok/ok.ok:7:24
   |
 7 | task ship needs [build(relase: true)] {
   |                        ^^^^^^
@@ -142,7 +142,7 @@ ok: the project failed to load: 1 error
 
 An error like this one stops the check, because the project's files are only known once it loads. A clean project prints a one-line summary that also counts its tasks:
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 # Compile
 task build(--release: bool) {
   print("build")
@@ -195,12 +195,11 @@ Findings and the summary go to stderr; a clean summary goes to stdout. Bad usage
 
 ## Starting a project with `ok self init`
 
-`ok self init` sets up a new project in the current directory. It writes a starter `ok.ok` and three bootstrap wrappers:
+`ok self init` sets up a new project in the current directory. It writes a starter `.ok/ok.ok` and nothing else:
 
-```text
-$ ok self init
-wrote ok.ok, ./ok, ok.cmd and ok.ps1 (pinned to ok 0.3.0)
-run ./ok hello (or ok.cmd hello on Windows)
+```output run="ok self init"
+wrote .ok/ok.ok
+run ok hello
 ```
 
 The starter file has one task to build on, and requires the version of ok that wrote it (here 0.3):
@@ -214,20 +213,50 @@ task hello(name: string = "world") {
 }
 ```
 
-To pin the wrappers, `ok self init` downloads the checksums of its own release (`SHA256SUMS` from the GitHub release of the version you are running). Without network access, download that file some other way and pass it with `--checksums SHA256SUMS`. `OK_DOWNLOAD_URL` points both `init` and the wrappers at a mirror instead of GitHub; `init` downloads the checksums only over `https://`, so for a plain-HTTP or `file://` mirror pass a `SHA256SUMS` you checked with `--checksums`. Every entry must be a SHA-256 digest (64 hex digits), since it ends up in the wrappers' code.
+With `--wrappers`, it also writes the three [bootstrap wrappers](#the-ok-wrappers), so that people without ok installed can run the tasks:
 
-`ok self init` never overwrites anything: if any of `ok.ok`, `ok`, `ok.cmd` or `ok.ps1` exists, it stops with an error and writes nothing. To add wrappers to a project that already has an `ok.ok`, run it in an empty directory and copy the three wrapper files over.
+```text
+$ ok self init --wrappers
+wrote .ok/ok.ok, ./ok, ok.cmd and ok.ps1 (pinned to ok 0.3.0)
+run ./ok hello (or ok.cmd hello on Windows)
+```
+
+To pin the wrappers, `ok self init --wrappers` downloads the checksums of its own release (`SHA256SUMS` from the GitHub release of the version you are running); without `--wrappers` it uses no network at all. Without network access, download that file some other way and pass it with `--checksums SHA256SUMS`. `OK_DOWNLOAD_URL` points both `init` and the wrappers at a mirror instead of GitHub; `init` downloads the checksums only over `https://`, so for a plain-HTTP or `file://` mirror pass a `SHA256SUMS` you checked with `--checksums`. Every entry must be a SHA-256 digest (64 hex digits), since it ends up in the wrappers' code.
+
+`ok self init` never overwrites anything: if the directory already has a root file (`ok.ok`, `.ok` or `.ok/ok.ok`), or with `--wrappers` any of `ok`, `ok.cmd` or `ok.ps1`, it stops with an error and writes nothing. To add wrappers to a project that already has a root file, run `ok self init --wrappers` in an empty directory and copy the three wrapper files over.
+
+## Moving to `.ok/` with `ok self promote`
+
+A project that started as a single `.ok` file can move to the `.ok/` directory when it needs namespaces or helper files. `ok self promote` moves the file to `.ok/ok.ok`, unchanged:
+
+```ok file=.ok
+# Say hello
+task hello {
+  print("hello")
+}
+```
+
+```output run="ok self promote"
+moved .ok to .ok/ok.ok
+the project files moved, so the next task run asks for trust again (or run ok trust)
+```
+
+It also moves the files of an old `ok/` namespace directory into `.ok/`, which is what the warning about `ok/` asks for, and removes the empty `ok/`. A root `ok.ok` stays where it is. Every move is checked first: if a file would land on one that exists, nothing is moved, and running it again when everything is in place says there is nothing to promote.
+
+Imports are relative to the file they are in, so an import in a moved file can point somewhere else afterwards: `import "lib/util.ok"` in `.ok` means `.ok/lib/util.ok` once the file is `.ok/ok.ok`. `ok self promote` lists each such import with the path to write instead (`"../lib/util.ok"`). Paths in `sources`, `outputs` and commands are relative to the project root and do not change, unless they name files in `ok/`.
+
+Trust is given to files under their paths, so after the move the project needs [trust](trust.md) again; review the files and answer the prompt, or run `ok trust`.
 
 ## The `./ok` wrappers
 
-The wrappers let anyone run your tasks with nothing but a fresh checkout. Commit them next to `ok.ok`:
+The wrappers let anyone run your tasks with nothing but a fresh checkout. `ok self init --wrappers` writes them; commit them in the project root:
 
 - `ok` is a POSIX `sh` script for Linux and macOS: `./ok build`.
 - `ok.cmd` and `ok.ps1` are for Windows, from `cmd.exe` or PowerShell: `ok.cmd build` or `.\ok.ps1 build`. `ok.cmd` only hands over to `ok.ps1`.
 
 Each wrapper pins one ok version and the SHA-256 of each release binary. On first use it downloads the binary for the current OS and architecture into the user cache (`~/.cache/ok/VERSION-SHA/` on Linux and macOS, `%LOCALAPPDATA%\ok\VERSION-SHA\` on Windows, where `SHA` is the first 16 digits of the pinned checksum, so a binary is only reused by wrappers that pin the same one), checks its checksum, and runs it with all your arguments. If the checksum does not match, it deletes the download and refuses to run it. Later runs use the cached binary straight away, so the wrapper costs nothing after the first time.
 
-Because the version is pinned, everyone on the project, and CI, runs the same ok. If the project's `requires` is newer than the ok someone has installed, the error points at the wrapper as the fix. To move a project to a newer ok, delete the three wrappers, run `ok self init` with the new version in an empty directory, and copy the new wrappers in.
+Because the version is pinned, everyone on the project, and CI, runs the same ok. If the project's `requires` is newer than the ok someone has installed, the error points at the wrapper as the fix. To move a project to a newer ok, delete the three wrappers, run `ok self init --wrappers` with the new version in an empty directory, and copy the new wrappers in.
 
 The wrappers are the only shell code ok produces, and they stay short enough to read before you run them. They still go through [trust](trust.md) like any other way of running tasks, but only once ok runs: `./ok` itself is a shell script from the repository, and your shell runs it before any trust check. A repository you do not trust could have changed it to do anything. So in a repository you have not reviewed, run your installed `ok` instead of `./ok`; the trust prompt then protects you as described.
 
@@ -242,7 +271,7 @@ The wrappers are the only shell code ok produces, and they stay short enough to 
 
 `ok self complete` is handy for checking what Tab will offer, without a shell:
 
-```ok file=ok.ok
+```ok file=.ok/ok.ok
 # Deploy the app
 task deploy(target: "staging" | "production", --verbose, -v: bool) {
   print("deploying to {target}")

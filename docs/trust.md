@@ -21,7 +21,7 @@ These only parse the files; loading a project never runs any of its code (see [T
 
 ## What is trusted
 
-The **project files** are the root `ok.ok`, every file in `ok/`, and every file those import, directly or indirectly, including mounted sub-projects. ok computes one SHA-256 **fingerprint** over their paths and contents. Trust is recorded for a project root together with that fingerprint.
+The **project files** are the root file (`.ok/ok.ok`, `.ok` or `ok.ok`), every `.ok` file directly in `.ok/` (helpers included), and every file those import, directly or indirectly, including mounted sub-projects. ok computes one SHA-256 **fingerprint** over their paths, relative to the project root, and their contents. Moving a file, as `ok self promote` does, therefore changes the fingerprint too. Trust is recorded for a project root together with that fingerprint.
 
 The **env files** a run loads (`env file ".env"` and, with `--env NAME`, `.env.NAME`, see [Tasks](tasks.md#environment-files)) are part of the fingerprint too: a variable such as `NODE_OPTIONS` or `PATH` changes what every program a task starts does, so a changed `.env` is a changed project. Since env files often hold secrets, the prompt shows only their variable names, never the values, and the trust store keeps only the names. A run with `--env staging` loads one more file than a run without, so it is approved separately; `ok --env staging trust` approves it ahead of time.
 
@@ -41,7 +41,7 @@ Running a task in a project you have not trusted, on a terminal, shows:
 This project is not trusted yet.
 
   root:   /home/you/src/myapp
-  files:  ok.ok, ok/admin.ok, ok/db.ok
+  files:  .ok/admin.ok, .ok/db.ok, .ok/ok.ok
   sha256: 9f2c4e...
 
 Tasks are code that runs with your permissions. Trust is not a sandbox.
@@ -58,13 +58,13 @@ If an earlier version of the project was trusted, ok says so and offers a diff a
 The project files changed since you trusted them.
 
   root:   /home/you/src/myapp
-  files:  ok.ok
+  files:  .ok/ok.ok
   sha256: f856460707c9...
 
 Tasks are code that runs with your permissions. Trust is not a sandbox.
 [d]iff, [v]iew files, [t]rust and run, [n]o: d
---- trusted/ok.ok
-+++ current/ok.ok
+--- trusted/.ok/ok.ok
++++ current/.ok/ok.ok
 @@
    print("hello {name}")
  }
@@ -85,7 +85,7 @@ If an earlier version was trusted, the error says the files changed and names th
 ```text
 error[trust]: the project files changed since you trusted them
   = note: the project is at /home/you/src/myapp
-  = note: changed: ok.ok
+  = note: changed: .ok/ok.ok
   = help: review the files, then run `ok trust`; in CI set OK_TRUST=1 or pass --trust
 ```
 
@@ -96,7 +96,7 @@ You do not have to wait for the prompt. Read the files, then trust them:
 ```text
 $ ok trust
 trusted /home/you/src/myapp
-  files:  ok.ok, web/ok.ok
+  files:  .ok/ok.ok, web/ok.ok
   sha256: 1956c16a52ea3f783cca2f931b7c44151a47b4c63c929b4288ab14635ebe6242
 ```
 
@@ -155,17 +155,17 @@ It holds `trust.json`, with one entry per trusted root and fingerprint (or direc
 
 ## Imports stay inside the project
 
-For the fingerprint to mean anything, every file a project loads has to be part of it. So in project mode, every import and every namespace file must resolve inside the project root, after following symlinks. An `import "../shared/lib.ok"` that leaves the root, or an `ok/` file that is a symlink to somewhere else, is an error as soon as ok loads the project: listing the tasks, `ok self check` and `ok trust` refuse it as well as running a task, so nothing outside the root is ever trusted by mistake:
+For the fingerprint to mean anything, every file a project loads has to be part of it. So in project mode, every import and every namespace file must resolve inside the project root, after following symlinks. An import that leaves the root, such as `import "../../shared/lib.ok"` in `.ok/ok.ok`, or a `.ok/` file that is a symlink to somewhere else, is an error as soon as ok loads the project: listing the tasks, `ok self check` and `ok trust` refuse it as well as running a task, so nothing outside the root is ever trusted by mistake:
 
 ```text
-error[trust]: "../shared/lib.ok" is outside the project
- --> ok.ok:1:8
+error[trust]: "../../shared/lib.ok" is outside the project
+ --> .ok/ok.ok:1:8
   |
-1 | import "../shared/lib.ok"
-  |        ^^^^^^^^^^^^^^^^^^
+1 | import "../../shared/lib.ok"
+  |        ^^^^^^^^^^^^^^^^^^^^^
   |
   = note: it resolves to /home/you/src/shared/lib.ok
   = help: project files may only import files inside the project root
 ```
 
-To share code, keep it inside the project root: in a helper file such as `ok/_lib.ok`, or in a sub-project that the root `ok.ok` mounts.
+To share code, keep it inside the project root: in a helper file such as `.ok/_lib.ok`, or in a sub-project that the root file mounts.

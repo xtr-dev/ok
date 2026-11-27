@@ -154,7 +154,7 @@ fn check(
         else {
             continue;
         };
-        if OkPath::parse(raw).name() == "ok.ok" {
+        if crate::project::is_root_name(&OkPath::parse(raw).name()) {
             // A mount (SPEC.md 15.8) binds no name; elsewhere it fails.
             complete &= kind == FileKind::Project { root: true };
             continue;

@@ -369,5 +369,5 @@ You have used most of what everyday scripts need: `read` and `write`, pipelines 
 
 - [Coming from bash and make](from-bash.md) if you want to replace existing shell scripts or Makefiles.
 - [Running commands](commands.md) to start programs such as `git` or `cargo` from a script.
-- [Tasks](tasks.md) to put a project's commands in `ok.ok` instead of a Makefile.
+- [Tasks](tasks.md) to put a project's commands in `.ok/ok.ok` instead of a Makefile.
 - The [log-summary](../examples/log-summary/) and [csv-to-json](../examples/csv-to-json/) examples, which do similar work and sit next to the bash and Python scripts they replace.

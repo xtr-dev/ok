@@ -64,7 +64,8 @@ fn usage_errors_exit_with_2() {
     assert!(stderr(&out).contains("does not exist"));
     let out = ok(&["build"]);
     assert_eq!(out.status.code(), Some(2));
-    assert!(stderr(&out).contains("no ok.ok found"));
+    assert!(stderr(&out).contains("no project found in "));
+    assert!(stderr(&out).contains("(no ok.ok, .ok or .ok/ok.ok), so `build` is not a task"));
 }
 
 #[test]

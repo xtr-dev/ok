@@ -1,6 +1,7 @@
-//! `ok self init` and the `./ok` wrapper (SPEC.md 18), end to end: a local
-//! directory stands in for the GitHub release, so the wrapper's download,
-//! checksum check and cache are exercised without network access.
+//! `ok self init --wrappers` and the `./ok` wrapper (SPEC.md 18), end to
+//! end: a local directory stands in for the GitHub release, so the
+//! wrapper's download, checksum check and cache are exercised without
+//! network access.
 
 #![cfg(unix)]
 
@@ -51,7 +52,7 @@ fn a_fresh_project_runs_through_the_wrapper() {
     std::fs::write(release.join("SHA256SUMS"), &sums).unwrap();
 
     let init = Command::new(ok)
-        .args(["self", "init", "--checksums"])
+        .args(["self", "init", "--wrappers", "--checksums"])
         .arg(release.join("SHA256SUMS"))
         .current_dir(&project)
         .output()
@@ -61,7 +62,7 @@ fn a_fresh_project_runs_through_the_wrapper() {
         "{}",
         String::from_utf8_lossy(&init.stderr)
     );
-    for f in ["ok.ok", "ok", "ok.cmd", "ok.ps1"] {
+    for f in [".ok/ok.ok", "ok", "ok.cmd", "ok.ps1"] {
         assert!(project.join(f).exists(), "{f} written");
     }
     // The starter requires the running version's major.minor.
@@ -71,10 +72,10 @@ fn a_fresh_project_runs_through_the_wrapper() {
         version.next().unwrap(),
         version.next().unwrap()
     );
-    let starter = std::fs::read_to_string(project.join("ok.ok")).unwrap();
+    let starter = std::fs::read_to_string(project.join(".ok/ok.ok")).unwrap();
     assert!(starter.starts_with(&requires), "{starter}");
     let again = Command::new(ok)
-        .args(["self", "init", "--checksums"])
+        .args(["self", "init", "--wrappers", "--checksums"])
         .arg(release.join("SHA256SUMS"))
         .current_dir(&project)
         .output()
@@ -158,7 +159,7 @@ fn init_accepts_only_hex_checksums_and_https_downloads() {
     }
     std::fs::write(base.join("SHA256SUMS"), &sums).unwrap();
     let o = Command::new(ok)
-        .args(["self", "init", "--checksums", "SHA256SUMS"])
+        .args(["self", "init", "--wrappers", "--checksums", "SHA256SUMS"])
         .current_dir(&base)
         .output()
         .unwrap();
@@ -166,6 +167,7 @@ fn init_accepts_only_hex_checksums_and_https_downloads() {
     assert!(!o.status.success());
     assert!(err.contains("is not a SHA-256 digest"), "{err}");
     assert!(!base.join("ok").exists(), "no wrapper is written");
+    assert!(!base.join(".ok").exists(), "nor the starter");
 
     // Upper-case digests are accepted and written in lower case.
     let upper = sums
@@ -180,7 +182,7 @@ fn init_accepts_only_hex_checksums_and_https_downloads() {
     )
     .unwrap();
     let o = Command::new(ok)
-        .args(["self", "init", "--checksums", "SHA256SUMS"])
+        .args(["self", "init", "--wrappers", "--checksums", "SHA256SUMS"])
         .current_dir(&base)
         .output()
         .unwrap();
@@ -193,7 +195,7 @@ fn init_accepts_only_hex_checksums_and_https_downloads() {
     let empty = base.join("empty");
     std::fs::create_dir_all(&empty).unwrap();
     let o = Command::new(ok)
-        .args(["self", "init"])
+        .args(["self", "init", "--wrappers"])
         .env("OK_DOWNLOAD_URL", "http://mirror.example/ok")
         .current_dir(&empty)
         .output()
@@ -201,5 +203,6 @@ fn init_accepts_only_hex_checksums_and_https_downloads() {
     let err = String::from_utf8_lossy(&o.stderr);
     assert!(!o.status.success());
     assert!(err.contains("must be downloaded over https"), "{err}");
+    assert!(!empty.join(".ok").exists(), "nothing is written");
     let _ = std::fs::remove_dir_all(&base);
 }
