@@ -3,7 +3,7 @@
 Version: 0.4.0 (2026-11-27).
 
 This document is normative. When the implementation and this document
-disagree, one of them is a bug; `SPEC.md` is changed first, in the same
+disagree, one of them is a bug. `SPEC.md` is changed first, in the same
 commit as the behaviour change or the one before. Decisions behind the
 choices made here are logged with dates in `DECISIONS.md`.
 
@@ -127,20 +127,20 @@ error: unknown flag --trace for task `build`
 | 130 | Interrupted by Ctrl-C. |
 
 Once a script has started a command with a `timeout` (9.6) or made a
-temporary file or directory (12.1), ok handles interrupts itself: on
-Ctrl-C, SIGTERM or SIGHUP (Ctrl-C or Ctrl-Break, or closing the console, on
-Windows) it sends SIGTERM to the process groups of running commands with a
-timeout, removes the files of `tempdir()` and `tempfile()`, and exits with
-code 130. Otherwise the interrupt ends ok directly, as it ends any
-program.
+temporary file or directory (12.1), ok handles interrupts itself. On Ctrl-C,
+SIGTERM or SIGHUP (Ctrl-C or Ctrl-Break, or closing the console, on Windows)
+it sends SIGTERM to the process groups of running commands with a timeout,
+removes the files of `tempdir()` and `tempfile()`, and exits with code 130.
+Otherwise the interrupt ends ok directly, as it ends any program.
 
 `exit(code)` exits with any code from 0 to 255.
 
 ### 2.4 Shebang
 
-A first line starting with `#!` is a comment like any other `#` line. On Unix,
-`#!/usr/bin/env ok` makes an executable script; the kernel passes its path as
-the first argument, which contains a separator and is therefore a script.
+A first line starting with `#!` is a comment like any other `#` line. On
+Unix, `#!/usr/bin/env ok` makes an executable script. The kernel passes the
+script's path as the first argument. That argument contains a separator, so
+it is recognised as a script (2.1).
 
 ## 3. Lexical structure
 
@@ -153,9 +153,9 @@ are `\n` or `\r\n`; a lone `\r` is an error. Files conventionally end in
 Control characters (U+0000 to U+001F, U+007F to U+009F) other than tab and
 the line endings, and the bidirectional controls U+061C, U+200E, U+200F,
 U+202A to U+202E and U+2066 to U+2069, are syntax errors anywhere in a file:
-in code, in strings of every kind and in comments. They can make a line
-look different from what runs ("Trojan Source"); a string that needs one
-uses an escape (3.5), such as `"\u{1b}[1m"`.
+in code, in strings of every kind and in comments. These characters can make
+a line look different from what runs ("Trojan Source"). A string that needs
+one uses an escape (3.5), such as `"\u{1b}[1m"`.
 
 ### 3.2 Comments
 
@@ -249,17 +249,18 @@ Single-quoted strings are raw: no escapes, no interpolation. They cannot
 contain `'`. They are the natural form for regexes and Windows paths:
 `'\d+\.\d+'`, `'C:\Users'`.
 
-Both forms may span lines. **Triple-quoted strings** `"""..."""` (escapes and
-interpolation) and `'''...'''` (raw) are for multi-line text and are
-dedented: if the opening quotes are followed directly by a newline, that
-newline is removed; the common leading whitespace of all non-blank lines,
-including the line of the closing quotes, is removed from every line; if the
-closing quotes are on a line of their own, the newline before them is kept
-and the indentation before them is removed. Dedenting applies to the
-literal's source text; interpolated values are inserted afterwards
-unchanged. A triple-quoted string ends at the first `"""` after its opening
-quotes, so an interpolation inside it must close before that point; one that
-runs past it is a syntax error. Build such an inner string in a `let` first.
+Both forms may span lines. **Triple-quoted strings** `"""..."""` (escapes
+and interpolation) and `'''...'''` (raw) are for multi-line text and are
+dedented by these rules. If the opening quotes are followed directly by a
+newline, that newline is removed. The common leading whitespace of all
+non-blank lines, including the line of the closing quotes, is removed from
+every line. If the closing quotes are on a line of their own, the newline
+before them is kept and the indentation before them is removed. Dedenting
+applies to the literal's source text; interpolated values are inserted
+afterwards unchanged. A triple-quoted string ends at the first `"""` after
+its opening quotes, so an interpolation inside it must close before that
+point. An interpolation that runs past it is a syntax error. Build such an
+inner string in a `let` first.
 
 ```
 let msg = """
@@ -445,12 +446,12 @@ after `=>` of an arm, `{` starts a block.
 A call's `(` must follow the callee with no whitespace: `f(x)` is a call,
 `f (x)` is not (and in a pipeline stage it is a juxtaposed argument).
 
-Size limits keep hostile or generated input from exhausting the stack:
-expressions and blocks nest at most 150 deep, and an expression's syntax
-tree is at most 1000 levels tall, where every link of a chain counts as a
-level: each operator in `a + b + c`, each stage in `x | f | g`, each `.name`,
-`[i]` or call in `r.a.b()`, and each `else if` branch. Exceeding either is a
-syntax error.
+Expressions and blocks nest at most 150 deep, and an expression's syntax
+tree is at most 1000 levels tall. Every link of a chain counts as a level:
+each operator in `a + b + c`, each stage in `x | f | g`, each `.name`, `[i]`
+or call in `r.a.b()`, and each `else if` branch. Exceeding either limit is a
+syntax error. The limits keep hostile or generated input from exhausting the
+stack.
 
 ## 5. Values and types
 
@@ -506,10 +507,10 @@ spaces, and uses a placeholder (`xs`, `s`, `n`, ...) otherwise.
 
 ### 5.4 Equality and ordering
 
-`==` and `!=` compare structurally; records are equal when they have the
-same keys with equal values, in any order. Values of different kinds are unequal,
-except that an `int` and a `float` compare numerically (`1 == 1.0`). Comparing
-a `path` with a `string` is always `false`.
+`==` and `!=` compare structurally. Records are equal when they have the
+same keys with equal values, in any order. Values of different kinds are
+unequal, except that an `int` and a `float` compare numerically (`1 ==
+1.0`). Comparing a `path` with a `string` is always `false`.
 
 An `int` and a `float` compare by their exact mathematical values, never by
 rounding the int to a float: `9007199254740993 == 9007199254740992.0` is
@@ -559,7 +560,7 @@ lists, into at most 1 GiB of elements (16 bytes each). Spread `...xs` inserts th
 arguments of a call.
 
 Lists and records nest at most 1000 levels deep (a list of numbers is one
-level); building a deeper value, as `x = [x]` in a long loop would, is a
+level). Building a deeper value, as `x = [x]` in a long loop would, is a
 `value` error. Displaying, comparing and freeing a value work through every
 level, and the limit keeps them from exhausting the stack. Likewise a value
 may take at most 1 GiB written out, counting a shared element each time it
@@ -618,11 +619,12 @@ Calls nest at most 2000 deep, and evaluation (expressions inside calls
 inside expressions, counted across calls) at most 50000 levels; deeper
 recursion is an error, not a crash.
 
-Functions are values. `fn name(...) { }` declares a named function; inside a
-block it is visible in the whole block (declarations are hoisted), at the top
-level in the whole file. `fn(...) { }` is an anonymous function. Closures
-capture variables by reference: a closure sees later assignments to a `var`
-it captured.
+Functions are values. `fn name(...) { }` declares a named function. A
+function declared inside a block is visible in the whole block (declarations
+are hoisted), and a function declared at the top level is visible in the
+whole file. `fn(...) { }` is an anonymous function. Closures capture
+variables by reference: a closure sees later assignments to a `var` it
+captured.
 
 A function returns the value of `return expr`, or else the value of the last
 statement of its body if that is an expression, or else `null`.
@@ -681,8 +683,9 @@ Defined in 4.4 and 5. `and` and `or` short-circuit. `a ?? b` evaluates to
 ### 6.2 Catch operator `?`
 
 `expr?` evaluates the postfix chain to its left (the primary and every
-`.field`, `[index]` and `(call)` after it); if that raises any error, the
-result is `null` instead. It does not catch `exit()` or Ctrl-C.
+`.field`, `[index]` and `(call)` after it). If that evaluation raises any
+error, the result is `null` instead. The operator does not catch `exit()` or
+Ctrl-C.
 
 ```
 let cfg  = read("config.toml")? ?? {}     # missing or malformed file: {}
@@ -731,12 +734,13 @@ Arms are tried in order. A pattern is a literal (compared with `==`), `_`
 (matches anything), an identifier (matches anything and binds it), or a list
 or record pattern. A guard `if cond` must be a bool. The guard is any
 expression and ends at the arm's `=>`: `_ if flag =>` and `_ if (a or b) =>`
-are guards, not arrow closures (6.8). If no arm matches, it is
-an error that shows the value. `match` yields the value of the chosen arm.
+are guards, not arrow closures (6.8). A value that no arm matches is an
+error that shows the value. `match` yields the value of the chosen arm.
 `match` does not require the arms to cover every value.
 
 List and record patterns look like the destructuring patterns of `let`
-(7.1), but they test instead of fail:
+(7.1), but a value that does not fit one is not an error. The pattern then
+does not match:
 
 ```
 let summary = match fetch(url, check: false) {
@@ -813,11 +817,11 @@ When the `finally` block completes normally, the pending outcome stands: the
 `try` expression yields the value of the `try` (or `catch`) block, and the
 value of `finally` is discarded, or the pending error, `return`, `break`,
 `continue` or `exit` continues outwards. When the `finally` block itself
-raises an error (or calls `exit`), that replaces the pending outcome; an
+raises an error (or calls `exit`), that replaces the pending outcome. An
 error raised this way carries a note with the message of the error it
 replaced. `return`, `break` and `continue` that would leave a `finally`
 block are syntax errors, because they would silently discard the pending
-outcome; inside a loop or function within the `finally` block they are
+outcome. Inside a loop or function within the `finally` block they are
 allowed as usual.
 
 Ctrl-C ends ok without running `finally` blocks (2.3, code 130).
@@ -930,11 +934,11 @@ The right side of `|` (a **stage**) is one of:
 3. **A juxtaposed call** `name arg`: the name followed by whitespace and
    exactly one argument. Equivalent to `name(left, arg)`. A comma after it
    belongs to the surrounding call or list, so `print(xs | count, ys |
-   count)` passes two values to `print`; a stage that needs more arguments
+   count)` passes two values to `print`. A stage that needs more arguments
    uses parentheses: `| sort(.size, desc: true)`. Juxtaposition is allowed
    only in pipeline stages, and its argument cannot begin with an operator
-   other than `.`, `not` or `-` followed directly by a digit. `| take 5`,
-   `| sort .name`, `| join ", "`, `| where not .done`.
+   other than `.`, `not` or `-` followed directly by a digit. Examples: `|
+   take 5`, `| sort .name`, `| join ", "`, `| where not .done`.
 4. **A command** `run ...`: the left value becomes the command's stdin
    (9.5).
 5. **Any other expression** that evaluates to a function: it is called with
@@ -1024,8 +1028,8 @@ Rules:
 9. A first word containing `=` (`FOO=1 make`) is an error suggesting
    `with {env: {FOO: "1"}}`.
 10. An unquoted `)` or `}` that does not close something opened inside the
-    command ends the command. This is what makes `(run git rev-parse
-    HEAD).out` and `if x { run make }` work.
+    command ends the command. This rule makes `(run git rev-parse HEAD).out`
+    and `if x { run make }` work.
 11. A `\` as the last character of a line continues the command on the next
     line. At the end of the file it continues onto nothing, as it would
     with a final newline.
@@ -1060,19 +1064,20 @@ The first argument names the program.
 - If it contains a path separator, it is resolved relative to the command's
   working directory.
 - Otherwise each directory of `PATH` is searched in order. On Windows the
-  search also tries each extension in `PATHEXT` (default `.COM;.EXE;.BAT;.CMD`)
-  when the name has no extension, so `run npm install` finds `npm.cmd`. The
-  current directory is **not** searched on any OS: empty `PATH` entries and
-  `.` are skipped. Other relative entries (`node_modules/.bin`) are relative
-  to ok's working directory, also for a command with a `cwd` option, and the
-  program found is run by its absolute path, so the file that was checked
-  is the file that runs.
+  search also tries each extension in `PATHEXT` (default
+  `.COM;.EXE;.BAT;.CMD`) when the name has no extension, so `run npm
+  install` finds `npm.cmd`. The current directory is **not** searched on any
+  OS: empty `PATH` entries and `.` are skipped. Other relative entries
+  (`node_modules/.bin`) are relative to ok's working directory, also for a
+  command with a `cwd` option. The program found is run by its absolute
+  path, so the file that was checked is the file that runs.
 - The search uses the `PATH` that the command gets: ok's own, or one set
   with `env.set` or the `env` option. On Unix only the variable named
   exactly `PATH` counts (`path` is another variable); on Windows the name is
   case-insensitive.
-- Not found is an error: `command not found: cargo (searched PATH)`. On Unix
-  a file without execute permission is skipped during the search.
+- A program that is not found is an error: `command not found: cargo
+  (searched PATH)`. On Unix a file without execute permission is skipped
+  during the search.
 
 ### 9.4 Process creation
 
@@ -1082,12 +1087,12 @@ Commands are spawned directly with an argument vector. ok never invokes
 On Windows, a program's arguments are joined into one command line using the
 quoting rules of the Microsoft C runtime (`CommandLineToArgvW`). Batch files
 (`.bat`, `.cmd`) are started by `CreateProcess`, which hands them to the
-batch interpreter; their arguments are quoted with the stricter batch rules
-and an argument that cannot be passed to a batch file safely (for example
-one containing a newline, or `%` together with characters the batch parser
+batch interpreter. Their arguments are quoted with the stricter batch rules.
+An argument that cannot be passed to a batch file safely (for example one
+containing a newline, or `%` together with characters the batch parser
 treats specially) is refused with an error instead of being passed in a form
-the batch parser could misread. This uses the Rust standard library's
-batch-file quoting, which was hardened for CVE-2024-24576.
+the batch parser could misread. For this, ok uses the Rust standard
+library's batch-file quoting, which was hardened for CVE-2024-24576.
 
 The child inherits ok's environment (plus `env` options, 9.6), and the
 working directory is the project root in project mode or ok's working
@@ -1109,16 +1114,16 @@ stands**, never by what the command does:
 
 The **result record** has fields `out` (string), `err` (string), `code`
 (int), `ok` (bool, `code == 0`), `cmd` (list of strings) and `duration`. In
-captured output, all trailing `\n` and `\r\n` are removed from `out` and `err`
-(as in shell `$(...)`); with the option `bytes: true` they are raw bytes,
-unmodified. Captured output that is not valid UTF-8 is an error suggesting
-`bytes: true`.
+captured output, all trailing `\n` and `\r\n` are removed from `out` and
+`err` (as in shell `$(...)`). With the option `bytes: true`, both fields are
+raw bytes, unmodified. Captured output that is not valid UTF-8 is an error
+suggesting `bytes: true`.
 
 Stdin is inherited from ok unless given:
 
 - `< target` reads a file.
-- `value | run cmd`: a string, bytes or lazy text is written to stdin; a list
-  of strings is written one per line; for other values it is an error.
+- `value | run cmd`: a string, bytes or lazy text is written to stdin; a
+  list of strings is written one per line; any other value is an error.
 - `stdin:` option (9.6).
 
 Pipelines of commands, `run a | run b`, connect a's stdout to b's stdin
@@ -1170,17 +1175,17 @@ run("npm", "ci", cwd: "frontend", timeout: 10m)
 | `quiet` | bool | Hide the command's output. It is captured and discarded instead of shown; on failure the error still includes the last lines of stderr. |
 
 A `timeout` covers the whole command: running it, and reading its output
-when it is captured or piped, so a process it left running in the
-background cannot keep ok waiting past the deadline. When the deadline
-passes, ok kills the command together with every process it started: on
-Unix the command runs in its own process group, which is killed as a
-whole; on Windows it runs in a job object, which is closed. Processes that
-a command which finished in time leaves in the background keep running.
-Because of its own process group, a command with a `timeout` does not get
-Ctrl-C from the terminal (ok passes the interrupt on, 2.3) and cannot read
-from the terminal on Unix; give it `stdin` instead. A process that leaves
-the group itself (a daemon calling `setsid`) is not stopped, and ok stops
-reading its output 0.5 s after the deadline.
+when it is captured or piped, so a process it left running in the background
+cannot keep ok waiting past the deadline. When the deadline passes, ok kills
+the command together with every process it started. On Unix the command runs
+in its own process group, which is killed as a whole. On Windows it runs in
+a job object, which is closed. When a command finishes in time, the
+processes it leaves in the background keep running. Because of its own
+process group, a command with a `timeout` does not get Ctrl-C from the
+terminal (ok passes the interrupt on, 2.3) and cannot read from the terminal
+on Unix; give it `stdin` instead. A process that leaves the group itself (a
+daemon calling `setsid`) is not stopped, and ok stops reading its output 0.5
+s after the deadline.
 
 A command that should run without printing anything uses `quiet`:
 
@@ -1199,8 +1204,8 @@ the last 20 lines of stderr when stderr was captured. With `2>&1` and
 captured output, it carries the last 20 lines of the merged output instead,
 shown as `output (last N lines)` and also given as the error record's
 `stderr`. When stderr went to a file (`2>`, `2>>`, or `2>&1` together with
-`>`), the error names the file: `stderr was written to build.log`.
-Uncaught, ok exits with the child's exit code (2.3).
+`>`), the error names the file: `stderr was written to build.log`. When the
+error is not caught, ok exits with the child's exit code (2.3).
 
 `run!` never raises for a nonzero exit; the result record carries the code.
 It still raises when the program cannot be found or started.
@@ -1209,12 +1214,12 @@ In a pipeline of commands, `run a | run b`, every command's failure counts
 (like `set -o pipefail` in a shell): a nonzero exit or timeout of `a` is
 raised once `b` has ended, even when `b` succeeded. When several commands of
 a pipeline fail, the error of the leftmost one is raised, since a later
-failure is usually a consequence. A command ended because the command it
-feeds stopped reading is not a failure (9.5): on Unix, one killed by
-SIGPIPE; on Windows, which has no such signal, one still running when the
-command it feeds has ended, which ok then terminates. `!` applies to the
-command it is written on: `run! a | run b` ignores the exit code of `a`
-only, and `run a | run! b` still raises for `a`.
+failure is usually a consequence. A command that ended because the command
+it feeds stopped reading is not a failure (9.5). On Unix that is a command
+killed by SIGPIPE. Windows has no such signal, so there it is a command
+still running when the command it feeds has ended, which ok then terminates.
+`!` applies to the command it is written on: `run! a | run b` ignores the
+exit code of `a` only, and `run a | run! b` still raises for `a`.
 
 ### 9.8 Tracing
 
@@ -1246,15 +1251,15 @@ stderr, and the working directory as `(in DIR)`, with paths in display form
 
 With `--dry-run`, every command and every mutating file-system or network
 operation (12.1, 12.9) is printed in trace format with the prefix `~ ` and
-not performed: the operation's name, then its paths and URLs quoted like
-command arguments (`~ copy "my notes.txt" backup/`, `~ fetch POST
-https://example.com/api`). A file operation is printed even when it would have nothing
-to do (`remove` of a missing path, `mkdir` of an existing directory), so the
-plan does not depend on what earlier skipped steps would have created; with
-`--trace` the same lines are printed with `+ `. A skipped command yields
-`{out: "", err: "", code: 0, ok: true}`.
-Reads still happen. Because skipped steps produce empty results, a dry run
-shows the plan of a script, not a guaranteed preview of every branch.
+not performed. An operation is printed as its name, then its paths and URLs
+quoted like command arguments (`~ copy "my notes.txt" backup/`, `~ fetch
+POST https://example.com/api`). A file operation is printed even when it
+would have nothing to do (`remove` of a missing path, `mkdir` of an existing
+directory), so the plan does not depend on what earlier skipped steps would
+have created. With `--trace` the same lines are printed with `+ `. A skipped
+command yields `{out: "", err: "", code: 0, ok: true}`. Reads still happen.
+Because skipped steps produce empty results, a dry run shows the plan of a
+script, not a guaranteed preview of every branch.
 
 ## 10. Errors
 
@@ -1263,7 +1268,7 @@ shows the plan of a script, not a guaranteed preview of every branch.
 Every error shows the kind, message, location and a source snippet with the
 span underlined, followed by optional notes, a call trace and a help line.
 Errors without a source location (command-line and some load errors) show
-only `error: message` and their notes and help; trust errors (16) show
+only `error: message` and their notes and help. Trust errors (16) show
 `error[trust]: message`, so a refusal to run is recognisable.
 
 ```
@@ -1446,8 +1451,8 @@ nothing returns `[]`.
 
 The pattern is matched against paths relative to `root`; the results are
 joined to `root` (so with the default root they are relative to the working
-directory and usable directly). `exclude` patterns are matched the same way;
-an excluded directory is not descended into, which keeps `**` fast in trees
+directory and usable directly). `exclude` patterns are matched the same way.
+An excluded directory is not descended into, which keeps `**` fast in trees
 with `node_modules` or `target`.
 
 #### 12.1.2 Writing files safely
@@ -1461,17 +1466,17 @@ unpredictable name and, on Unix, can be opened only by its owner (mode
 0600) until it is complete, so other users never see a half-written
 secret.
 
-Writing through a symlink replaces the file it points to, following a
-chain of links; a link to a missing file creates that file and the link
-stays, as with a shell's `>`. The new file keeps the old file's permission
-bits (without setuid, setgid and sticky, since its owner may differ), or
-for a new file gets the usual ones (0666 minus the umask), and a read-only
-target stays an error. A target that is not a regular file (`/dev/null`, a
-named pipe), or an existing file in a directory where no new file may be
-created, is written directly.
-Because the target is replaced only at the end, `read(p) | ... | write(p)`
-rewrites a file in place. `write(..., append: true)` serialises the whole value before appending, so
-a failed append adds nothing.
+Writing through a symlink replaces the file it points to, following a chain
+of links. Writing through a link to a missing file creates that file, and
+the link stays, as with a shell's `>`. A file that replaces an old file
+keeps the old file's permission bits (without setuid, setgid and sticky,
+since its owner may differ). A file that did not exist before gets the usual
+permission bits (0666 minus the umask). A read-only target stays an error. A
+target that is not a regular file (`/dev/null`, a named pipe), or an
+existing file in a directory where no new file may be created, is written
+directly. Because the target is replaced only at the end, `read(p) | ... |
+write(p)` rewrites a file in place. `write(..., append: true)` serialises
+the whole value before appending, so a failed append adds nothing.
 
 ### 12.2 Paths
 
@@ -1512,9 +1517,10 @@ Environment variable names are case-insensitive on Windows and
 case-sensitive elsewhere. `env.set` and `env.remove` refuse, with a `value`
 error, a name that is empty or contains `=` or NUL (the operating system
 stores a variable as `NAME=value`, so such a name would set a different
-variable), and `env.set` a value containing NUL. An argument containing
-NUL is a `command` error, since no program can receive it. `get`, `has`, `set`, `remove` and `all` are methods
-of `env`; read a variable with such a name through `env.get("get")`.
+variable). In the same way, `env.set` refuses a value containing NUL. An
+argument containing NUL is a `command` error, since no program can receive
+it. `get`, `has`, `set`, `remove` and `all` are methods of `env`; read a
+variable with such a name through `env.get("get")`.
 
 ### 12.4 Text
 
@@ -1690,7 +1696,7 @@ Redirects (301, 302, 303, 307, 308) are followed only to `http://` and
 `https://` URLs, and never from `https` to plain `http`, which is a `net`
 error. A redirect to another origin (scheme, host or port) drops every
 header passed in `headers:`, since any of them may carry credentials
-(`authorization`, `x-api-key`, ...); only the `content-type` of a body sent
+(`authorization`, `x-api-key`, ...). Only the `content-type` of a body sent
 again is kept. 303, and 301 or 302 after a `POST`, continue as a `GET`
 without a body; 307 and 308 repeat the method and body.
 
@@ -1770,9 +1776,9 @@ read("server.log.gz") | lines | where(l => "ERROR" in l) | count
 
 #### 13.1.2 Size limits
 
-Data from a file or stdin may be hostile, and a few kilobytes of gzip can
-stand for gigabytes. So `read` and `stdin()` hold only so much in memory at
-once, counted after decompression:
+`read` and `stdin()` limit how much data they hold in memory at once,
+counted after decompression. Data from a file or stdin may be hostile, and a
+few kilobytes of gzip can decompress to gigabytes. The limits are:
 
 - `max_size` (default 1 GiB, 1_073_741_824 bytes) limits a whole document:
   `json`, `toml`, `yaml`, `env` and `bytes`.
@@ -1812,12 +1818,12 @@ produces three numbers.
 ### 13.3 JSON
 
 Numbers without a fraction or exponent that fit in a signed 64-bit int
-(−2^63 to 2^63−1) become `int`; all other numbers become `float`, so an
+(−2^63 to 2^63−1) become `int`. All other numbers become `float`, so an
 integer beyond that range, such as 18446744073709551615, is read as a float
-and loses precision, as in JavaScript. Objects become records in document order. Writing: paths and
-times become strings (display form; times in UTC RFC 3339), durations become
-strings in literal syntax, bytes and functions are errors. Duplicate keys in
-input: the last wins.
+and loses precision, as in JavaScript. Objects become records in document
+order. When writing, paths and times become strings (display form; times in
+UTC RFC 3339), durations become strings in literal syntax, and bytes and
+functions are errors. When the input has duplicate keys, the last one wins.
 
 ### 13.4 CSV and TSV
 
@@ -1844,10 +1850,10 @@ input: the last wins.
 
 TOML 1.0. Offset date-times become `time`; local dates, local times and
 local date-times become strings. An offset date-time outside the range a
-`time` can hold (1677-09-21 to 2262-04-11, 5.9) is a `format` error, rather
-than a wrong instant; quoted, it is an ordinary string. An integer outside
-the 64-bit range is a `format` error, as TOML requires. Writing requires a
-record.
+`time` can hold (1677-09-21 to 2262-04-11, 5.9) is a `format` error and is
+never read as a wrong instant. Written in quotes, it is an ordinary string.
+An integer outside the 64-bit range is a `format` error, as TOML requires.
+Writing requires a record.
 
 ### 13.6 YAML
 
@@ -1858,15 +1864,16 @@ Anchors and aliases are resolved. Merge keys (`<<: *defaults`), common in
 CI and compose files, are applied: the merged mapping's keys are added unless
 the mapping already has them.
 
-Each alias is a full copy of its anchor's value, so a few lines of aliases
-that repeat each other could stand for billions of values, and one large
-string aliased many times for gigabytes. Before building anything, ok
-counts the values aliases would add and the bytes of text in them; when
-that is more than 1,000,000 values or 64 MiB of text in one file (or
-`parse` text), reading fails with a `format` error: `invalid YAML in NAME:
-its aliases expand to more than 1000000 values` (or `more than 64 MiB of
-text`). Ordinary files, which alias a few defaults blocks, are far below
-the limits. Integers outside the 64-bit range become floats, as in JSON.
+Before building anything, ok counts the values that aliases would add and
+the bytes of text in them. When that is more than 1,000,000 values or 64 MiB
+of text in one file (or `parse` text), reading fails with a `format` error:
+`invalid YAML in NAME: its aliases expand to more than 1000000 values` (or
+`more than 64 MiB of text`). The limits exist because each alias is a full
+copy of its anchor's value: a few lines of aliases that repeat each other
+could expand to billions of values, and one large string aliased many times
+to gigabytes. Ordinary files, which alias a few defaults blocks, are far
+below the limits. Integers outside the 64-bit range become floats, as in
+JSON.
 
 ### 13.7 .env
 
@@ -1917,12 +1924,12 @@ written after the long name and a comma: `--verbose, -v: bool`,
   A value that starts with `-` and a letter is passed after `--`, or as the
   value of a flag (`--pattern -x`), which always takes the next argument.
 - These are load-time errors: a short form on a positional or rest
-  parameter, a short form that is not a single letter, the same letter
-  twice in one signature, a short form for a `bool` flag whose default is
-  `true` (such a switch is only turned off, with `--no-name`), and the
-  letters `h`, `C` and `e`, which are ok's own options (2.2): `-h` always
-  prints help, and `-C`/`-e` are kept free so a short option means the
-  same before and after the task name.
+  parameter, a short form that is not a single letter, the same letter twice
+  in one signature, a short form for a `bool` flag whose default is `true`
+  (such a switch is only turned off, with `--no-name`), and the letters `h`,
+  `C` and `e`, which are ok's own options (2.2). `-h` always prints help,
+  and `-C`/`-e` are kept free so that a short option means the same before
+  and after the task name.
 ### 14.2 Help
 
 `--help` (and `-h`) prints:
@@ -2010,10 +2017,10 @@ error: --role expects one of "admin", "user", got "admn"
 
 `ok self complete` (17) offers, after a task name: the task's flags
 (`--name`), `--help`, the short forms (`-v`) when the word being completed
-starts with a single `-`, and, where a value is expected, the choices of a
-choice type: after a flag with a choice type (`--role <TAB>`, `-r <TAB>`,
-also written `--role=<TAB>`), and for the next positional parameter when it
-has a choice type. Completion never runs project code.
+starts with a single `-`. Where a value is expected, it offers the choices
+of a choice type: after a flag with a choice type (`--role <TAB>`, `-r
+<TAB>`, also written `--role=<TAB>`), and for the next positional parameter
+when it has a choice type. Completion never runs project code.
 
 ## 15. Project mode
 
@@ -2043,10 +2050,11 @@ myapp/
 ```
 
 Each `*.ok` file directly in `.ok/` whose name does not start with `_` and
-is not `ok.ok` is a namespace named after the file's stem. This holds with
-a root `ok.ok` too (`ok.ok` with `.ok/db.ok` is a project with the
-namespace `db`); a `.ok` root file leaves no room for a `.ok/` directory. Files in subdirectories of `.ok/` are only reachable
-through `import`. A namespace name must be a valid task name and must not be
+is not `ok.ok` is a namespace named after the file's stem. This holds with a
+root `ok.ok` too (`ok.ok` with `.ok/db.ok` is a project with the namespace
+`db`). A project whose root file is a file named `.ok` cannot have a `.ok/`
+directory. Files in subdirectories of `.ok/` are only reachable through
+`import`. A namespace name must be a valid task name and must not be
 `trust`, `untrust` or `self`, or the name of a root task.
 
 **Deprecated:** earlier versions kept namespaces in an `ok/` directory, whose
@@ -2133,14 +2141,15 @@ looked up in the declaring file's namespace first, then in the root;
 
 **Arguments** bind to the dependency's parameters by name, like named
 arguments of a call (6.3), with one difference: positional parameters are
-also given by name (`greet(name: "bas")`), and a positional parameter before
-a given one that is not given takes its default. Unnamed arguments, a
-parameter given twice, and the rest parameter are errors. Each value is a
-constant expression (15.2), evaluated in the scope of the file that declares
-the entry, so planning an invocation never runs project code. At load time,
-an unknown task or parameter (with a suggestion), a non-constant value, a
-missing required parameter (7.2; `needs [deploy]` when `deploy` has one) and
-dependency cycles are errors with a span:
+also given by name (`greet(name: "bas")`), and a positional parameter that
+is not given, and that stands before one that is given, takes its default.
+Unnamed arguments, a parameter given twice, and the rest parameter are
+errors. Each value is a constant expression (15.2), evaluated in the scope
+of the file that declares the entry, so planning an invocation never runs
+project code. At load time, an unknown task or parameter (with a
+suggestion), a non-constant value, a missing required parameter (7.2; `needs
+[deploy]` when `deploy` has one) and dependency cycles are errors with a
+span:
 
 ```
 error[arg]: task `c` has no parameter `relase`
@@ -2187,10 +2196,11 @@ directory ok was started in, which runs only that task. A worker:
   appears on ok's stdout or stderr as `LABEL | line`, where `LABEL` is the
   task (`gen`, `db.migrate`, `build(release: true)`, with values shown as in
   lists) padded to the longest label among the workers of the invocation.
-  Lines are never mixed, and split only when longer than 64 KiB, into
-  pieces of 64 KiB that each get their own prefix; the order of lines from
-  different workers is unspecified. A last line without a newline gets one. Commands in a
-  worker write to a pipe, not a terminal, so some tools turn off colors.
+  Lines are never mixed. A line is split only when it is longer than 64 KiB,
+  into pieces of 64 KiB that each get their own prefix. The order of lines
+  from different workers is unspecified. A last line without a newline gets
+  one. Commands in a worker write to a pipe, not a terminal, so some tools
+  turn off colors.
 - has no terminal for input: its stdin, which its commands inherit, is
   empty. `prompt()` returns its default or fails, and `confirm()` answers
   yes with `--yes` and otherwise fails (12.8); the error notes that the task
@@ -2250,17 +2260,18 @@ time; there is no content-hash mode in v1.
   run, and `ok self tasks --all` (17) lists it.
 - Modifiers may appear in any order, each at most once.
 - `env file ".env"` in the root file loads that file (format 13.7) into the
-  environment before any task runs. Its path is relative to the project root,
-  like `sources` and `outputs`, whichever form the root file has. A missing file is ignored. Variables
-  already set in the process environment win. `--env NAME` additionally loads
-  `<file>.NAME` for each declared env file (or `.env.NAME` at the root if none
-  is declared); that file must exist, and its values override the base file.
-A missing `.env.NAME` is a usage error (exit code 2, 2.3). The env files a
-  run loads are covered by trust (16.2). An env file may not set a variable
-  whose name starts with `OK_`, `LD_` or `DYLD_` (compared without case):
-  those configure ok itself (`OK_TRUST`, `OK_CONFIG_DIR`) or make the system
-  loader inject code into every program. Such a key is an error naming the
-  file and the key, before any task runs.
+  environment before any task runs. Its path is relative to the project
+  root, like `sources` and `outputs`, whichever form the root file has. A
+  missing file is ignored. Variables already set in the process environment
+  win. `--env NAME` additionally loads `<file>.NAME` for each declared env
+  file (or `.env.NAME` at the root if none is declared); that file must
+  exist, and its values override the base file. A missing `.env.NAME` is a
+  usage error (exit code 2, 2.3). The env files a run loads are covered by
+  trust (16.2). An env file may not set a variable whose name starts with
+  `OK_`, `LD_` or `DYLD_` (compared without case). Such variables configure
+  ok itself (`OK_TRUST`, `OK_CONFIG_DIR`) or make the system loader inject
+  code into every program. Such a key is an error naming the file and the
+  key, before any task runs.
 - `requires "0.4"` declares the minimum ok version. An older ok refuses to
   load the project and says which version is needed.
 
@@ -2269,15 +2280,15 @@ A missing `.env.NAME` is a usage error (exit code 2, 2.3). The env files a
 `import "frontend/ok.ok" as fe` in the root file mounts the root tasks of
 the sub-project as namespace `fe`: `ok fe build`. An import of a root file
 (a file named `ok.ok` or `.ok`; `frontend/.ok/ok.ok` and `frontend/.ok` are
-mounts too) is always a mount; it requires `as` and is only allowed in the
-root file. Like every import, its path is relative to the importing file, so
-from `.ok/ok.ok` it is `import "../frontend/ok.ok" as fe`. The mounted file
-must be the sub-project's only root file (15.1). Mounted tasks run with the
-sub-project's directory as working directory, and their `sources` and
-`outputs` are relative to it. The sub-project's own
-namespaces are not reachable through the mount in v1 (use `ok -C frontend db
-migrate`), and its `ok/` or `.ok/` directory is not read. A mount name must
-not clash with a namespace file.
+mounts too) is always a mount. A mount requires `as` and is only allowed in
+the root file. Like every import, its path is relative to the importing
+file, so from `.ok/ok.ok` it is `import "../frontend/ok.ok" as fe`. The
+mounted file must be the sub-project's only root file (15.1). Mounted tasks
+run with the sub-project's directory as working directory, and their
+`sources` and `outputs` are relative to it. The sub-project's own namespaces
+are not reachable through the mount in v1 (use `ok -C frontend db migrate`),
+and its `ok/` or `.ok/` directory is not read. A mount name must not clash
+with a namespace file.
 
 ### 15.9 Listing
 
@@ -2317,17 +2328,17 @@ trust.
 
 ### 16.2 What is trusted
 
-The **project files** are the root file (15.1), the `*.ok` files directly
-in `.ok/` (namespaces and helpers; for the deprecated layout, those in
-`ok/`), mounted sub-projects' root files, and every file they import,
-transitively. Their paths are relative to the project root, so the root file
-of the `ok.ok` form is `ok.ok` and that of the folder form `.ok/ok.ok`;
-moving a file (as `ok self promote` does) changes the fingerprint. The **env files** of a run are those of
-15.7 that exist: the declared files and, with `--env NAME`, their `.NAME`
-variants. The **fingerprint** is the SHA-256 of, for each project and env
-file in order of its `/`-separated path relative to the root: the path, a
-NUL byte, the content length in decimal, a NUL byte, and the content. A run
-with `--env NAME` therefore has its own fingerprint.
+The **project files** are the root file (15.1), the `*.ok` files directly in
+`.ok/` (namespaces and helpers; for the deprecated layout, those in `ok/`),
+mounted sub-projects' root files, and every file they import, transitively.
+Their paths are relative to the project root, so the root file of the
+`ok.ok` form is `ok.ok` and that of the folder form `.ok/ok.ok`. Moving a
+file (as `ok self promote` does) changes the fingerprint. The **env files**
+of a run are those of 15.7 that exist: the declared files and, with `--env
+NAME`, their `.NAME` variants. The **fingerprint** is the SHA-256 of, for
+each project and env file in order of its `/`-separated path relative to the
+root: the path, a NUL byte, the content length in decimal, a NUL byte, and
+the content. A run with `--env NAME` therefore has its own fingerprint.
 
 ok reads each of these files once. The bytes it fingerprints are the bytes
 it shows in the prompt and diff, keeps as the snapshot, parses, imports and
@@ -2400,15 +2411,15 @@ The store lives in the platform configuration directory: `~/.config/ok/` on
 Linux (or `$XDG_CONFIG_HOME/ok/`), `~/Library/Application Support/ok/` on
 macOS, `%APPDATA%\ok\` on Windows. `OK_CONFIG_DIR` overrides the location
 (tests use it to get an empty store). `ok untrust` removes every entry for
-the project's root, content and directory trust alike. It holds `trust.json` (entries of root,
-fingerprint or directory mode, and time) and `snapshots/<fingerprint>/`, a
-copy of each trusted version used for diffs (for env files, only their
-variable names, 16.2). Writes are atomic, and a change is made under a lock
-file (`trust.json.lock`) after reading the store again, so that `ok`
-processes trusting at the same time keep each other's entries. On Unix the
-store's directories are created with mode 0700 and its files with 0600. A
-store that exists but cannot be read (permissions, not UTF-8, not valid
-JSON, not a file) is an error, never treated as empty.
+the project's root, content and directory trust alike. The store holds
+`trust.json` (entries of root, fingerprint or directory mode, and time) and
+`snapshots/<fingerprint>/`, a copy of each trusted version used for diffs
+(for env files, only their variable names, 16.2). Writes are atomic, and a
+change is made under a lock file (`trust.json.lock`) after reading the store
+again, so that `ok` processes trusting at the same time keep each other's
+entries. On Unix the store's directories are created with mode 0700 and its
+files with 0600. A store that exists but cannot be read (permissions, not
+UTF-8, not valid JSON, not a file) is an error, never treated as empty.
 
 ### 16.6 Import confinement
 
@@ -2416,11 +2427,11 @@ In project mode every project file and every import must resolve, after
 following symlinks, inside the project root. An import or a namespace file
 that escapes the root is a load-time error, whether by `..` or by a symlink;
 so is a root file that is a symlink to a file outside the root (or a `.ok`
-directory that is a symlink out of it).
-It is found whenever the project is loaded, so listing, `ok self check`,
-`ok trust` and running a task all refuse the project, and nothing is
-fingerprinted or trusted (completions offer no project names). Imports of
-imports are followed the same way.
+directory that is a symlink out of it). Such an escape is found whenever the
+project is loaded, so listing, `ok self check`, `ok trust` and running a
+task all refuse the project, and nothing is fingerprinted or trusted
+(completions offer no project names). Imports of imports are followed the
+same way.
 
 ## 17. Built-in commands (`ok self ...`)
 
@@ -2510,16 +2521,15 @@ as the first argument.
 
 Findings are rendered like runtime errors (10.1), warnings with
 `warning[kind]:` instead of `error[kind]:`. All findings of all files are
-shown, in file and source order, followed by a summary on stderr
-(`ok: 3 files checked: 2 errors and 1 warning`); without findings the
-summary goes to stdout (`ok: 3 files checked, no problems found`). For a
-project the summary also counts its tasks (`ok: 2 files and 3 tasks
-checked, no problems found`). A load-time error of the project stops the
-check before any file is checked, since the files are only known once the
-project loads: it is shown like a finding, followed by `ok: the project
-failed to load: 1 error`. The exit
-code is 1 when there is an error, 0 when there are only warnings, or 1 with
-`--strict`, and 2 for bad usage.
+shown, in file and source order, followed by a summary on stderr (`ok: 3
+files checked: 2 errors and 1 warning`); without findings the summary goes
+to stdout (`ok: 3 files checked, no problems found`). For a project the
+summary also counts its tasks (`ok: 2 files and 3 tasks checked, no problems
+found`). A load-time error of the project stops the check before any file is
+checked, since the files are only known once the project loads. The error is
+shown like a finding, followed by `ok: the project failed to load: 1 error`.
+The exit code is 1 when there is an error, 0 when there are only warnings,
+or 1 with `--strict`, and 2 for bad usage.
 
 ```
 error[name]: unknown name `relase`
@@ -2647,7 +2657,7 @@ used must be exactly 64 hex digits (normalised to lower case); anything else
 is an error and nothing is written.
 
 The wrappers are files in the repository that the shell or cmd.exe runs
-before ok starts, so trust (16) cannot cover them: in a repository you have
+before ok starts, so trust (16) cannot cover them. In a repository you have
 not reviewed, run the installed `ok` instead of `./ok`.
 
 ## 19. Portability rules
