@@ -69,6 +69,7 @@ Some of these changes can stop a project or script from loading: source files ma
 - The `%` format type prints huge floats as digits instead of `inf%`.
 - A new fuzz target, `eval`, runs generated programs in a sandbox of the interpreter (no files, commands or network, a step budget), and `tests/no_panic.rs` does the same deterministically on every test run.
 - `ok self fmt` keeps a `#!` comment that is not the shebang off the first line and keeps a name `run` from being followed by a space that would start a command (both failed with an internal error), and formats long `else if` chains and long files in linear time (1000 one-line branches took 5 s).
+- A `\` at the very end of a file without a final newline continues the command onto nothing, as it does with the newline; before, it was an argument, and `ok self fmt` failed with an internal error on such a file.
 
 ### Documentation
 

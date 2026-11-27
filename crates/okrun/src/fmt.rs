@@ -1164,6 +1164,15 @@ mod tests {
     }
 
     #[test]
+    fn backslash_at_end_of_file_is_a_continuation() {
+        // Found by fuzzing: without a final newline the `\` was an argument,
+        // and the newline the formatter adds made it a continuation.
+        let out = fmt("run  4      \\");
+        assert_eq!(out, fmt(&out));
+        assert_eq!(fmt("run a \\"), fmt("run a \\\n"));
+    }
+
+    #[test]
     fn reindents_blocks_and_pipelines() {
         let src = "fn f(x) {\nif x {\n        print(1)\n}\nlet y = [1, 2]\n| map(v => v)\n\n\n\nprint(y)   \n}\n\n";
         let want = "fn f(x) {\n  if x {\n    print(1)\n  }\n  let y = [1, 2]\n    | map(v => v)\n\n  print(y)\n}\n";

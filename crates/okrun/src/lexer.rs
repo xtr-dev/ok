@@ -1290,10 +1290,16 @@ impl<'a> Lexer<'a> {
             return false;
         }
         let rest = &self.src[self.pos + 1..];
+        // The end of the file ends the last line too, so a `\` there is a
+        // continuation onto nothing, as it would be with a final newline;
+        // otherwise adding that newline (as `ok self fmt` does) would change
+        // the command.
         let nl = if rest.starts_with("\r\n") {
             2
         } else if rest.starts_with('\n') {
             1
+        } else if rest.is_empty() {
+            0
         } else {
             return false;
         };

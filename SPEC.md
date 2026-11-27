@@ -1027,7 +1027,8 @@ Rules:
     command ends the command. This is what makes `(run git rev-parse
     HEAD).out` and `if x { run make }` work.
 11. A `\` as the last character of a line continues the command on the next
-    line.
+    line. At the end of the file it continues onto nothing, as it would
+    with a final newline.
 12. `$(` and backticks are errors suggesting `{run ...}` interpolation or a
     `let`.
 13. `2>`, `2>>` and `2>&1` are stderr redirects only where a word would
