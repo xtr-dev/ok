@@ -326,17 +326,25 @@ pub fn init(args: &[String], start: &Path) -> R<Value> {
     }
     let dir = start.to_path_buf();
     // Everything is checked before anything is written or downloaded.
-    if let Some(existing) = crate::project::root_files_in(&dir).first() {
+    // An existing project keeps its root file; with `--wrappers` it gets
+    // the wrappers, which is the way to add them later (SPEC.md 17).
+    let existing = crate::project::root_files_in(&dir).first().copied();
+    if let Some(existing) = existing
+        && !wrappers
+    {
         return Err(OkError::new(
             ErrKind::Io,
             format!("{existing} already exists; ok self init does not overwrite files"),
         )
-        .with_help("this directory is already a project: add tasks to its root file")
+        .with_help("this directory is already a project: add tasks to its root file, or run ok self init --wrappers to add the ./ok wrappers")
         .into());
     }
     let version = crate::VERSION;
     let starter = STARTER.replace("{requires}", &major_minor(version));
-    let mut outputs: Vec<(&str, String)> = vec![(".ok/ok.ok", starter)];
+    let mut outputs: Vec<(&str, String)> = Vec::new();
+    if existing.is_none() {
+        outputs.push((".ok/ok.ok", starter));
+    }
     if wrappers {
         for name in ["ok", "ok.ps1", "ok.cmd"] {
             let p = dir.join(name);
@@ -374,7 +382,9 @@ pub fn init(args: &[String], start: &Path) -> R<Value> {
         )
         .into()
     };
-    std::fs::create_dir_all(dir.join(".ok")).map_err(|e| write_err(".ok/", e))?;
+    if existing.is_none() {
+        std::fs::create_dir_all(dir.join(".ok")).map_err(|e| write_err(".ok/", e))?;
+    }
     for (name, content) in &outputs {
         // `create_new` keeps a file that appeared since the check above.
         let mut f = std::fs::OpenOptions::new()
@@ -391,9 +401,14 @@ pub fn init(args: &[String], start: &Path) -> R<Value> {
             let _ =
                 std::fs::set_permissions(dir.join("ok"), std::fs::Permissions::from_mode(0o755));
         }
-        println!(
-            "wrote .ok/ok.ok, ./ok, ok.cmd and ok.ps1 (pinned to ok {version})\nrun ./ok hello (or ok.cmd hello on Windows)"
-        );
+        match existing {
+            None => println!(
+                "wrote .ok/ok.ok, ./ok, ok.cmd and ok.ps1 (pinned to ok {version})\nrun ./ok hello (or ok.cmd hello on Windows)"
+            ),
+            Some(_) => println!(
+                "wrote ./ok, ok.cmd and ok.ps1 (pinned to ok {version})\nrun ./ok (or ok.cmd on Windows) to list the tasks"
+            ),
+        }
     } else {
         println!("wrote .ok/ok.ok\nrun ok hello");
     }

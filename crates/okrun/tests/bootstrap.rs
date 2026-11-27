@@ -140,6 +140,54 @@ fn a_fresh_project_runs_through_the_wrapper() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
+/// Wrappers are opt-in, so a project must be able to get them later:
+/// `ok self init --wrappers` in an existing project writes only them.
+#[test]
+fn init_with_wrappers_adds_them_to_an_existing_project() {
+    let dir = std::env::temp_dir().join(format!("ok-bootstrap-add-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let ok = Path::new(env!("CARGO_BIN_EXE_ok"));
+    let root = "task hi {\n  print(\"hi\")\n}\n";
+    std::fs::write(dir.join(".ok"), root).unwrap();
+    let sums: String = okrun::tools::TARGETS
+        .iter()
+        .map(|(_, file)| format!("{}  {file}\n", "ab".repeat(32)))
+        .collect();
+    std::fs::write(dir.join("SHA256SUMS"), sums).unwrap();
+
+    let plain = Command::new(ok)
+        .args(["self", "init"])
+        .current_dir(&dir)
+        .output()
+        .unwrap();
+    assert!(!plain.status.success());
+    let err = String::from_utf8_lossy(&plain.stderr);
+    assert!(err.contains("ok self init --wrappers"), "{err}");
+
+    let init = Command::new(ok)
+        .args(["self", "init", "--wrappers", "--checksums", "SHA256SUMS"])
+        .current_dir(&dir)
+        .output()
+        .unwrap();
+    assert!(
+        init.status.success(),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&init.stdout).starts_with("wrote ./ok, ok.cmd and ok.ps1 "),
+        "{}",
+        String::from_utf8_lossy(&init.stdout)
+    );
+    for f in ["ok", "ok.cmd", "ok.ps1"] {
+        assert!(dir.join(f).is_file(), "{f} written");
+    }
+    assert_eq!(std::fs::read_to_string(dir.join(".ok")).unwrap(), root);
+    assert!(dir.join(".ok").is_file(), "no .ok/ directory was made");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn init_accepts_only_hex_checksums_and_https_downloads() {
     let base = std::env::temp_dir().join(format!("ok-init-sums-{}", std::process::id()));

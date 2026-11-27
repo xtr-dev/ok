@@ -223,7 +223,7 @@ run ./ok hello (or ok.cmd hello on Windows)
 
 To pin the wrappers, `ok self init --wrappers` downloads the checksums of its own release (`SHA256SUMS` from the GitHub release of the version you are running); without `--wrappers` it uses no network at all. Without network access, download that file some other way and pass it with `--checksums SHA256SUMS`. `OK_DOWNLOAD_URL` points both `init` and the wrappers at a mirror instead of GitHub; `init` downloads the checksums only over `https://`, so for a plain-HTTP or `file://` mirror pass a `SHA256SUMS` you checked with `--checksums`. Every entry must be a SHA-256 digest (64 hex digits), since it ends up in the wrappers' code.
 
-`ok self init` never overwrites anything: if the directory already has a root file (`ok.ok`, `.ok` or `.ok/ok.ok`), or with `--wrappers` any of `ok`, `ok.cmd` or `ok.ps1`, it stops with an error and writes nothing. To add wrappers to a project that already has a root file, run `ok self init --wrappers` in an empty directory and copy the three wrapper files over.
+`ok self init` never overwrites anything: if the directory already has a root file (`ok.ok`, `.ok` or `.ok/ok.ok`), or with `--wrappers` any of `ok`, `ok.cmd` or `ok.ps1`, it stops with an error and writes nothing. To add wrappers to a project that already has a root file, run `ok self init --wrappers` there: it leaves the root file alone and writes only the three wrappers.
 
 ## Moving to `.ok/` with `ok self promote`
 

@@ -64,7 +64,7 @@ Some of these changes can stop a project or script from loading: source files ma
 ### Changed
 
 - **Project layout (can break projects and scripts):** a project's root file can be `.ok/ok.ok` (recommended), a single file named `.ok`, or `ok.ok` as before, and namespaces live in `.ok/` (`.ok/db.ok` is `ok db`). A directory with two root files is an error. Namespaces in `ok/` still load for one release, with a warning; `ok self promote` moves them. A project that keeps `ok.ok` keeps its trust; moving files means trusting them again.
-- `ok self init` writes `.ok/ok.ok`, and the wrappers `./ok`, `ok.cmd` and `ok.ps1` only with `--wrappers`; without it nothing is downloaded and `--checksums` is a usage error. It refuses when the directory already has a root file.
+- `ok self init` writes `.ok/ok.ok`, and the wrappers `./ok`, `ok.cmd` and `ok.ps1` only with `--wrappers`; without it nothing is downloaded and `--checksums` is a usage error. In a directory that already has a root file, `ok self init` is an error and `ok self init --wrappers` writes only the wrappers.
 - An import of a file named `.ok` (or `.ok/ok.ok`) mounts a sub-project, like one of `ok.ok`; mounts from `.ok/ok.ok` are relative to `.ok/`, like every import (`import "../web/ok.ok" as web`), and the mounted file must be that project's only root file.
 - `--trace` and `--dry-run` quote the paths of file operations and fetch like command arguments: `~ copy "my notes.txt" backup/`.
 - `ok --env NAME trust` trusts a project together with the env files of `--env NAME`.
