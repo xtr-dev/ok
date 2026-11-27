@@ -72,7 +72,7 @@ Design rules that the rest of this document follows:
 ```
 ok [OPTIONS]                              list tasks of the current project (or print usage)
 ok [OPTIONS] TASK [ARGS...]               run a project task
-ok [OPTIONS] NAMESPACE TASK [ARGS...]     run a task from ok/NAMESPACE.ok
+ok [OPTIONS] NAMESPACE TASK [ARGS...]     run a task from .ok/NAMESPACE.ok
 ok [OPTIONS] SCRIPT [ARGS...]             run a standalone script
 ok [OPTIONS] -e SOURCE                    evaluate source text and print the result
 ok trust | untrust ...                    manage the trust store (section 16)
@@ -311,10 +311,10 @@ Which items are allowed where:
 |---|---|
 | script (run by path or `-e`) | statements, `fn`, `let`, `var`, `import` |
 | library (any imported file that is not a project file) | `fn`, constant `let`, `import` |
-| project file (`ok.ok`, `ok/*.ok`, and files they import) | `task`, `fn`, constant `let`, `import`, `requires`, `env file` |
+| project file (the root file, `.ok/*.ok`, and files they import; 15.1) | `task`, `fn`, constant `let`, `import`, `requires`, `env file` |
 
 Violations are load-time errors with the offending span underlined.
-`requires` and `env file` are only allowed in the root `ok.ok`.
+`requires` and `env file` are only allowed in the root file.
 
 ### 4.2 Functions and tasks
 
@@ -2013,23 +2013,43 @@ has a choice type. Completion never runs project code.
 
 ### 15.1 Discovery
 
+A directory is a **project root** when it holds a **root file**, which is
+one of:
+
+- `.ok/ok.ok`: the root file inside a hidden `.ok/` directory, which also
+  holds the namespaces (the recommended layout);
+- a file named `.ok`: a single file, for a project with only root tasks;
+- `ok.ok`.
+
 `ok` walks up from the current directory (or `-C DIR`) to the nearest
-directory containing a file named `ok.ok`: the **project root**. Tasks run
-with the project root as working directory; `invocation_dir` holds where the
-user was.
+directory with a root file. Tasks run with the project root as working
+directory; `invocation_dir` holds where the user was. A directory with more
+than one root file (`ok.ok` and `.ok/ok.ok`, or `ok.ok` and a `.ok` file) is
+a load-time error that names both. A `.ok/` directory without `.ok/ok.ok`
+does not make a directory a project root.
 
 ```
 myapp/
-  ok.ok          # root tasks
-  ok/admin.ok    # namespace "admin"
-  ok/db.ok       # namespace "db"
-  ok/_lib.ok     # helpers; never a namespace
+  .ok/ok.ok      # root tasks
+  .ok/admin.ok   # namespace "admin"
+  .ok/db.ok      # namespace "db"
+  .ok/_lib.ok    # helpers; never a namespace
 ```
 
-Each `*.ok` file directly in `ok/` whose name does not start with `_` is a
-namespace named after the file's stem. Files in subdirectories of `ok/` are
-only reachable through `import`. A namespace name must be a valid task name
-and must not be `trust`, `untrust` or `self`, or the name of a root task.
+Each `*.ok` file directly in `.ok/` whose name does not start with `_` and
+is not `ok.ok` is a namespace named after the file's stem. This holds with
+a root `ok.ok` too (`ok.ok` with `.ok/db.ok` is a project with the
+namespace `db`); a `.ok` root file leaves no room for a `.ok/` directory. Files in subdirectories of `.ok/` are only reachable
+through `import`. A namespace name must be a valid task name and must not be
+`trust`, `untrust` or `self`, or the name of a root task.
+
+**Deprecated:** earlier versions kept namespaces in an `ok/` directory, whose
+name clashes with the `./ok` wrapper (18). For one release, the `*.ok` files
+directly in `ok/` are still loaded as namespaces under the same rules (and
+are project files for trust, 16.2), and ok prints a warning once per run
+that says to move `ok/` to `.ok/` (`ok self promote`, 17, does it). A
+directory whose `ok/` and `.ok/` both hold `*.ok` files (other than
+`.ok/ok.ok`) is a load-time error.
 
 ### 15.2 Project files are declarations only
 
@@ -2224,7 +2244,8 @@ time; there is no content-hash mode in v1.
   run, and `ok self tasks --all` (17) lists it.
 - Modifiers may appear in any order, each at most once.
 - `env file ".env"` in the root file loads that file (format 13.7) into the
-  environment before any task runs. A missing file is ignored. Variables
+  environment before any task runs. Its path is relative to the project root,
+  like `sources` and `outputs`, whichever form the root file has. A missing file is ignored. Variables
   already set in the process environment win. `--env NAME` additionally loads
   `<file>.NAME` for each declared env file (or `.env.NAME` at the root if none
   is declared); that file must exist, and its values override the base file.
@@ -2239,14 +2260,18 @@ A missing `.env.NAME` is a usage error (exit code 2, 2.3). The env files a
 
 ### 15.8 Mounting a sub-project
 
-`import "frontend/ok.ok" as fe` in the root `ok.ok` mounts the root tasks of
-the sub-project as namespace `fe`: `ok fe build`. An import of a file named
-`ok.ok` is always a mount; it requires `as` and is only allowed in the root
-`ok.ok`. Mounted tasks run with the
+`import "frontend/ok.ok" as fe` in the root file mounts the root tasks of
+the sub-project as namespace `fe`: `ok fe build`. An import of a root file
+(a file named `ok.ok` or `.ok`; `frontend/.ok/ok.ok` and `frontend/.ok` are
+mounts too) is always a mount; it requires `as` and is only allowed in the
+root file. Like every import, its path is relative to the importing file, so
+from `.ok/ok.ok` it is `import "../frontend/ok.ok" as fe`. The mounted file
+must be the sub-project's only root file (15.1). Mounted tasks run with the
 sub-project's directory as working directory, and their `sources` and
 `outputs` are relative to it. The sub-project's own
 namespaces are not reachable through the mount in v1 (use `ok -C frontend db
-migrate`). A mount name must not clash with a namespace file.
+migrate`), and its `ok/` or `.ok/` directory is not read. A mount name must
+not clash with a namespace file.
 
 ### 15.9 Listing
 
@@ -2286,8 +2311,12 @@ trust.
 
 ### 16.2 What is trusted
 
-The **project files** are the root `ok.ok`, the files in `ok/`, and every
-file they import, transitively. The **env files** of a run are those of
+The **project files** are the root file (15.1), the `*.ok` files directly
+in `.ok/` (namespaces and helpers; for the deprecated layout, those in
+`ok/`), mounted sub-projects' root files, and every file they import,
+transitively. Their paths are relative to the project root, so the root file
+of the `ok.ok` form is `ok.ok` and that of the folder form `.ok/ok.ok`;
+moving a file (as `ok self promote` does) changes the fingerprint. The **env files** of a run are those of
 15.7 that exist: the declared files and, with `--env NAME`, their `.NAME`
 variants. The **fingerprint** is the SHA-256 of, for each project and env
 file in order of its `/`-separated path relative to the root: the path, a
@@ -2318,7 +2347,7 @@ Running a task in an untrusted project on a terminal shows:
 This project is not trusted yet.
 
   root:   /home/bas/src/myapp
-  files:  ok.ok, ok/admin.ok, ok/db.ok
+  files:  .ok/admin.ok, .ok/db.ok, .ok/ok.ok
   sha256: 9f2c4e...
 
 Tasks are code that runs with your permissions. Trust is not a sandbox.
@@ -2349,7 +2378,7 @@ The note names the root, since `-C` or discovery may have found a project
 other than the one the user meant. If an earlier version of this root was
 trusted, the message is `the project files changed since you trusted them`
 and a second note lists the files whose content differs from the trusted
-copy (`= note: changed: ok.ok, ok/db.ok`), in place of the prompt's diff.
+copy (`= note: changed: .ok/db.ok, .ok/ok.ok`), in place of the prompt's diff.
 
 ### 16.5 Commands and store
 
@@ -2380,7 +2409,8 @@ JSON, not a file) is an error, never treated as empty.
 In project mode every project file and every import must resolve, after
 following symlinks, inside the project root. An import or a namespace file
 that escapes the root is a load-time error, whether by `..` or by a symlink;
-so is a root `ok.ok` that is a symlink to a file outside the root.
+so is a root file that is a symlink to a file outside the root (or a `.ok`
+directory that is a symlink out of it).
 It is found whenever the project is loaded, so listing, `ok self check`,
 `ok trust` and running a task all refuse the project, and nothing is
 fingerprinted or trusted (completions offer no project names). Imports of
@@ -2392,7 +2422,8 @@ The only reserved first arguments are `trust`, `untrust` and `self`.
 
 | Command | Meaning |
 |---|---|
-| `ok self init [--checksums FILE]` | Write a starter `ok.ok` (with `requires` set to this version's major.minor, such as `"0.3"`) and the wrappers `./ok`, `ok.cmd`, `ok.ps1` (18) in the current directory. The checksums of this version's release are downloaded from the release (`SHA256SUMS`), or read from `FILE`. Refuses to overwrite. |
+| `ok self init [--wrappers [--checksums FILE]]` | Write a starter `.ok/ok.ok` (with `requires` set to this version's major.minor, such as `"0.3"`) in the current directory. With `--wrappers`, also write the wrappers `./ok`, `ok.cmd`, `ok.ps1` (18), for which the checksums of this version's release are downloaded from the release (`SHA256SUMS`), or read from `FILE`; without it, nothing is downloaded, and `--checksums` is a usage error. Refuses to overwrite a file, and refuses when the directory already has a root file (15.1) or, with `--wrappers`, an `ok/` directory, whose name `./ok` needs. |
+| `ok self promote` | Move the project to the `.ok/` layout (15.1), in the project root that discovery finds: a `.ok` root file moves to `.ok/ok.ok`, byte for byte, and the contents of a deprecated `ok/` directory (one that holds `*.ok` files) move into `.ok/`, after which the empty `ok/` is removed. It checks every move before making any and refuses, changing nothing, when a target exists or when `ok/ok.ok` would become a second root file; a failed move undoes the earlier ones. A root `ok.ok` stays where it is; when there is nothing to move, the error says which root file the project has, and for `.ok/ok.ok` it reports that there is nothing to promote and exits with 0. Since imports are relative to the importing file, it lists each import in the root file and the moved ok files whose path no longer points at the same file, with the path to write instead; it changes no file's content. Moved files have new paths, so the project needs trust again (16.2), which it says; it never carries trust over. |
 | `ok self completions SHELL` | Print a completion script for `zsh`, `bash`, `fish` or `powershell`. |
 | `ok self complete -- WORDS...` | Used by completion scripts; prints candidates. |
 | `ok self fmt [--check] [FILES...]` | Format ok files in the canonical layout (17.2). Default: the project files. `--check` lists files that would change and exits with 1. |
@@ -2409,9 +2440,11 @@ The only reserved first arguments are `trust`, `untrust` and `self`.
 Without files it checks the project around the current directory: first the
 load-time rules of section 15 (namespaces, mounts, task references and the
 arguments in `needs`, dependency cycles, import confinement), then every file
-of the project: the root `ok.ok`, `ok/*.ok`, mounted sub-projects and the
-files they import. Given files, it checks those; `ok.ok` and a file directly
-in an `ok/` directory next to one are checked as project files.
+of the project: the root file, `.ok/*.ok`, mounted sub-projects and the
+files they import. Given files, it checks those; a root file (`ok.ok`, `.ok`,
+`.ok/ok.ok`) and a file directly in a `.ok/` (or deprecated `ok/`) directory
+of a project root are checked as project files, a `_` file there as a
+library.
 
 For each file it reports:
 
@@ -2588,7 +2621,8 @@ exit code is then 1.
 
 ## 18. Bootstrap wrappers
 
-`ok self init` writes `./ok` (POSIX sh) and `ok.cmd` plus `ok.ps1` (Windows).
+`ok self init --wrappers` writes `./ok` (POSIX sh) and `ok.cmd` plus `ok.ps1`
+(Windows).
 Each wrapper pins one ok version and the SHA-256 of each release binary. On
 first use it downloads the binary for the current OS and architecture into
 the user cache (`${XDG_CACHE_HOME:-$HOME/.cache}/ok/<version>-<sha>/` on Unix,
@@ -2601,7 +2635,7 @@ cmd.exe searches the current directory before `PATH`. `OK_DOWNLOAD_URL`
 overrides the base URL for mirrors. The wrappers are the only shell code in
 the project and stay short.
 
-`ok self init` takes the checksums from `--checksums FILE` or downloads
+`ok self init --wrappers` takes the checksums from `--checksums FILE` or downloads
 `SHA256SUMS` from the base URL, which must then be `https://`. Every entry
 used must be exactly 64 hex digits (normalised to lower case); anything else
 is an error and nothing is written.
