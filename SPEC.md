@@ -1198,9 +1198,10 @@ word (`run echo with care` passes `with` and `care`).
 
 ### 9.7 Failure
 
-`run` raises a `command` error when the command exits nonzero, cannot be
-started, or times out. The error carries the command line, the exit code and
-the last 20 lines of stderr when stderr was captured. With `2>&1` and
+`run` raises a `command` error when the command exits nonzero or cannot be
+started, and a `timeout` error when it runs past its `timeout` (9.6). The
+error carries the command line, the exit code and the last 20 lines of
+stderr when stderr was captured. With `2>&1` and
 captured output, it carries the last 20 lines of the merged output instead,
 shown as `output (last N lines)` and also given as the error record's
 `stderr`. When stderr went to a file (`2>`, `2>>`, or `2>&1` together with
