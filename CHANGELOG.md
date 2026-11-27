@@ -68,7 +68,7 @@ Some of these changes can stop a project or script from loading: source files ma
 - `to` and `write` refuse JSON nested more than 127 levels, YAML more than 255 and TOML more than 81: the depths ok's readers accept, so written files can be read back.
 - The `%` format type prints huge floats as digits instead of `inf%`.
 - A new fuzz target, `eval`, runs generated programs in a sandbox of the interpreter (no files, commands or network, a step budget), and `tests/no_panic.rs` does the same deterministically on every test run.
-- `ok self fmt` keeps a `#!` comment that is not the shebang off the first line (it failed with an internal error), and formats long `else if` chains and long files in linear time (1000 one-line branches took 5 s).
+- `ok self fmt` keeps a `#!` comment that is not the shebang off the first line and keeps a name `run` from being followed by a space that would start a command (both failed with an internal error), and formats long `else if` chains and long files in linear time (1000 one-line branches took 5 s).
 
 ### Documentation
 
