@@ -202,10 +202,10 @@ wrote .ok/ok.ok
 run ok hello
 ```
 
-The starter file has one task to build on, and requires the version of ok that wrote it (here 0.3):
+The starter file has one task to build on, and requires the version of ok that wrote it (here 0.4):
 
 ```ok
-requires "0.3"
+requires "0.4"
 
 # Say hello
 task hello(name: string = "world") {
@@ -217,7 +217,7 @@ With `--wrappers`, it also writes the three [bootstrap wrappers](#the-ok-wrapper
 
 ```text
 $ ok self init --wrappers
-wrote .ok/ok.ok, ./ok, ok.cmd and ok.ps1 (pinned to ok 0.3.0)
+wrote .ok/ok.ok, ./ok, ok.cmd and ok.ps1 (pinned to ok 0.4.0)
 run ./ok hello (or ok.cmd hello on Windows)
 ```
 
@@ -267,7 +267,7 @@ The wrappers are the only shell code ok produces, and they stay short enough to 
 | `ok self tasks` | Print the task listing, the same as `ok` with no arguments. `--all` includes [hidden tasks](tasks.md#hidden-tasks). |
 | `ok self completions SHELL` | Print a completion script for `bash`, `zsh`, `fish` or `powershell` (see [Tasks](tasks.md#shell-completions)). |
 | `ok self complete -- WORDS...` | What the completion scripts call: prints the candidates for the last word. |
-| `ok self version` | Print the version, such as `ok 0.3.0`. `ok --version` does the same. |
+| `ok self version` | Print the version, such as `ok 0.4.0`. `ok --version` does the same. |
 
 `ok self complete` is handy for checking what Tab will offer, without a shell:
 

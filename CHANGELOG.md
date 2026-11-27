@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-27
+
+Projects can now keep everything in one hidden `.ok/` directory (or a single `.ok` file), and `ok self init` writes the wrappers only with `--wrappers`; an `ok/` directory of namespaces still works for this release, with a warning, and `ok self promote` moves it. A directory with two root files is now an error. Much of this release hardens ok as a default scripting language: limits on untrusted data, archives and programs, safer files, processes and fetch, and stricter trust.
+
 Some of these changes can stop a project or script from loading: source files may no longer contain raw control or bidirectional characters, env files may no longer set `OK_`, `LD_` or `DYLD_` variables, a root `ok.ok` may not link outside the project, and projects with env files must be trusted again. Data and archives that used to be accepted can now be errors: archive members with names that are not portable, CSV files whose header repeats a column, TOML date-times after 2262, and data beyond the new size limits. Programs with expressions chained more than 1000 levels deep, values nested more than 1000 levels, or JSON, YAML and TOML output nested deeper than ok can read back are now errors. Scripts can also fail where they used to go on: `run a | run b` now fails when `a` does, environment variable names with `=` are refused, `.` in `PATH` is no longer searched, file names that are not UTF-8 are errors in `list_dir` and `glob`, and `copy` copies symlinks inside a directory as links.
 
 ### Security
@@ -55,6 +59,7 @@ Some of these changes can stop a project or script from loading: source files ma
 ### Added
 
 - `ok self promote` moves a project to the `.ok/` layout: a `.ok` root file to `.ok/ok.ok` and the files of an old `ok/` directory into `.ok/`. It checks every move first, undoes them if one fails, lists imports that need a new path, and says that the project needs trust again.
+- A new fuzz target, `eval`, runs generated programs in a sandbox of the interpreter (no files, commands or network, a step budget), and `tests/no_panic.rs` does the same deterministically on every test run.
 
 ### Changed
 
@@ -73,17 +78,20 @@ Some of these changes can stop a project or script from loading: source files ma
 - A NUL character in a command argument is reported as such, instead of as a problem with batch files.
 - Ints and floats compare by exact value: `9007199254740993 == 9007199254740992.0` is `false` (it was `true`), so `==`, `<`, `sort`, `min`, `max` and `uniq` agree on every mix of numbers; `uniq([1, 1.0])` gives `[1]`.
 - `to` and `write` refuse JSON nested more than 127 levels, YAML more than 255 and TOML more than 81: the depths ok's readers accept, so written files can be read back.
+
+### Deprecated
+
+- An `ok/` directory of namespaces still loads, with a warning, for this release; move its files to `.ok/` (`ok self promote` does it). An `ok/` directory without `*.ok` files in it is left alone.
+
+### Fixed
+
 - The `%` format type prints huge floats as digits instead of `inf%`.
-- A new fuzz target, `eval`, runs generated programs in a sandbox of the interpreter (no files, commands or network, a step budget), and `tests/no_panic.rs` does the same deterministically on every test run.
 - `ok self fmt` keeps a `#!` comment that is not the shebang off the first line and keeps a name `run` from being followed by a space that would start a command (both failed with an internal error), and formats long `else if` chains and long files in linear time (1000 one-line branches took 5 s).
 - A `\` at the very end of a file without a final newline, alone or at the end of a word, continues the command onto nothing, as it does with the newline; before, it was an argument, and `ok self fmt` failed with an internal error on such a file.
 - `ok self fmt` keeps the space between a unary `-` and a command (`- run a`); it wrote `-run a`, where `run` is a name, and failed with an internal error.
 - `ok self fmt` adds no trailing comma after a command that ends a broken-up argument list, where the comma would join the command's last word.
 - `ok self fmt` keeps one blank after a `\` argument, or a word ending in `\`, at the end of a line (also where it breaks a pipeline); without it the `\` would continue the line.
 - `ok self fmt` keeps the spacing after a keyword used as a field name (`s.or[0]`, `x.and(1)`); it spaced them like the operators and failed with an internal error.
-
-### Fixed
-
 - A project can have both namespaces and the `./ok` wrapper: namespaces live in `.ok/`, so they no longer need a directory named `ok`, the wrapper's name (`ok self init` failed next to an `ok/` directory with "ok already exists").
 
 ### Documentation

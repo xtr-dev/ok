@@ -1,6 +1,6 @@
 # The ok language specification
 
-Version: 0.3.0 (2026-11-26).
+Version: 0.4.0 (2026-11-27).
 
 This document is normative. When the implementation and this document
 disagree, one of them is a bug; `SPEC.md` is changed first, in the same
@@ -2255,7 +2255,7 @@ A missing `.env.NAME` is a usage error (exit code 2, 2.3). The env files a
   those configure ok itself (`OK_TRUST`, `OK_CONFIG_DIR`) or make the system
   loader inject code into every program. Such a key is an error naming the
   file and the key, before any task runs.
-- `requires "0.3"` declares the minimum ok version. An older ok refuses to
+- `requires "0.4"` declares the minimum ok version. An older ok refuses to
   load the project and says which version is needed.
 
 ### 15.8 Mounting a sub-project
@@ -2422,7 +2422,7 @@ The only reserved first arguments are `trust`, `untrust` and `self`.
 
 | Command | Meaning |
 |---|---|
-| `ok self init [--wrappers [--checksums FILE]]` | Write a starter `.ok/ok.ok` (with `requires` set to this version's major.minor, such as `"0.3"`) in the current directory. With `--wrappers`, also write the wrappers `./ok`, `ok.cmd`, `ok.ps1` (18), for which the checksums of this version's release are downloaded from the release (`SHA256SUMS`), or read from `FILE`; without it, nothing is downloaded, and `--checksums` is a usage error. Refuses to overwrite a file, and refuses when the directory already has a root file (15.1) or, with `--wrappers`, an `ok/` directory, whose name `./ok` needs. |
+| `ok self init [--wrappers [--checksums FILE]]` | Write a starter `.ok/ok.ok` (with `requires` set to this version's major.minor, such as `"0.4"`) in the current directory. With `--wrappers`, also write the wrappers `./ok`, `ok.cmd`, `ok.ps1` (18), for which the checksums of this version's release are downloaded from the release (`SHA256SUMS`), or read from `FILE`; without it, nothing is downloaded, and `--checksums` is a usage error. Refuses to overwrite a file, and refuses when the directory already has a root file (15.1) or, with `--wrappers`, an `ok/` directory, whose name `./ok` needs. |
 | `ok self promote` | Move the project to the `.ok/` layout (15.1), in the project root that discovery finds: a `.ok` root file moves to `.ok/ok.ok`, byte for byte, and the contents of a deprecated `ok/` directory (one that holds `*.ok` files) move into `.ok/`, after which the empty `ok/` is removed. It checks every move before making any and refuses, changing nothing, when a target exists or when `ok/ok.ok` would become a second root file; a failed move undoes the earlier ones. A root `ok.ok` stays where it is; when there is nothing to move, the error says which root file the project has, and for `.ok/ok.ok` it reports that there is nothing to promote and exits with 0. Since imports are relative to the importing file, it lists each import in the root file and the moved ok files whose path no longer points at the same file, with the path to write instead; it changes no file's content. Moved files have new paths, so the project needs trust again (16.2), which it says; it never carries trust over. |
 | `ok self completions SHELL` | Print a completion script for `zsh`, `bash`, `fish` or `powershell`. |
 | `ok self complete -- WORDS...` | Used by completion scripts; prints candidates. |
