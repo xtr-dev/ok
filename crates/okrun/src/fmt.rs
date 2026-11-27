@@ -773,6 +773,12 @@ impl<'a> Formatter<'a> {
         {
             return keep;
         }
+        // The other way round: a command or `run(` after a unary `-`
+        // (`- run a`) was only lexed as one because of the space, and
+        // `-run` would be a name.
+        if matches!(ta, Tok::Minus) && matches!(tb, Tok::Command(_) | Tok::RunFn { .. }) {
+            return keep;
+        }
         if matches!(tb, Tok::Comma) {
             return false;
         }
@@ -1161,6 +1167,17 @@ mod tests {
             fmt("\u{feff}#!/usr/bin/env ok\nprint(1)\n").trim_start_matches('\u{feff}'),
             "#!/usr/bin/env ok\nprint(1)\n"
         );
+    }
+
+    #[test]
+    fn keeps_the_space_between_a_minus_and_a_command() {
+        // Found by fuzzing: `- run a` lost its space and became `-run a`,
+        // where `run` glued to a `-` is a name.
+        for src in ["- run a | f\n", "- run! a\n", "- run(\"a\")\n", "x - run a\n"] {
+            let out = fmt(src);
+            assert!(out.contains("- run"), "{src:?} became {out:?}");
+            assert_eq!(out, fmt(&out));
+        }
     }
 
     #[test]
