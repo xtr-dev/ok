@@ -1,12 +1,12 @@
 # Formatter, checker and wrappers
 
-The tools built into the ok binary: `ok self fmt` formats code, `ok self check` finds mistakes without running it, `ok self init` starts a project and can add the `./ok` wrappers.
+The ok binary has its tools built in under `ok self`: `ok self fmt` formats code, `ok self check` finds mistakes without running code, and `ok self init` starts a project.
 
-ok ships its own tooling, so a project needs nothing besides the one binary to keep its scripts tidy and correct. All of it lives under `ok self`, a name no task can take. This page covers the formatter, the checker, the bootstrap wrappers that let people run your tasks without installing ok, and how to use them in an editor and in CI. The reference is [section 17](../SPEC.md#17-built-in-commands-ok-self-) and [section 18](../SPEC.md#18-bootstrap-wrappers) of the spec.
+This page also covers `ok self promote`, the `./ok` wrappers that let people run your tasks without installing ok, and the use of these commands in an editor and in CI. No task can be named `self`, so these commands never clash with the tasks of a project. The definitions are in [section 17](../SPEC.md#17-built-in-commands-ok-self-) and [section 18](../SPEC.md#18-bootstrap-wrappers) of the spec.
 
 ## Formatting with `ok self fmt`
 
-`ok self fmt` rewrites ok files in one canonical layout, the style used throughout this guide and the repository's examples. There are no options to argue about. Here is a file written in a hurry:
+`ok self fmt` rewrites ok files in one canonical layout, which is the layout of the samples in this guide and of the examples in the repository. It has no options for style. This file has uneven spacing and one long line:
 
 ```ok file=tidy.ok nocheck
 let files = glob("**/*.log", root: ".", hidden: true, exclude: ["**/.git", "**/node_modules", "**/target"])
@@ -14,13 +14,13 @@ let r = {name:"app.log" , size:3}
 if r.size>2 {print( "big" )}
 ```
 
-`--check` reports the files that would change, without touching them, and exits with 1 if there are any:
+`--check` names the files that would change and changes nothing. It exits with 1 if there is such a file:
 
 ```output run="ok self fmt --check tidy.ok" exit=1
 would reformat tidy.ok
 ```
 
-Without `--check`, it rewrites them:
+Without `--check`, `ok self fmt` rewrites the files:
 
 ```output run="ok self fmt tidy.ok"
 formatted tidy.ok
@@ -39,27 +39,33 @@ let r = {name: "app.log", size: 3}
 if r.size > 2 { print("big") }
 ```
 
-Running it again changes nothing and says `ok: 1 file already formatted`. Without file arguments, `ok self fmt` formats the project files around the current directory: the root file, the files in `.ok/`, and what they import.
+A second run changes nothing and prints `ok: 1 file already formatted`.
+
+Without file arguments, `ok self fmt` formats the project files of the project around the current directory: the root file, the files in `.ok/` and the files they import.
 
 ### What the formatter changes
 
 The formatter keeps your line breaks and comments and normalises the rest:
 
-- Indentation is two spaces per level. A line that continues a statement, such as a pipeline stage starting with `|` or a method chain starting with `.name`, gets one extra level.
-- One space around binary operators and after `,` and `:`. No space inside parentheses, brackets and record literals (`{a: 1}`), but one inside the braces of a one-line block (`{ print(x) }`).
-- At most one blank line in a row, none at the start or end of the file, and one newline at the end.
-- A line longer than 100 characters is broken: at each `|` of a pipeline, or else by putting the elements of its largest bracket group (call arguments, parameters, a list, a record, `needs [...]`) on lines of their own, with a trailing comma.
-- Comments stay where you put them. End-of-line comments keep their column, so aligned comments stay aligned.
+- Indentation is two spaces per level. A line that continues a statement, such as a pipeline stage that starts with `|` or a method chain that starts with `.name`, gets one more level.
+- Binary operators have one space on each side, and `,` and `:` have one space after them. There is no space inside parentheses, brackets and record literals (`{a: 1}`), and one space inside the braces of a block on one line (`{ print(x) }`).
+- There is at most one blank line in a row, no blank line at the start or the end of the file, and one newline at the end.
+- A line longer than 100 characters is broken. A pipeline is broken before each `|`. Any other line is broken at its largest bracket group (call arguments, parameters, a list, a record or `needs [...]`), whose elements each get a line of their own and a trailing comma.
+- Comments stay where they are. A comment at the end of a line keeps its column, so aligned comments stay aligned.
 
-Some things are never touched. String literals and commands after `run` are copied byte for byte, because changing them would change what the program does. Where a space changes meaning, the formatter keeps it: `f (x)` and `f(x)` are different in ok (a juxtaposed argument versus a call), as are `reset-db` and `reset - db`.
+The formatter copies string literals and the commands after `run` byte for byte, because a change there would change what the program does.
 
-### Formatting is safe
+Where a space changes the meaning, the formatter keeps it. `f (x)` passes `(x)` as a juxtaposed argument and `f(x)` is a call. `reset-db` is one name and `reset - db` is a subtraction.
 
-After formatting, ok parses the result and compares its syntax tree and comments with the original. If they differ, it reports an internal error and leaves the file alone. So `ok self fmt` cannot change what your code does. A file that does not parse is reported with its syntax error and left unchanged, and the exit code is 1.
+### The formatter checks its own result
+
+After formatting a file, ok parses the result and compares its syntax tree and its comments with those of the original. If they differ, ok reports an internal error and leaves the file as it was, so `ok self fmt` cannot change what your code does.
+
+A file that does not parse is reported with its syntax error and left unchanged, and the exit code is 1.
 
 ## Checking with `ok self check`
 
-`ok self check` reads ok files and reports mistakes without running any of their code. It is fast, needs no trust, and does not need the programs your scripts call to be installed. Here is a script with three problems:
+`ok self check` reads ok files and reports mistakes without running any of their code. It needs no trust, and the programs that your scripts call do not have to be installed. This script has three problems:
 
 ```ok file=report.ok
 fn greet(name: string) {
@@ -98,24 +104,33 @@ warning[arg]: the arguments of `write` look swapped: "report.json" looks like a 
 ok: 1 file checked: 2 errors and 1 warning
 ```
 
-Running the script would only have found the first of these, and only when `args` was not empty. The checker reports every finding in every file, in file and source order.
+Running the script would find only the first problem, and only when `args` is not empty. The checker reports every finding in every file, in the order of the files and of the source.
 
-### What it finds
+### What the checker finds
 
-- **Syntax errors**, and code at the top level of a project file that is not a declaration.
-- **Unknown names**: a variable or function that is not declared where it is used, an assignment to a name that was never declared with `let` or `var`, a method call with no function of that name, a name an imported module does not export, and an `env` method that does not exist. The help line suggests a close name, or tells you the name is declared further down.
-- **Wrong arguments** to a function it knows (a `fn` of the file or an import, a closure bound with `let`, or a builtin): too many or too few positional arguments, a missing required flag, a named argument that is not a flag of the function.
-- **Imports** of files that do not exist.
+- Syntax errors, and code at the top level of a project file that is not a declaration.
+- Unknown names. These are a variable or function that is not declared where it is used, an assignment to a name that was never declared with `let` or `var`, a method call for which no function of that name exists, a name that an imported module does not export, and an `env` method that does not exist. The help line suggests a similar name, or says that the name is declared further down.
+- Wrong arguments in a call of a function that the checker knows: a `fn` of the file or of an import, a closure bound with `let`, or a builtin. It reports too many or too few positional arguments, a missing required flag, and a named argument that is not a flag of the function.
+- An import of a file that does not exist.
 
-It also has one **lint**, a warning about code that runs but is almost certainly wrong: `write` with its arguments swapped, as above.
+The checker also has one lint, which is a warning about code that runs but is almost certainly wrong. The lint reports a call of `write` with its arguments swapped, as in the sample above.
 
-### What it does not find
+### What the checker does not find
 
-A finding always means the code fails when it runs, so the checker stays quiet where the outcome depends on values. It does not check types of arguments, fields of records (`r.name`, `env.HOME`), calls of functions held in variables or parameters, and code inside `try` or before `?`, where errors are meant to become values. It does not follow calls either: an unknown name inside a function is reported even if nothing calls that function. A clean check is not a test suite.
+A finding always means that the code fails when it runs. Where the outcome depends on values, the checker reports nothing. It does not check:
+
+- the types of arguments;
+- the fields of records, such as `r.name` or `env.HOME`;
+- calls of functions held in variables or parameters;
+- code inside `try` or before `?`, where errors are meant to become values.
+
+The checker does not follow calls either. It reports an unknown name inside a function even if nothing calls that function.
+
+A check without findings therefore does not show that a script works. Run or test the script as well.
 
 ### Checking a project
 
-Without file arguments, `ok self check` checks the project around the current directory. First it applies the rules for loading a project (namespaces, mounts, the tasks and arguments named in `needs`, dependency cycles); then it checks every project file and everything they import.
+Without file arguments, `ok self check` checks the project around the current directory. It first applies the rules for loading a project: namespaces, mounts, the tasks and arguments named in `needs`, and dependency cycles. Then it checks every project file and every file they import.
 
 ```ok file=.ok/ok.ok
 # Compile
@@ -140,7 +155,7 @@ error[arg]: task `build` has no parameter `relase`
 ok: the project failed to load: 1 error
 ```
 
-An error like this one stops the check, because the project's files are only known once it loads. A clean project prints a one-line summary that also counts its tasks:
+An error in loading the project, like this one, stops the check, because ok knows the files of a project only after the project loads. For a project without findings, ok prints a summary of one line that also counts the tasks:
 
 ```ok file=.ok/ok.ok
 # Compile
@@ -160,7 +175,7 @@ ok: 1 file and 2 tasks checked, no problems found
 
 ### Exit codes and `--strict`
 
-`ok self check` exits with 1 when it found an error and 0 when it found only warnings or nothing, so a lint does not break your build. `--strict` makes warnings count too:
+`ok self check` exits with 1 when it found an error, and with 0 when it found only warnings or nothing. A lint therefore does not fail your build. With `--strict`, a warning also gives exit code 1:
 
 ```ok file=save.ok
 let totals = {apples: 3, pears: 5}
@@ -191,18 +206,18 @@ warning[arg]: the arguments of `write` look swapped: "totals.json" looks like a 
 ok: 1 file checked: 1 warning
 ```
 
-Findings and the summary go to stderr; a clean summary goes to stdout. Bad usage, such as an unknown option, exits with 2.
+Findings and their summary go to stderr. The summary of a check without findings goes to stdout. Bad usage, such as an unknown option, exits with 2.
 
 ## Starting a project with `ok self init`
 
-`ok self init` sets up a new project in the current directory. It writes a starter `.ok/ok.ok` and nothing else:
+`ok self init` sets up a project in the current directory. It writes a starter `.ok/ok.ok` and nothing else:
 
 ```output run="ok self init"
 wrote .ok/ok.ok
 run ok hello
 ```
 
-The starter file has one task to build on, and requires the version of ok that wrote it (here 0.4):
+The starter file has one task, and it requires the version of ok that wrote it (here 0.4):
 
 ```ok
 requires "0.4"
@@ -213,7 +228,11 @@ task hello(name: string = "world") {
 }
 ```
 
-With `--wrappers`, it also writes the three [bootstrap wrappers](#the-ok-wrappers), so that people without ok installed can run the tasks:
+`ok self init` does not overwrite a file. If the directory already has a root file (`ok.ok`, `.ok` or `.ok/ok.ok`), it stops with an error and writes nothing.
+
+### Adding the wrappers
+
+With `--wrappers`, `ok self init` also writes the three [`./ok` wrappers](#the-ok-wrappers), so that people without ok installed can run the tasks:
 
 ```text
 $ ok self init --wrappers
@@ -221,13 +240,20 @@ wrote .ok/ok.ok, ./ok, ok.cmd and ok.ps1 (pinned to ok 0.4.0)
 run ./ok hello (or ok.cmd hello on Windows)
 ```
 
-To pin the wrappers, `ok self init --wrappers` downloads the checksums of its own release (`SHA256SUMS` from the GitHub release of the version you are running); without `--wrappers` it uses no network at all. Without network access, download that file some other way and pass it with `--checksums SHA256SUMS`. `OK_DOWNLOAD_URL` points both `init` and the wrappers at a mirror instead of GitHub; `init` downloads the checksums only over `https://`, so for a plain-HTTP or `file://` mirror pass a `SHA256SUMS` you checked with `--checksums`. Every entry must be a SHA-256 digest (64 hex digits), since it ends up in the wrappers' code.
+In a project that already has a root file, `ok self init --wrappers` leaves the root file alone and writes only the three wrappers. It stops with an error, and writes nothing, if `ok`, `ok.cmd` or `ok.ps1` exists. A deprecated `ok/` directory counts as well, because the `./ok` wrapper needs that name.
 
-`ok self init` never overwrites anything: if the directory already has a root file (`ok.ok`, `.ok` or `.ok/ok.ok`), or with `--wrappers` any of `ok`, `ok.cmd` or `ok.ps1`, it stops with an error and writes nothing. To add wrappers to a project that already has a root file, run `ok self init --wrappers` there: it leaves the root file alone and writes only the three wrappers.
+The wrappers hold the checksums of the release binaries. `ok self init --wrappers` downloads these checksums from the release of the ok version you are running: the file `SHA256SUMS` of that GitHub release. Without `--wrappers`, `ok self init` does not use the network.
+
+Two settings change where the checksums come from:
+
+- `--checksums FILE` reads them from a `SHA256SUMS` file that you downloaded yourself. Use it on a machine without network access.
+- `OK_DOWNLOAD_URL` makes `ok self init` and the wrappers download from a mirror instead of GitHub. `ok self init` downloads checksums over `https://` only. For a mirror with plain HTTP or `file://`, check a `SHA256SUMS` file yourself and pass it with `--checksums`.
+
+Every entry must be a SHA-256 digest of 64 hex digits, because the entries become part of the code of the wrappers.
 
 ## Moving to `.ok/` with `ok self promote`
 
-A project that started as a single `.ok` file can move to the `.ok/` directory when it needs namespaces or helper files. `ok self promote` moves the file to `.ok/ok.ok`, unchanged:
+`ok self promote` moves a project whose root file is a single `.ok` file to the `.ok/` directory, where it can have namespaces and helper files. The file moves to `.ok/ok.ok` with its content unchanged:
 
 ```ok file=.ok
 # Say hello
@@ -241,35 +267,58 @@ moved .ok to .ok/ok.ok
 the project files moved, so the next task run asks for trust again (or run ok trust)
 ```
 
-It also moves the files of an old `ok/` namespace directory into `.ok/`, which is what the warning about `ok/` asks for, and removes the empty `ok/`. A root `ok.ok` stays where it is. Every move is checked first: if a file would land on one that exists, nothing is moved, and running it again when everything is in place says there is nothing to promote.
+`ok self promote` also moves the files of a deprecated `ok/` directory into `.ok/` and removes the empty `ok/`. The warning that ok prints about `ok/` asks for this move. A root file named `ok.ok` stays where it is.
 
-Imports are relative to the file they are in, so an import in a moved file can point somewhere else afterwards: `import "lib/util.ok"` in `.ok` means `.ok/lib/util.ok` once the file is `.ok/ok.ok`. `ok self promote` lists each such import with the path to write instead (`"../lib/util.ok"`). Paths in `sources`, `outputs` and commands are relative to the project root and do not change, unless they name files in `ok/`.
+ok checks every move before it makes one. If a file would replace an existing file, ok moves nothing. In a project that already uses `.ok/ok.ok`, `ok self promote` says that there is nothing to promote.
 
-Trust is given to files under their paths, so after the move the project needs [trust](trust.md) again; review the files and answer the prompt, or run `ok trust`.
+### After the move
+
+An import is relative to the file it is in, so an import in a moved file can point at another place than before. `import "lib/util.ok"` in the file `.ok` means `lib/util.ok`, and in `.ok/ok.ok` it means `.ok/lib/util.ok`. `ok self promote` does not edit your files. It lists each import that changed its meaning, with the path to write instead (here `"../lib/util.ok"`).
+
+Paths in `sources`, in `outputs` and in commands are relative to the project root. They stay correct, unless they name files in `ok/`.
+
+ok trusts files under their paths, so the project needs [trust](trust.md) again after the move. Review the files and answer the prompt on the next task run, or run `ok trust`.
 
 ## The `./ok` wrappers
 
-The wrappers let anyone run your tasks with nothing but a fresh checkout. `ok self init --wrappers` writes them; commit them in the project root:
+With the wrappers, a person with a fresh checkout and no ok installed can run your tasks. [`ok self init --wrappers`](#adding-the-wrappers) writes them. Commit them in the project root:
 
 - `ok` is a POSIX `sh` script for Linux and macOS: `./ok build`.
-- `ok.cmd` and `ok.ps1` are for Windows, from `cmd.exe` or PowerShell: `ok.cmd build` or `.\ok.ps1 build`. `ok.cmd` only hands over to `ok.ps1`.
+- `ok.ps1` is a PowerShell script for Windows: `.\ok.ps1 build`.
+- `ok.cmd` is for `cmd.exe` on Windows: `ok.cmd build`. It only starts `ok.ps1`.
 
-Each wrapper pins one ok version and the SHA-256 of each release binary. On first use it downloads the binary for the current OS and architecture into the user cache (`~/.cache/ok/VERSION-SHA/` on Linux and macOS, `%LOCALAPPDATA%\ok\VERSION-SHA\` on Windows, where `SHA` is the first 16 digits of the pinned checksum, so a binary is only reused by wrappers that pin the same one), checks its checksum, and runs it with all your arguments. If the checksum does not match, it deletes the download and refuses to run it. Later runs use the cached binary straight away, so the wrapper costs nothing after the first time.
+Each wrapper pins one ok version and the SHA-256 checksum of each release binary. On its first run, a wrapper does this:
 
-Because the version is pinned, everyone on the project, and CI, runs the same ok. If the project's `requires` is newer than the ok someone has installed, the error points at the wrapper as the fix. To move a project to a newer ok, delete the three wrappers, run `ok self init --wrappers` with the new version in an empty directory, and copy the new wrappers in.
+1. It downloads the binary for the current OS and architecture into the user cache.
+2. It compares the checksum of the download with the pinned checksum. If they differ, it deletes the download and stops.
+3. It runs the binary with all your arguments.
 
-The wrappers are the only shell code ok produces, and they stay short enough to read before you run them. They still go through [trust](trust.md) like any other way of running tasks, but only once ok runs: `./ok` itself is a shell script from the repository, and your shell runs it before any trust check. A repository you do not trust could have changed it to do anything. So in a repository you have not reviewed, run your installed `ok` instead of `./ok`; the trust prompt then protects you as described.
+Later runs find the binary in the cache and download nothing.
+
+The cache directory is `~/.cache/ok/VERSION-SHA/` on Linux and macOS and `%LOCALAPPDATA%\ok\VERSION-SHA\` on Windows. `SHA` is the first 16 digits of the pinned checksum, so only wrappers that pin the same binary share a cached one.
+
+Because the version is pinned, everyone on the project runs the same ok, and so does CI. If the `requires` of the project is newer than the ok that someone has installed, the error names the wrapper as the fix.
+
+To move a project to a newer ok, install that version, delete the three wrappers and run `ok self init --wrappers` in the project root.
+
+### The wrappers run before the trust check
+
+`./ok` is a shell script from the repository, and your shell runs it before ok starts. The [trust](trust.md) check happens only when the downloaded ok runs a task, so it cannot cover the wrapper itself. A repository that you do not trust could contain a changed wrapper that does anything. In a repository that you have not reviewed, run your installed `ok` and not `./ok`. The trust prompt then protects you as the [Trust](trust.md) page describes.
+
+The wrappers are the only shell code that ok produces, and they are short, so you can read them before you run them.
 
 ## Other `ok self` commands
 
 | Command | What it does |
 |---|---|
-| `ok self tasks` | Print the task listing, the same as `ok` with no arguments. `--all` includes [hidden tasks](tasks.md#hidden-tasks). |
-| `ok self completions SHELL` | Print a completion script for `bash`, `zsh`, `fish` or `powershell` (see [Tasks](tasks.md#shell-completions)). |
-| `ok self complete -- WORDS...` | What the completion scripts call: prints the candidates for the last word. |
-| `ok self version` | Print the version, such as `ok 0.4.0`. `ok --version` does the same. |
+| `ok self tasks` | Prints the task listing, like `ok` with no arguments. `--all` includes [hidden tasks](tasks.md#hidden-tasks). |
+| `ok self completions SHELL` | Prints a completion script for `bash`, `zsh`, `fish` or `powershell` (see [Tasks](tasks.md#shell-completions)). |
+| `ok self complete -- WORDS...` | Prints the completion candidates for the last word. The completion scripts call it. |
+| `ok self version` | Prints the version, such as `ok 0.4.0`. `ok --version` does the same. |
 
-`ok self complete` is handy for checking what Tab will offer, without a shell:
+`ok self --help` prints the list of all `ok self` commands.
+
+`ok self complete` shows what Tab offers without a shell. This sample asks for the completions of `-` after the task name `deploy`:
 
 ```ok file=.ok/ok.ok
 # Deploy the app
@@ -285,7 +334,7 @@ task deploy(target: "staging" | "production", --verbose, -v: bool) {
 -v
 ```
 
-After the task name with nothing typed yet, it offers the flags and the choices for the first argument:
+After the task name, with nothing typed yet, it offers the flags and the choices for the first argument:
 
 ```output run="ok self complete -- deploy ''"
 --help
@@ -296,12 +345,13 @@ staging
 
 ## In your editor and in CI
 
-Both tools take file arguments, so editors can run them on one file:
+Both `ok self fmt` and `ok self check` take file arguments, so an editor can run them on one file.
 
-- Format on save: run `ok self fmt FILE` on the saved file. It prints `formatted FILE` when something changed and leaves the file alone if it does not parse.
-- Show problems: run `ok self check FILE`. Findings have the usual `FILE:LINE:COLUMN` location after `-->`, which most editors' problem matchers can read.
+To format on save, make the editor run `ok self fmt FILE` on the saved file. The command prints `formatted FILE` when it changed the file, and it leaves a file that does not parse as it was.
 
-In CI, check formatting and correctness before running anything else. Neither needs trust, so they also work in a job that never runs a task:
+To show problems, make the editor run `ok self check FILE`. Each finding has a `FILE:LINE:COLUMN` location after `-->`, which the problem matchers of most editors can read.
+
+In CI, check the format and the code before running anything else. Neither command needs trust, so both also work in a job that never runs a task:
 
 ```yaml
 steps:
@@ -313,4 +363,4 @@ steps:
       OK_TRUST: "1"
 ```
 
-`ok self fmt --check` fails the job and names the files when someone forgot to format; `ok self check --strict` fails on warnings too. A git pre-commit hook can run the same two commands; the [pre-commit example](../examples/pre-commit/) is one written in ok.
+`ok self fmt --check` fails the job and names the files that are not formatted. `ok self check --strict` also fails on warnings. A git pre-commit hook can run the same two commands. The [pre-commit example](../examples/pre-commit/) is such a hook, written in ok.

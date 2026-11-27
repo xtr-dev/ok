@@ -1,41 +1,53 @@
 # Trust
 
-ok runs a project's tasks only after you approve the exact content of its files. How the prompt works, `ok trust`, and running in CI.
+ok runs the tasks of a project only after you approve the exact content of its files. This page explains what ok checks, what the prompt offers and how to run tasks in CI.
 
-When you clone a repository and type `ok build`, the `build` task is code someone else wrote, and it runs with your permissions. ok therefore asks once before it runs any task of a project it has not seen, and asks again whenever the project's files change. This page explains what is checked, what the prompt offers, and how to skip it where that is safe. The exact rules are in [section 16 of the spec](../SPEC.md#16-trust).
+When you clone a repository and type `ok build`, the `build` task is code that someone else wrote, and it runs with your permissions. So ok asks once before it runs any task of a project it has not seen, and asks again whenever the project's files change. The exact rules are in [section 16 of the spec](../SPEC.md#16-trust).
 
 ## Trust is not a sandbox
 
-Approving a project does not make it safe. A trusted task can delete files, read your keys and talk to the network, like any program you start. Trust answers one question: "did I agree to run this code?". It protects you from running tasks you have never looked at, for example right after `git clone` or `git pull`, and from files that changed behind your back. Reading the files before you trust them is still your job.
+Approving a project does not make it safe. A trusted task can delete files, read your keys and use the network, like any program you start. Trust records that you agreed to run this code. It protects you from running tasks you have never looked at, for example right after `git clone` or `git pull`, and from running files that changed without your knowledge. Reading the files before you trust them remains your job.
 
 ## What needs trust
 
-Only running a task needs trust, and that includes `ok --dry-run TASK`, because a dry run still evaluates the task's code. Everything that merely reads the project works without it:
+Running a task needs trust. That includes `ok --dry-run TASK`, because a dry run still evaluates the code of the task.
 
-- `ok` (the task listing) and `ok self tasks`
+These commands only parse the project files, and they work without trust:
+
+- `ok` with no arguments (the task listing) and `ok self tasks`
 - `ok TASK --help`
 - shell completion
-- `ok self check` and `ok self fmt`
+- `ok self check` and `ok self fmt` (see [Formatter, checker and wrappers](tools.md))
 
-These only parse the files; loading a project never runs any of its code (see [Tasks](tasks.md#project-files-hold-declarations)). A script you run by its path, such as `ok tools/release.ok`, is not subject to trust either: naming a file explicitly is your decision to run it.
+Loading a project never runs any of its code (see [Tasks](tasks.md#project-files-hold-declarations)).
+
+A script that you run by its path, such as `ok tools/release.ok`, needs no trust either. By naming the file you have decided to run it.
 
 ## What is trusted
 
-The **project files** are the root file (`.ok/ok.ok`, `.ok` or `ok.ok`), every `.ok` file directly in `.ok/` (helpers included), and every file those import, directly or indirectly, including mounted sub-projects. ok computes one SHA-256 **fingerprint** over their paths, relative to the project root, and their contents. Moving a file, as `ok self promote` does, therefore changes the fingerprint too. Trust is recorded for a project root together with that fingerprint.
+ok trusts a project root together with a **fingerprint**: one SHA-256 hash over the paths and the contents of the project files and the env files. The paths are relative to the project root.
 
-The **env files** a run loads (`env file ".env"` and, with `--env NAME`, `.env.NAME`, see [Tasks](tasks.md#environment-files)) are part of the fingerprint too: a variable such as `NODE_OPTIONS` or `PATH` changes what every program a task starts does, so a changed `.env` is a changed project. Since env files often hold secrets, the prompt shows only their variable names, never the values, and the trust store keeps only the names. A run with `--env staging` loads one more file than a run without, so it is approved separately; `ok --env staging trust` approves it ahead of time.
+The **project files** are:
 
-So any change to any of these files, even a comment, means the project is no longer the one you approved, and ok asks again. Files that tasks read or run, such as a `Cargo.toml` or a shell script called with `run`, are not part of the fingerprint. Only ok code and env files are.
+- the root file (`.ok/ok.ok`, `.ok` or `ok.ok`);
+- every `.ok` file directly in `.ok/`, helper files included (and, in a project with the deprecated layout, those in `ok/`);
+- every file that those files import, directly or indirectly, including the root files of mounted sub-projects.
 
-Trust belongs to the directory it was given in. The same files copied to another directory, or another checkout of the repository, are asked about again.
+The **env files** are the files that a run loads: the file named by `env file ".env"` and, with `--env NAME`, `.env.NAME` (see [Tasks](tasks.md#environment-files)). They are part of the fingerprint because a variable such as `NODE_OPTIONS` or `PATH` changes what every program does that a task starts. Env files often hold secrets, so the prompt shows only the names of their variables, never the values, and the trust store keeps only the names. A run with `--env staging` loads one more file than a run without it, so you approve it separately. `ok --env staging trust` approves it ahead of time.
 
-Each version you approve is remembered. If you switch back to a branch whose project files you trusted before, ok runs its tasks without asking.
+A change to any of these files, even to a comment, changes the fingerprint, and ok asks again. Moving a file changes the fingerprint too, which is why the project needs trust again after [`ok self promote`](tools.md#moving-to-ok-with-ok-self-promote).
 
-For your own projects, where you are the one changing the files, you can trust the directory instead of a particular content with `ok trust --dir`. Then ok never asks for that directory again.
+Files that tasks read or run, such as a `Cargo.toml` or a shell script started with `run`, are not part of the fingerprint. The fingerprint covers ok code and env files only.
+
+Trust belongs to the directory it was given in. ok asks again about the same files in a copy of the directory, or in another checkout of the repository.
+
+ok remembers each version that you approve. When you switch back to a branch whose project files you trusted before, ok runs its tasks without asking.
+
+In a project of your own, where you are the one who changes the files, you can trust the directory instead of one fingerprint with `ok trust --dir`. ok then does not ask again for that directory, whatever its files contain.
 
 ## The prompt
 
-Running a task in a project you have not trusted, on a terminal, shows:
+When you run a task on a terminal in a project that you have not trusted, ok shows this prompt:
 
 ```text
 This project is not trusted yet.
@@ -48,11 +60,13 @@ Tasks are code that runs with your permissions. Trust is not a sandbox.
 [v]iew files, [t]rust and run, [n]o:
 ```
 
-- `v` prints every project file, then asks again. Control characters, bidirectional controls and invisible characters are shown as escapes such as `\r` or `\u{202e}`, so that nothing in a file can make it look different from what runs. Env files are shown as their variable names.
-- `t` records trust for this content and runs the task.
+The three choices are:
+
+- `v` prints every project file and asks again. Control characters, bidirectional controls and invisible characters are shown as escapes such as `\r` or `\u{202e}`, so that a file cannot look different from the code that runs. An env file is shown as the names of its variables.
+- `t` records trust for this fingerprint and runs the task.
 - `n` runs nothing and exits with code 1.
 
-If an earlier version of the project was trusted, ok says so and offers a diff against the copy it kept, so you only have to review what changed:
+If you trusted an earlier version of the project, ok says so and adds a `d` choice. It prints a diff against the copy that ok kept of the trusted version, so you review only the changes:
 
 ```text
 The project files changed since you trusted them.
@@ -72,7 +86,9 @@ Tasks are code that runs with your permissions. Trust is not a sandbox.
 [d]iff, [v]iew files, [t]rust and run, [n]o:
 ```
 
-ok never waits for an answer that cannot come. Without a terminal on standard input, as in CI, a git hook or a pipe, it fails immediately:
+### Without a terminal
+
+Without a terminal on standard input, as in CI, a git hook or a pipe, ok does not wait for an answer. It fails immediately:
 
 ```text
 error[trust]: this project is not trusted
@@ -80,7 +96,7 @@ error[trust]: this project is not trusted
   = help: review the files, then run `ok trust`; in CI set OK_TRUST=1 or pass --trust
 ```
 
-If an earlier version was trusted, the error says the files changed and names them, since there is no prompt to show the diff:
+If you trusted an earlier version, the error says that the files changed and names them, because there is no prompt that could show the diff:
 
 ```text
 error[trust]: the project files changed since you trusted them
@@ -91,7 +107,7 @@ error[trust]: the project files changed since you trusted them
 
 ## Trusting from the command line
 
-You do not have to wait for the prompt. Read the files, then trust them:
+You do not have to wait for the prompt. Read the project files, then run `ok trust` in the project:
 
 ```text
 $ ok trust
@@ -100,14 +116,14 @@ trusted /home/you/src/myapp
   sha256: 1956c16a52ea3f783cca2f931b7c44151a47b4c63c929b4288ab14635ebe6242
 ```
 
-`ok trust` and `ok untrust` work on the project around the current directory, or on the one you name: `ok trust ../other`. The commands are:
+`ok trust` and `ok untrust` work on the project around the current directory, or on the project in the directory you name, as in `ok trust ../other`. The commands are:
 
 | Command | What it does |
 |---|---|
-| `ok trust [DIR]` | Trust the current content of the project. |
-| `ok trust --dir [DIR]` | Trust the directory, whatever its content. For your own projects. |
-| `ok trust --list` | List trusted roots with their fingerprints, or directory trust, and when you approved them. |
-| `ok untrust [DIR]` | Forget every entry for the project's root, content and directory trust alike. |
+| `ok trust [DIR]` | Trusts the current content of the project. |
+| `ok trust --dir [DIR]` | Trusts the directory, whatever its content. For your own projects. |
+| `ok trust --list` | Lists the trusted roots, each with its fingerprint or its directory trust and the time you approved it. |
+| `ok untrust [DIR]` | Removes every entry for the project root: its fingerprints and its directory trust. |
 
 With nothing trusted yet, the list says so:
 
@@ -115,11 +131,11 @@ With nothing trusted yet, the list says so:
 nothing is trusted yet
 ```
 
-`trust`, `untrust` and `self` are the only words ok reserves as first arguments, which is why no task or namespace may use them.
+`trust`, `untrust` and `self` are the only first arguments that ok reserves, so no task or namespace can have one of these names.
 
 ## CI and other non-interactive use
 
-A CI job runs the tasks of the commit it checked out, and nobody is there to answer a prompt. Set `OK_TRUST=1` in the job's environment, or pass `--trust` before the task name:
+A CI job runs the tasks of the commit it checked out, and nobody is there to answer a prompt. Set `OK_TRUST=1` in the environment of the job:
 
 ```yaml
 # .github/workflows/ci.yml
@@ -133,17 +149,21 @@ jobs:
       - run: ./ok test
 ```
 
+Or pass `--trust` before the task name:
+
 ```sh
 ok --trust test
 ```
 
-Both run the tasks for that invocation only and record nothing. `OK_TRUST` must be `1` or `true`; any other value is ignored. Use them where the code being run is already what the job is meant to run, such as CI for your own repository. Do not set `OK_TRUST=1` in your shell profile: that turns the check off for every repository you clone.
+Both run the tasks for that invocation only and record nothing. `OK_TRUST` must be `1` or `true`, and ok ignores any other value.
 
-The same applies to anything else that runs tasks without a terminal: a git hook, an editor integration, a cron job. Either trust the project once by hand (`ok trust`, or `ok trust --dir` for a project only you edit), or pass `--trust` in the command the tool runs.
+Use them where the job is meant to run the code it checked out, such as CI for your own repository. Do not set `OK_TRUST=1` in your shell profile. That turns the check off for every repository you clone.
+
+Other things that run tasks without a terminal, such as a git hook, an editor integration or a cron job, have the same two options. Trust the project once by hand with `ok trust` (or `ok trust --dir` for a project that only you edit), or pass `--trust` in the command that the tool runs.
 
 ## Where trust is stored
 
-The trust store is a small directory in your configuration folder:
+The trust store is a directory in your configuration folder:
 
 | OS | Location |
 |---|---|
@@ -151,11 +171,18 @@ The trust store is a small directory in your configuration folder:
 | macOS | `~/Library/Application Support/ok/` |
 | Windows | `%APPDATA%\ok\` |
 
-It holds `trust.json`, with one entry per trusted root and fingerprint (or directory), and `snapshots/`, a copy of each trusted version that the `[d]iff` choice compares against (for env files, only their variable names). `OK_CONFIG_DIR` points ok at a different directory, which is useful in tests that need an empty store.
+It holds two things:
+
+- `trust.json` has one entry for each trusted root with its fingerprint, or with its directory trust.
+- `snapshots/` has a copy of each trusted version, which the `[d]iff` choice compares against. For an env file, the copy holds only the names of its variables.
+
+`OK_CONFIG_DIR` makes ok use another directory. Tests that need an empty trust store set it.
 
 ## Imports stay inside the project
 
-For the fingerprint to mean anything, every file a project loads has to be part of it. So in project mode, every import and every namespace file must resolve inside the project root, after following symlinks. An import that leaves the root, such as `import "../../shared/lib.ok"` in `.ok/ok.ok`, or a `.ok/` file that is a symlink to somewhere else, is an error as soon as ok loads the project: listing the tasks, `ok self check` and `ok trust` refuse it as well as running a task, so nothing outside the root is ever trusted by mistake:
+The fingerprint must cover every file that a project loads. So in a project, every import and every namespace file must resolve inside the project root, after following symlinks. Two examples of what ok refuses are an import that leaves the root, such as `import "../../shared/lib.ok"` in `.ok/ok.ok`, and a file in `.ok/` that is a symlink to a file outside the root.
+
+ok reports the error when it loads the project. Listing the tasks, `ok self check` and `ok trust` therefore fail in the same way as running a task, and ok never trusts a file outside the root:
 
 ```text
 error[trust]: "../../shared/lib.ok" is outside the project
@@ -168,4 +195,4 @@ error[trust]: "../../shared/lib.ok" is outside the project
   = help: project files may only import files inside the project root
 ```
 
-To share code, keep it inside the project root: in a helper file such as `.ok/_lib.ok`, or in a sub-project that the root file mounts.
+To share code, keep it inside the project root, in a helper file such as `.ok/_lib.ok` or in a sub-project that the root file mounts (see [Mounting a sub-project](tasks.md#mounting-a-sub-project)).

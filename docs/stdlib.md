@@ -1,10 +1,20 @@
 # Standard library
 
-Every builtin function of ok, grouped by area: its signature, what it returns, its named arguments and the errors it raises.
+Every builtin function of ok, grouped by area, with its signature, what it returns and the errors it raises.
 
-All of these are available in every script without an import. Each one also works in method form, so `s.trim()` is `trim(s)`, and as a pipeline stage, where the value on the left becomes the first argument: `xs | sort .name` is `sort(xs, .name)` (see [pipelines](pipelines.md)). The signatures use ok's parameter syntax: `name: type`, `= v` for a default, `?` for a type that may be `null`, and `--name` for a named argument, which you pass as `name: value`. The normative definitions are in [the spec](../SPEC.md#12-the-standard-library).
+The functions on this page are available in every script without an import. Each function can be called in three ways:
 
-Errors are shown by kind, such as a `type` error or an `io` error. You can catch them with `try` or `?` (see [errors](errors.md)); the kind is the `kind` field of the error record.
+- as a function: `trim(s)`;
+- in method form, where the first argument comes before the dot: `s.trim()`;
+- as a pipeline stage, where the value on the left becomes the first argument: `xs | sort .name` is `sort(xs, .name)` (see [pipelines](pipelines.md)).
+
+Each entry starts with the signature, then says what the function returns and does, and ends with its errors. Most sections start with one sample that uses the functions of that section.
+
+The signatures use ok's parameter syntax. `name: type` is a parameter and its type, `= v` gives a default, a `?` after a type means that the value may be `null`, and `--name` is a named argument, which is passed as `name: value`.
+
+Errors are given by kind, such as a `type` error or an `io` error. The kind is the `kind` field of the error record that `try` and `?` produce (see [errors](errors.md)).
+
+The normative definitions are in [section 12 of the spec](../SPEC.md#12-the-standard-library).
 
 - [Output and control](#output-and-control): `print`, `eprint`, `fail`, `exit`, `prompt`, `confirm`
 - [Values and numbers](#values-and-numbers): `str`, `int`, `float`, `type`, `len`, `bytes`, `text`, `fmt`, `floor`, `ceil`, `round`, `range`
@@ -40,27 +50,41 @@ this line goes to stderr
 
 ### print
 
-`print(...xs)` returns `null`. Writes the display form of each argument, separated by spaces, then a newline, to stdout. `print()` writes an empty line. If stdout has been closed (output piped into a program that stopped reading), the script ends quietly with exit code 0.
+`print(...xs)`
+
+Returns `null`. Writes the display form of each argument to stdout, separated by spaces and followed by a newline. `print()` writes an empty line. If stdout has been closed, because the output is piped into a program that stopped reading, the script ends quietly with exit code 0.
 
 ### eprint
 
-`eprint(...xs)` returns `null`. Like `print`, but to stderr. Use it for progress messages and warnings, so they do not end up in captured output.
+`eprint(...xs)`
+
+Returns `null`. Writes like `print`, but to stderr. Progress messages and warnings written with `eprint` stay out of captured output.
 
 ### fail
 
-`fail(msg)` never returns. Raises a `fail` error with the display form of `msg` as its message. Given an error record caught with `try`, it raises that error again with its original kind and location.
+`fail(msg)`
+
+Never returns. Raises a `fail` error with the display form of `msg` as its message. When `msg` is an error record caught with `try`, `fail` raises that error again with its original kind and location.
 
 ### exit
 
-`exit(code: int = 0)` never returns. Ends the script with `code` after cleaning up (temporary files and directories are removed). A code outside 0 to 255 is an `arg` error.
+`exit(code: int = 0)`
+
+Never returns. Ends the script with exit code `code`, after removing temporary files and directories. A code outside 0 to 255 is an `arg` error.
 
 ### prompt
 
-`prompt(msg: string, --default: string? = null)` returns a `string`. Asks for a line on the terminal and returns what was typed. Without a terminal it returns `default`, or raises a `value` error if there is none.
+`prompt(msg: string, --default: string? = null)`
+
+Returns a `string`: the line that the user types on the terminal after the question `msg`. Without a terminal it returns `default`. Without a terminal and without a default, it is a `value` error.
 
 ### confirm
 
-`confirm(msg: string, --default: bool = false)` returns a `bool`. Asks a yes/no question on the terminal; `default` is the answer when the user just presses Enter. With `ok --yes` it returns `true` without asking. Without a terminal and without `--yes` it raises a `value` error, even when a default is given.
+`confirm(msg: string, --default: bool = false)`
+
+Returns a `bool`: the answer to the yes/no question `msg`, asked on the terminal. `default` is the answer when the user presses Enter without typing. With `ok --yes` it returns `true` without asking. Without a terminal and without `--yes` it is a `value` error, even when a default is given.
+
+This sample is not run here, because it needs a terminal:
 
 ```ok
 let name = prompt("Your name?", default: "anonymous")
@@ -91,55 +115,81 @@ int float string list null duration
 
 ### str
 
-`str(x)` returns a `string`: the display form of `x`, the same text `print` writes. Strings are returned as they are; `null` becomes `"null"`.
+`str(x)`
+
+Returns a `string`: the display form of `x`, which is the text that `print` writes. A string is returned as it is, and `null` becomes `"null"`.
 
 ### int
 
-`int(x)` returns an `int`. Converts a string (surrounding whitespace is ignored), a float (truncated toward zero) or a bool (`1` or `0`). A malformed string is a `value` error, a float too large for an int is a `value` error, and any other type is a `type` error.
+`int(x)`
+
+Returns an `int` converted from a string, a float or a bool. Whitespace around the number in a string is ignored. A float is truncated toward zero. A bool becomes `1` or `0`. A malformed string and a float too large for an int are `value` errors. Any other type is a `type` error.
 
 ### float
 
-`float(x)` returns a `float`. Converts a string, an int or a bool. A malformed string is a `value` error.
+`float(x)`
+
+Returns a `float` converted from a string, an int or a bool. A malformed string is a `value` error. Any other type is a `type` error.
 
 ### type
 
-`type(x)` returns a `string`: one of `null`, `bool`, `int`, `float`, `string`, `bytes`, `list`, `record`, `path`, `duration`, `time` or `fn`.
+`type(x)`
+
+Returns a `string`: one of `null`, `bool`, `int`, `float`, `string`, `bytes`, `list`, `record`, `path`, `duration`, `time` or `fn`.
 
 ### len
 
-`len(x)` returns an `int`: the number of characters of a string (Unicode scalar values, not bytes), bytes of a bytes value, elements of a list or fields of a record. Anything else is a `type` error.
+`len(x)`
+
+Returns an `int`: the number of characters of a string, bytes of a bytes value, elements of a list or fields of a record. The characters of a string are Unicode scalar values, not bytes. Any other type is a `type` error.
 
 ### bytes
 
-`bytes(s: string)` returns `bytes`: the UTF-8 encoding of `s`. Bytes are returned as they are.
+`bytes(s: string)`
+
+Returns `bytes`: the UTF-8 encoding of `s`. A bytes value is returned as it is.
 
 ### text
 
-`text(b: bytes)` returns a `string`: `b` decoded as UTF-8. Invalid UTF-8 is a `value` error that says at which byte it fails.
+`text(b: bytes)`
+
+Returns a `string`: `b` decoded as UTF-8. Invalid UTF-8 is a `value` error that says at which byte the decoding fails.
 
 ### fmt
 
-`fmt(x, spec: string)` returns a `string`: `x` formatted by a format spec, the same one you write in `"{x:spec}"`. The spec is `[[fill]align][0][width][,][.precision][type]`, with align `<`, `>` or `^` and type one of `d f e x X o b %`. Strings align left by default, numbers right. An invalid spec is a `format` error. See [§12.6 of the spec](../SPEC.md#126-format-specs).
+`fmt(x, spec: string)`
+
+Returns a `string`: `x` formatted by the format spec `spec`. The same spec is written after the colon in `"{x:spec}"`. A spec has the form `[[fill]align][0][width][,][.precision][type]`, where align is `<`, `>` or `^` and type is one of `d f e x X o b %`. Strings align left by default and numbers right. The width is at most 10000 and the precision at most 100. An invalid spec is a `format` error. The full definition is in [section 12.6 of the spec](../SPEC.md#126-format-specs).
 
 ### floor
 
-`floor(x)` returns an `int`: `x` rounded down. An int is returned as it is.
+`floor(x)`
+
+Returns an `int`: the number `x` rounded down. An int is returned as it is. A result too large for an int is a `value` error. A value that is not a number is a `type` error.
 
 ### ceil
 
-`ceil(x)` returns an `int`: `x` rounded up.
+`ceil(x)`
+
+Returns an `int`: the number `x` rounded up. An int is returned as it is. The errors are those of `floor`.
 
 ### round
 
-`round(x)` returns an `int`: `x` rounded to the nearest whole number, with halves rounded away from zero (`round(2.5)` is `3`, `round(-2.5)` is `-3`). For `floor`, `ceil` and `round`, a result too large for an int is a `value` error and a non-number is a `type` error.
+`round(x)`
+
+Returns an `int`: the number `x` rounded to the nearest whole number. Halves are rounded away from zero, so `round(2.5)` is `3` and `round(-2.5)` is `-3`. An int is returned as it is. The errors are those of `floor`.
 
 ### range
 
-`range(n)` or `range(start, end, step = 1)` returns a lazy list of ints from `start` (default `0`) up to but not including `end`. A negative `step` counts down. Because it is lazy, `range(1_000_000_000) | take 3` only produces three numbers. A step of `0` is an `arg` error.
+`range(n)` or `range(start, end, step = 1)`
+
+Returns a lazy list of ints from `start` up to but not including `end`. `range(n)` starts at `0` and ends before `n`. A negative `step` counts down. The list is lazy, so `range(1_000_000_000) | take 3` produces only three numbers. A step of `0` is an `arg` error.
 
 ## Lists
 
-The list functions take the list first, so they read well in pipelines. A `pred` or `key` argument is a function, usually an implicit closure such as `.age > 30` (see [functions](functions.md)). The functions marked *streams* work element by element on lazy input, such as `read("big.log") | lines`, without reading it all into memory.
+The list functions take the list as their first argument, so the list can be the input of a pipeline stage. A `pred` or `key` argument is a function, usually an implicit closure such as `.age > 30` (see [functions](functions.md)).
+
+An entry that says "Streams" describes a function that handles lazy input, such as `read("big.log") | lines`, one element at a time, without reading all of it into memory.
 
 ```ok file=lists.ok
 let people = [
@@ -168,83 +218,123 @@ ana, bo, cy
 
 ### where
 
-`where(xs: list, pred: fn)` returns a list of the elements for which `pred` returns `true`. Streams. `pred` must return a bool; anything else is a `type` error, so write `.count > 0` rather than `.count`.
+`where(xs: list, pred: fn)`
+
+Returns a list of the elements for which `pred` returns `true`. Streams. A `pred` that returns anything but a bool is a `type` error: for a number field, `.count` is an error and `.count > 0` is a bool.
 
 ### map
 
-`map(xs: list, f: fn)` returns a list of `f(x)` for each element. Streams.
+`map(xs: list, f: fn)`
+
+Returns a list of `f(x)` for each element `x`. Streams.
 
 ### each
 
-`each(xs: list, f: fn)` returns `null`. Calls `f` on each element for its effect, such as printing. Consumes lazy input element by element.
+`each(xs: list, f: fn)`
+
+Returns `null`. Calls `f` on each element for its effect, such as printing. Lazy input is consumed one element at a time.
 
 ### sort
 
-`sort(xs: list, key: fn? = null, --desc: bool = false)` returns a sorted list. The sort is stable. Without `key` it sorts the values themselves; with `key` it sorts by `key(x)`. `desc: true` sorts from largest to smallest. Values that cannot be compared, such as a string with an int, are a `type` error.
+`sort(xs: list, key: fn? = null, --desc: bool = false)`
+
+Returns the list sorted from smallest to largest, or from largest to smallest with `desc: true`. Without `key` the elements themselves are compared, and with `key` the values of `key(x)`. The sort is stable. Values that cannot be compared, such as a string and an int, are a `type` error.
 
 ### reverse
 
-`reverse(xs: list)` returns the list in reverse order.
+`reverse(xs: list)`
+
+Returns the list in reverse order.
 
 ### uniq
 
-`uniq(xs: list, key: fn? = null)` returns the list with only the first of each distinct value (or each distinct `key(x)`). The input does not need to be sorted. Streams.
+`uniq(xs: list, key: fn? = null)`
+
+Returns the list with only the first element of each distinct value, or of each distinct `key(x)`. Streams. The input does not need to be sorted.
 
 ### group
 
-`group(xs: list, key: fn)` returns a record. Its keys are `str(key(x))`, in order of first appearance, and each value is the list of elements with that key.
+`group(xs: list, key: fn)`
+
+Returns a record. Its keys are `str(key(x))`, in order of first appearance, and each value is the list of the elements with that key.
 
 ### flat
 
-`flat(xs: list)` returns the list with nested lists flattened by one level: `flat([[1, [2]], 3])` is `[1, [2], 3]`. Streams.
+`flat(xs: list)`
+
+Returns the list with nested lists flattened by one level: `flat([[1, [2]], 3])` is `[1, [2], 3]`. Streams.
 
 ### enumerate
 
-`enumerate(xs: list)` returns a list of `{index, value}` records, with `index` counting from 0. Streams.
+`enumerate(xs: list)`
+
+Returns a list of `{index, value}` records, where `index` counts from 0. Streams.
 
 ### take
 
-`take(xs: list, n: int)` returns the first `n` elements (fewer if the list is shorter). Streams and stops reading after `n`. A negative `n` is an `arg` error.
+`take(xs: list, n: int)`
+
+Returns the first `n` elements, or the whole list if it is shorter. Streams, and stops reading the input after `n` elements. A negative `n` is an `arg` error.
 
 ### skip
 
-`skip(xs: list, n: int)` returns the list without its first `n` elements. Streams.
+`skip(xs: list, n: int)`
+
+Returns the list without its first `n` elements. Streams. A negative `n` is an `arg` error.
 
 ### count
 
-`count(xs: list, pred: fn? = null)` returns an `int`: the number of elements, or the number for which `pred` is `true`.
+`count(xs: list, pred: fn? = null)`
+
+Returns an `int`: the number of elements, or with `pred` the number of elements for which `pred` returns `true`.
 
 ### sum
 
-`sum(xs: list, key: fn? = null)` returns a number: the sum of the elements (or of `key(x)`). An empty list sums to `0`, and durations sum to a duration. Strings are a `type` error; CSV values are strings, so convert them first, as in `sum(rows, r => int(r.amount))`.
+`sum(xs: list, key: fn? = null)`
+
+Returns a number: the sum of the elements, or with `key` the sum of `key(x)`. An empty list sums to `0`. Durations sum to a duration. Strings are a `type` error. CSV values are strings and need a conversion first, as in `sum(rows, r => int(r.amount))`.
 
 ### min
 
-`min(xs: list, key: fn? = null)` returns the smallest element, or `null` for an empty list. With `key`, it compares `key(x)` and returns the element itself.
+`min(xs: list, key: fn? = null)`
+
+Returns the smallest element, or `null` for an empty list. With `key` it returns the element with the smallest `key(x)`.
 
 ### max
 
-`max(xs: list, key: fn? = null)` returns the largest element, or `null` for an empty list. With `key`, it returns the element with the largest `key(x)`.
+`max(xs: list, key: fn? = null)`
+
+Returns the largest element, or `null` for an empty list. With `key` it returns the element with the largest `key(x)`.
 
 ### first
 
-`first(xs: list, pred: fn? = null)` returns the first element, or the first for which `pred` is `true`, or `null` if there is none. Stops reading as soon as it has found one.
+`first(xs: list, pred: fn? = null)`
+
+Returns the first element, or with `pred` the first element for which `pred` returns `true`. Returns `null` if there is no such element. It stops reading the input when it has found the element.
 
 ### last
 
-`last(xs: list, pred: fn? = null)` returns the last element, or the last for which `pred` is `true`, or `null`.
+`last(xs: list, pred: fn? = null)`
+
+Returns the last element, or with `pred` the last element for which `pred` returns `true`. Returns `null` if there is no such element.
 
 ### any
 
-`any(xs: list, pred: fn)` returns `true` if `pred` is `true` for at least one element. `false` for an empty list. Stops at the first match.
+`any(xs: list, pred: fn)`
+
+Returns a `bool`: `true` if `pred` returns `true` for at least one element, and `false` for an empty list. It stops reading the input at the first match.
 
 ### all
 
-`all(xs: list, pred: fn)` returns `true` if `pred` is `true` for every element. `true` for an empty list. Stops at the first miss.
+`all(xs: list, pred: fn)`
+
+Returns a `bool`: `true` if `pred` returns `true` for every element, and `true` for an empty list. It stops reading the input at the first element for which `pred` returns `false`.
 
 ### join
 
-`join(xs: list, sep: string = "")` returns a `string`: the elements converted with `str` and joined by `sep`. Lists, records and bytes inside `xs` are a `type` error.
+`join(xs: list, sep: string = "")`
+
+Returns a `string`: the elements converted with `str` and joined by `sep`. A list, record or bytes value among the elements is a `type` error.
 
 ## Records
 
@@ -267,31 +357,43 @@ true false
 
 ### keys
 
-`keys(r: record)` returns a list of the field names, in order.
+`keys(r: record)`
+
+Returns a list of the field names, in the order of the fields.
 
 ### values
 
-`values(r: record)` returns a list of the field values, in order.
+`values(r: record)`
+
+Returns a list of the field values, in the order of the fields.
 
 ### entries
 
-`entries(r: record)` returns a list of `{key, value}` records, one per field.
+`entries(r: record)`
+
+Returns a list of `{key, value}` records, one for each field.
 
 ### from_entries
 
-`from_entries(xs: list)` returns a record built from a list of `{key, value}` records: the inverse of `entries`. An element that is not such a record is a `type` error.
+`from_entries(xs: list)`
+
+Returns a record built from a list of `{key, value}` records. It is the inverse of `entries`. An element that is not such a record is a `type` error.
 
 ### get
 
-`get(r: record, key: string, default = null)` returns the field `key` of `r`, or `default` if there is no such field. Use it for field names that are only known at run time, or that may be missing.
+`get(r: record, key: string, default = null)`
+
+Returns the field `key` of `r`, or `default` if `r` has no such field. Unlike `r.name`, it takes a field name that is only known when the script runs, and a missing field is not an error. An `r` that is not a record is a `type` error.
 
 ### has
 
-`has(r: record, key: string)` returns `true` if `r` has a field named `key`. For `get` and `has`, a value that is not a record is a `type` error.
+`has(r: record, key: string)`
+
+Returns a `bool`: `true` if `r` has a field named `key`. An `r` that is not a record is a `type` error.
 
 ## Strings
 
-All string functions work on Unicode text. A non-string where a string is needed is a `type` error.
+The string functions work on Unicode text. A value that is not a string, where a function needs a string, is a `type` error.
 
 ```ok file=strings.ok
 print("  padded  ".trim() + "|", "a b  c".split(), "k=v=w".split("=", limit: 2))
@@ -313,63 +415,91 @@ ababab 007
 
 ### trim
 
-`trim(s: string)` returns `s` without whitespace at the start and the end.
+`trim(s: string)`
+
+Returns `s` without the whitespace at its start and its end.
 
 ### trim_start
 
-`trim_start(s: string)` returns `s` without whitespace at the start.
+`trim_start(s: string)`
+
+Returns `s` without the whitespace at its start.
 
 ### trim_end
 
-`trim_end(s: string)` returns `s` without whitespace at the end.
+`trim_end(s: string)`
+
+Returns `s` without the whitespace at its end.
 
 ### split
 
-`split(s: string, sep: string? = null, --limit: int? = null)` returns a list of strings. Without `sep` it splits on runs of whitespace and drops empty parts; with `sep` it splits on every occurrence, so `"a,,b".split(",")` is `["a", "", "b"]`. `limit` caps the number of parts: the last part holds the rest. An empty `sep` is an `arg` error; use `chars` instead.
+`split(s: string, sep: string? = null, --limit: int? = null)`
+
+Returns a list of strings: the parts of `s`. Without `sep` it splits on runs of whitespace and drops empty parts. With `sep` it splits at every occurrence, so `"a,,b".split(",")` is `["a", "", "b"]`. `limit` is the largest number of parts, and the last part then holds the rest of `s`. An empty `sep` is an `arg` error. [`chars`](#chars) splits a string into its characters.
 
 ### lines
 
-`lines(x)` returns a list of strings: `x` split on `\n` and `\r\n`, without a final empty line. On a list of strings it splits each one and flattens the result. Streams, so `read("big.log") | lines | count` reads the file in bounded memory.
+`lines(x)`
+
+Returns a list of strings: `x` split on `\n` and `\r\n`, without a final empty line. For a list of strings it splits each string and flattens the result. Streams, so `read("big.log") | lines | count` reads the file in bounded memory.
 
 ### chars
 
-`chars(s: string)` returns a list of the characters of `s`, each a one-character string.
+`chars(s: string)`
+
+Returns a list of the characters of `s`, each as a string of one character.
 
 ### replace
 
-`replace(s: string, old: string, new: string)` returns `s` with every occurrence of `old` replaced by `new`. The match is literal; for patterns use [`sub`](#sub).
+`replace(s: string, old: string, new: string)`
+
+Returns `s` with every occurrence of `old` replaced by `new`. `old` is matched literally. [`sub`](#sub) replaces the matches of a regular expression.
 
 ### contains
 
-`contains(x, item)` returns a `bool`: whether a string contains a substring, a list contains an element, or a record has a key. A string can only contain a string; anything else is a `type` error. The operator `item in x` does the same.
+`contains(x, item)`
+
+Returns a `bool`: `true` if the string `x` contains the substring `item`, the list `x` contains the element `item`, or the record `x` has the key `item`. The operator `item in x` gives the same result. An `item` that is not a string, when `x` is a string, is a `type` error.
 
 ### starts_with
 
-`starts_with(s: string, prefix: string)` returns `true` if `s` starts with `prefix`.
+`starts_with(s: string, prefix: string)`
+
+Returns a `bool`: `true` if `s` starts with `prefix`.
 
 ### ends_with
 
-`ends_with(s: string, suffix: string)` returns `true` if `s` ends with `suffix`.
+`ends_with(s: string, suffix: string)`
+
+Returns a `bool`: `true` if `s` ends with `suffix`.
 
 ### upper
 
-`upper(s: string)` returns `s` in upper case.
+`upper(s: string)`
+
+Returns `s` in upper case.
 
 ### lower
 
-`lower(s: string)` returns `s` in lower case.
+`lower(s: string)`
+
+Returns `s` in lower case.
 
 ### repeat
 
-`repeat(s: string, n: int)` returns `s` repeated `n` times. A negative `n` is an `arg` error.
+`repeat(s: string, n: int)`
+
+Returns `s` repeated `n` times. A negative `n` and a result larger than 1 GiB are `arg` errors.
 
 ### pad
 
-`pad(x, width: int, --fill: string = " ", --align: string = "left")` returns a `string`: `str(x)` padded with `fill` to `width` characters. `align` is `"left"`, `"right"` or `"center"`. A string that is already wider is returned unchanged.
+`pad(x, width: int, --fill: string = " ", --align: string = "left")`
+
+Returns a `string`: `str(x)` padded with `fill` to `width` characters. `align` is `"left"`, `"right"` or `"center"` and says where the text goes. Text that is already `width` characters or longer is returned unchanged. Another value for `align` and a result larger than 1 GiB are `arg` errors.
 
 ## Regular expressions
 
-Regular expressions use the syntax of the Rust `regex` crate: it is like RE2, matches in linear time and has no backreferences. Write them in single-quoted strings, so that `\d` is not an escape. An invalid pattern is a `value` error.
+Regular expressions use the syntax of the Rust `regex` crate, which is like RE2: matching takes linear time, and there are no backreferences. A pattern in a single-quoted string keeps its backslashes, so `'\d'` is the pattern `\d`. An invalid pattern is a `value` error.
 
 ```ok file=regex.ok
 let m = "version 1.24.3 released".match('(\d+)\.(\d+)\.(?P<patch>\d+)')
@@ -390,23 +520,35 @@ a<10>b<20>
 
 ### match
 
-`s.match(re: string)` returns a `record?`: the first match as `{text, start, end, groups, named}`, or `null` if there is none. `start` and `end` are positions in `s`; `groups` is the list of capture groups (`null` for a group that did not take part) and `named` a record of the named groups. Because `match` is a keyword, you can only call it in method form.
+`s.match(re: string)`
+
+Returns a record for the first match of `re` in `s`, or `null` if there is none. The record is `{text, start, end, groups, named}`. `start` and `end` are positions in `s`. `groups` is the list of capture groups, with `null` for a group that did not take part in the match. `named` is a record of the named groups. `match` is a keyword, so this function exists in method form only.
 
 ### matches
 
-`matches(s: string, re: string)` returns `true` if `re` matches anywhere in `s`. Use `^` and `$` to match the whole string.
+`matches(s: string, re: string)`
+
+Returns a `bool`: `true` if `re` matches anywhere in `s`. A pattern between `^` and `$` must match the whole string.
 
 ### find
 
-`find(s: string, re: string)` returns a list of match records, one per non-overlapping match, in the same form as `match`.
+`find(s: string, re: string)`
+
+Returns a list of match records, one for each non-overlapping match of `re` in `s`. The records have the form that [`match`](#match) returns.
 
 ### sub
 
-`sub(s: string, re: string, replacement)` returns `s` with every match of `re` replaced. A string replacement may use `$1` or `${name}` for groups and `$$` for a literal `$`. A function replacement is called with each match record and returns the replacement text.
+`sub(s: string, re: string, replacement)`
+
+Returns `s` with every match of `re` replaced. In a string `replacement`, `$1` and `${name}` stand for groups and `$$` for a literal `$`. A function `replacement` is called with each match record and returns the replacement text.
 
 ## Files
 
-Relative paths are resolved against the working directory (the project root when you run a task). File functions accept a path or a string. The functions that change files (`write`, `copy`, `move`, `remove`, `mkdir`, `touch`, `chmod` and the archive functions) are printed by `ok --trace` and skipped by `ok --dry-run`. The guide page on [files](files.md) shows them at work.
+File functions accept a path or a string. A relative path is resolved against the working directory, which is the project root when a task runs. The guide page on [files](files.md) shows these functions in longer scripts.
+
+The functions that change files are `write`, `copy`, `move`, `remove`, `mkdir`, `touch`, `chmod` and the [archive functions](#archives). `ok --trace` prints each of their calls, and `ok --dry-run` prints the calls without making the changes.
+
+A file name that is not valid UTF-8 cannot be a string or a path. `list_dir` of a directory that holds such a name, and a `glob` that would return one, are `io` errors.
 
 ```ok file=files.ok
 write("hello\n", "src/a.txt")
@@ -431,65 +573,119 @@ true false
 
 ### copy
 
-`copy(src: path, dst: path)` returns `null`. Copies a file, or a directory with everything in it. `dst` is the exact destination, never a directory to copy into: `copy("a.txt", "out")` creates a file named `out`. Existing files are overwritten and parent directories are created. Copying a directory onto an existing directory merges them: files with the same name are replaced, the other files in `dst` stay. A missing `src`, a file copied onto an existing directory (or a directory onto a file), and a path copied onto itself or a directory into itself are `io` errors.
+`copy(src: path, dst: path)`
 
-Symbolic links inside a copied directory are copied as links, like `cp -R` does, so a link that points outside the directory does not copy what is outside into the destination. A link given as `src` itself is followed. In an existing destination, links are never written through: a link where a file goes is replaced, and a link where a directory goes is an `io` error.
+Returns `null`. Copies a file, or a directory with everything in it. `dst` is the exact destination and never a directory to copy into: `copy("a.txt", "out")` creates a file named `out`. Parent directories are created and existing files are overwritten. Copying a directory onto an existing directory merges the two: files with the same name are replaced, and the other files in `dst` stay.
+
+A symbolic link given as `src` is followed. Symbolic links inside a copied directory are copied as links, as `cp -R` does, so a link that points outside the directory does not bring outside files into the copy. `copy` never writes through a link in an existing destination: a link where a file goes is replaced, and a link where a directory goes is an `io` error.
+
+The other `io` errors are a missing `src`, a file copied onto an existing directory, a directory copied onto an existing file, a path copied onto itself and a directory copied into itself.
 
 ### move
 
-`move(src: path, dst: path)` returns `null`. Renames a file, directory or link, copying and removing when `src` and `dst` are on different file systems (links are then recreated as links).
+`move(src: path, dst: path)`
+
+Returns `null`. Renames a file, a directory or a link. When `src` and `dst` are on different file systems, it copies `src` and then removes it, and links are recreated as links. Moving a directory into itself is an `io` error.
 
 ### remove
 
-`remove(p: path)` returns a `bool`: `true` if it removed something, `false` if nothing existed. Removes a file or a whole directory tree. A symlink is removed itself, not what it points to. It refuses, before deleting anything, to remove the root of the file system, your home directory or a directory that contains it (such as `/home`), the project root, the working directory and any directory that contains the working directory, such as `remove(".")` or `remove("..")` (an `io` error).
+`remove(p: path)`
+
+Returns a `bool`: `true` if it removed something and `false` if nothing existed at `p`. Removes a file or a whole directory tree. A symbolic link is removed itself, not the file it points to.
+
+It is an `io` error, raised before anything is deleted, to remove any of these:
+
+- the root of the file system;
+- your home directory, or a directory that contains it, such as `/home`;
+- the project root;
+- the working directory, or a directory that contains it, as in `remove(".")` or `remove("..")`.
 
 ### mkdir
 
-`mkdir(p: path)` returns `p`. Creates the directory and any missing parents; it is not an error if it already exists.
+`mkdir(p: path)`
+
+Returns `p`. Creates the directory and any missing parent directories. A directory that already exists is not an error.
 
 ### exists
 
-`exists(p: path)` returns `true` if a file or directory exists at `p`.
+`exists(p: path)`
+
+Returns a `bool`: `true` if a file or directory exists at `p`.
 
 ### is_file
 
-`is_file(p: path)` returns `true` if `p` is an existing file.
+`is_file(p: path)`
+
+Returns a `bool`: `true` if `p` is an existing file.
 
 ### is_dir
 
-`is_dir(p: path)` returns `true` if `p` is an existing directory.
+`is_dir(p: path)`
+
+Returns a `bool`: `true` if `p` is an existing directory.
 
 ### glob
 
-`glob(pattern: string, --root: path = cwd, --hidden: bool = false, --exclude: list[string] = [])` returns a sorted list of paths. `*` matches within one path component, `?` one character, `[a-z]` a character class, `**` any number of directories, and `{a,b}` either alternative. Patterns use `/` on every OS and are case-sensitive everywhere. Names starting with `.` are skipped unless the pattern spells out the dot (`.*`) or `hidden: true` is given. The results are joined to `root`; directories that match an `exclude` pattern are not descended into, so `exclude: ["node_modules"]` keeps `**` fast. A pattern that matches nothing returns `[]`; an invalid pattern is a `value` error.
+`glob(pattern: string, --root: path = cwd, --hidden: bool = false, --exclude: list[string] = [])`
+
+Returns a sorted list of the paths that match `pattern`, or `[]` if nothing matches. In a pattern:
+
+- `*` matches any characters within one path component;
+- `?` matches one character;
+- `[a-z]` matches one character of a class;
+- `**` matches any number of directories;
+- `{a,b}` matches either alternative. In a double-quoted string `{` starts an interpolation, so such a pattern is written in single quotes: `'*.{md,txt}'`.
+
+Patterns use `/` on every OS and are case-sensitive on every OS. Names that start with `.` are skipped, unless a component of the pattern starts with a dot (`.*`) or `hidden: true` is given. The pattern is matched against paths relative to `root`, and the results are joined to `root`. A directory that matches an `exclude` pattern is not searched, so `exclude: ["node_modules"]` saves the time of reading that tree. An invalid pattern is a `value` error.
 
 ### list_dir
 
-`list_dir(p: path = cwd)` returns the entries of a directory as paths joined to `p`, sorted by name. Unlike `glob`, it includes names that start with `.`. A missing directory is an `io` error.
+`list_dir(p: path = cwd)`
+
+Returns the entries of the directory `p` as a list of paths joined to `p`, sorted by name. Unlike `glob`, it includes names that start with `.`. A missing directory is an `io` error.
 
 ### stat
 
-`stat(p: path)` returns a record `{size, modified, created, is_file, is_dir, is_symlink, mode}`. `modified` is a time, `created` a time or `null` where the file system does not record it, and `mode` the Unix permission bits, or `null` on Windows. A missing file is an `io` error.
+`stat(p: path)`
+
+Returns a record `{size, modified, created, is_file, is_dir, is_symlink, mode}`. `size` is in bytes. `modified` is a time. `created` is a time, or `null` where the file system does not record it. `mode` holds the Unix permission bits, or `null` on Windows. A missing file is an `io` error.
 
 ### touch
 
-`touch(p: path)` returns `null`. Creates an empty file, or updates the modification time of an existing one.
+`touch(p: path)`
+
+Returns `null`. Creates an empty file at `p`, or sets the modification time of an existing file to the current time.
 
 ### tempdir
 
-`tempdir()` returns a `path` to a new, empty directory. It is removed when the script exits, also when it ends with an error or is stopped with Ctrl-C. Its name cannot be guessed, and on Unix only you can open it (mode 0700), so other users of the machine cannot read or replace what you put there.
+`tempdir()`
+
+Returns a `path` to a new, empty directory. The directory is removed when the script exits, also when the script ends with an error or is stopped with Ctrl-C. Its name cannot be predicted, and on Unix only its owner can open it (mode 0700), so other users of the machine cannot read or replace the files in it.
 
 ### tempfile
 
-`tempfile(--ext: string = "")` returns a `path` to a new, empty file, removed when the script exits, like a `tempdir()`. On Unix only you can read or write it (mode 0600). `ext` gives it an extension, so that `write` and `read` pick the right format: `tempfile(ext: "json")`.
+`tempfile(--ext: string = "")`
+
+Returns a `path` to a new, empty file, which is removed when the script exits, like the directory of `tempdir()`. On Unix only its owner can read or write it (mode 0600). `ext` gives the file an extension, from which `write` and `read` choose the format: `tempfile(ext: "json")`.
 
 ### chmod
 
-`chmod(p: path, mode: int)` returns `null`. Sets the Unix permission bits, written in octal: `chmod("deploy.sh", 0o755)`. On Windows there are no permission bits, and `chmod` does nothing and succeeds.
+`chmod(p: path, mode: int)`
+
+Returns `null`. Sets the Unix permission bits of `p`, usually written in octal: `chmod("deploy.sh", 0o755)`. Windows has no permission bits, so there `chmod` does nothing and succeeds.
 
 ## Paths
 
-A path is its own type, printed with `/` on every OS. Join paths with `/`, as in `path("dist") / "app.zip"`. Besides the functions below, a path has the properties `parent`, `name`, `stem` and `ext`. The path functions also accept a string where they need a path.
+A path is a type of its own and prints with `/` on every OS. The `/` operator joins paths: `path("dist") / "app.zip"`. The path functions also accept a string where they need a path.
+
+A path has four properties, read without parentheses:
+
+| Property | Type | Value for `path("build/app.tar.gz")` |
+|---|---|---|
+| `p.parent` | `path` | `build`. The parent of a root is the root itself. |
+| `p.name` | `string` | `"app.tar.gz"` |
+| `p.stem` | `string` | `"app.tar"`: the name without its last extension |
+| `p.ext` | `string` | `"gz"`: the last extension without the dot, or `""` if there is none |
 
 ```ok file=paths.ok
 let p = path("build/out/../app.tar.gz")
@@ -508,31 +704,47 @@ dist/app/main.js
 
 ### path
 
-`path(s: string)` returns a `path`. The path is normalised lexically: `.` parts are dropped and `a/..` is removed. A path is returned as it is; anything else is a `type` error.
+`path(s: string)`
+
+Returns a `path`. The path is normalised lexically: `.` parts are dropped, and a name followed by `..` is removed together with the `..`. A path is returned as it is. Any other type is a `type` error.
 
 ### abs
 
-`p.abs()` returns `p` joined to the working directory and normalised, so it is absolute. A path that is already absolute is only normalised. `abs` works on paths only: it is not the absolute value of a number.
+`p.abs()`
+
+Returns a `path`: `p` joined to the working directory and normalised, which makes it absolute. A path that is already absolute is only normalised. `abs` takes a path and does not compute the absolute value of a number.
 
 ### relative_to
 
-`p.relative_to(base: path)` returns the part of `p` below `base`, compared lexically (the files do not need to exist). A `p` that is not inside `base` is a `value` error.
+`p.relative_to(base: path)`
+
+Returns a `path`: the part of `p` below `base`. The paths are compared lexically, so the files do not need to exist. A `p` that is not inside `base` is a `value` error.
 
 ### with_ext
 
-`p.with_ext(ext: string)` returns `p` with its last extension replaced by `ext` (given without a dot). An empty `ext` removes the extension.
+`p.with_ext(ext: string)`
+
+Returns a `path`: `p` with its last extension replaced by `ext`, which is given without a dot. An empty `ext` removes the extension.
 
 ### parts
 
-`p.parts()` returns a list of the components of `p` as strings. For an absolute path the first part is its root (`"/"`, or `"C:/"` on Windows), so joining the parts in order with `/` rebuilds the path.
+`p.parts()`
+
+Returns a list of the components of `p` as strings. The first part of an absolute path is its root, which is `"/"`, or `"C:/"` on Windows. Joining the parts in order with `/` gives the path again.
 
 ### is_abs
 
-`p.is_abs()` returns `true` if `p` is an absolute path.
+`p.is_abs()`
+
+Returns a `bool`: `true` if `p` is an absolute path.
 
 ## Data formats
 
-`read` and `write` pick a format from the file name: `.json`, `.jsonl`/`.ndjson`, `.csv`, `.tsv`, `.toml`, `.yaml`/`.yml`, `.env`, and `text` for anything else. A second argument names the format instead: one of `json`, `jsonl`, `csv`, `tsv`, `lines`, `text`, `toml`, `yaml`, `env` or `bytes`, and for `parse` also `yaml_all`. An unknown format is an `arg` error. A file name ending in `.gz` is decompressed on read and compressed on write. The [data](data.md) page explains each format; the fine print is in [§13 of the spec](../SPEC.md#13-data-formats).
+`read` and `write` choose a format from the file name: `.json`, `.jsonl` or `.ndjson`, `.csv`, `.tsv`, `.toml`, `.yaml` or `.yml`, and `.env`. Any other name means `text`. A `format` argument names the format instead of the file name. It is one of `json`, `jsonl`, `csv`, `tsv`, `lines`, `text`, `toml`, `yaml`, `env` or `bytes`, and for `parse` also `yaml_all`. An unknown format is an `arg` error.
+
+A file whose name ends in `.gz` is decompressed when it is read and compressed when it is written.
+
+The [data](data.md) page explains each format, and the exact rules are in [section 13 of the spec](../SPEC.md#13-data-formats).
 
 ```ok file=data.ok
 let rows = [{name: "ana", age: 34}, {name: "bo", age: 27}]
@@ -559,23 +771,60 @@ print(read("log.txt", "lines"))
 
 ### read
 
-`read(p: path, format: string? = null, --delimiter: string = ",", --header: bool = true, --gzip: bool? = null, --max_size: int? = 1_073_741_824, --max_line: int? = 67_108_864)` returns the parsed contents of a file. JSON, YAML and TOML give values; CSV and TSV give a lazy list of records of strings (lists of strings with `header: false`); `jsonl` and `lines` give lazy lists and `text` a lazy string. `delimiter` and `header` apply to CSV and TSV. `gzip` overrides the `.gz` rule in either direction. A missing file is an `io` error; malformed content is a `format` error with the line number; a text file that is not valid UTF-8 is an error that suggests `read(p, "bytes")`. A document larger than `max_size` bytes (JSON, TOML, YAML, .env, bytes; 1 GiB by default), or a line or CSV record longer than `max_line` bytes (64 MiB), is an `io` error; `null` removes a limit.
+`read(p: path, format: string? = null, --delimiter: string = ",", --header: bool = true, --gzip: bool? = null, --max_size: int? = 1_073_741_824, --max_line: int? = 67_108_864)`
+
+Returns the parsed contents of the file `p`. What it returns depends on the format:
+
+| Format | Result |
+|---|---|
+| `json`, `toml`, `yaml`, `env` | the value the document holds |
+| `csv`, `tsv` | a lazy list of records of strings, or of lists of strings with `header: false` |
+| `jsonl`, `lines` | a lazy list |
+| `text` | a lazy string |
+| `bytes` | a bytes value |
+
+The named arguments are:
+
+- `delimiter` and `header` apply to CSV and TSV.
+- `gzip: true` decompresses a file whatever its name, and `gzip: false` reads a `.gz` file as it is.
+- `max_size` is the largest size in bytes of a document that is read as a whole (JSON, TOML, YAML, .env and bytes). The default is 1 GiB.
+- `max_line` is the largest size in bytes of one line or one CSV record. The default is 64 MiB.
+- `null` for `max_size` or `max_line` removes that limit.
+
+A missing file is an `io` error. Malformed content is a `format` error that gives the line number. A text file that is not valid UTF-8 is an error that suggests `read(p, "bytes")`. A document larger than `max_size` and a line longer than `max_line` are `io` errors.
 
 ### write
 
-`write(value, p: path, format: string? = null, --append: bool = false, --compact: bool = false, --delimiter: string = ",", --header: bool = true, --gzip: bool? = null)` returns `null`. Writes `value` to a file in the chosen format, creating parent directories, with `\n` line endings. `append: true` adds to the end of the file (for CSV, the header is only written to an empty file). `compact: true` writes JSON on one line without spaces. For CSV, the header is the keys of the first record; with `header: false` the rows are lists. A value the format cannot hold, such as a string written to `.csv`, is a `type` error. A failed write leaves an existing file as it was: the new contents go to a temporary file next to it, which replaces the file only when it is complete, so `read(p) | ... | write(p)` can also rewrite a file in place. The value comes first: `write("out.txt", "x")` is refused with a hint, because the arguments look swapped.
+`write(value, p: path, format: string? = null, --append: bool = false, --compact: bool = false, --delimiter: string = ",", --header: bool = true, --gzip: bool? = null)`
+
+Returns `null`. Writes `value` to the file `p` in the chosen format, with `\n` line endings. Parent directories are created. The named arguments are:
+
+- `append: true` adds to the end of the file. For CSV, the header is then written only to an empty file.
+- `compact: true` writes JSON on one line without spaces.
+- `delimiter` and `header` apply to CSV and TSV. The header is the keys of the first record. With `header: false` the rows are lists.
+- `gzip: true` compresses the file whatever its name, and `gzip: false` writes a `.gz` file without compression.
+
+A failed write leaves an existing file as it was. The new contents go to a temporary file next to `p`, which replaces `p` only when it is complete. For the same reason `read(p) | ... | write(p)` can rewrite a file in place.
+
+A value that the format cannot hold, such as a string written to a `.csv` file, is a `type` error. The value is the first argument: `write("out.txt", "x")` is refused with a hint, because the arguments look swapped.
 
 ### parse
 
-`parse(text: string, format: string, --delimiter: string = ",", --header: bool = true)` returns the value that `text` holds in `format`. The format `yaml_all` returns the list of documents of a YAML text with several documents; plain `yaml` refuses such text with a `format` error that suggests it.
+`parse(text: string, format: string, --delimiter: string = ",", --header: bool = true)`
+
+Returns the value that `text` holds in `format`, as `read` does for a file. The format `yaml_all` returns the list of the documents of a YAML text with several documents. The format `yaml` refuses such a text with a `format` error that suggests `yaml_all`. `parse` never decompresses.
 
 ### to
 
-`to(value, format: string, --compact: bool = false, --delimiter: string = ",", --header: bool = true)` returns `value` serialised as a string in `format` (bytes for `bytes`). It is `write` without the file.
+`to(value, format: string, --compact: bool = false, --delimiter: string = ",", --header: bool = true)`
+
+Returns a `string`: `value` serialised in `format`, as `write` puts it in a file. For the format `bytes` it returns bytes. `to` never compresses.
 
 ### stdin
 
-`stdin(format: string? = null, --delimiter: string = ",", --header: bool = true, --max_size: int? = 1_073_741_824, --max_line: int? = 67_108_864)` returns ok's own standard input, read lazily and parsed as `format` (default `text`), with the same limits as `read`. Use it to write scripts that sit in a pipeline of other programs. `stdin`, `parse` and `to` never decompress.
+`stdin(format: string? = null, --delimiter: string = ",", --header: bool = true, --max_size: int? = 1_073_741_824, --max_line: int? = 67_108_864)`
+
+Returns ok's own standard input, read lazily and parsed as `format`, which is `text` by default. The limits are those of `read`. `stdin` never decompresses. With `stdin`, a script can take the output of another program as its input:
 
 ```ok
 let rows = stdin("csv")
@@ -584,11 +833,15 @@ print(rows | count)
 
 ## Commands
 
-You start programs with `run`, which is part of the language rather than a function: see [commands](commands.md).
+`run` starts programs. It is part of the language and not a function, and the [commands](commands.md) page describes it.
 
 ### which
 
-`which(cmd: string)` returns a `path?`: where the program `cmd` would be found, by the same search `run` uses (on Windows this includes the `PATH` extensions such as `.exe`), or `null` if it is not installed.
+`which(cmd: string)`
+
+Returns a `path` to the program that `run` would start for the name `cmd`, or `null` if the program is not installed. The search is the one `run` makes, which on Windows includes the `PATH` extensions such as `.exe`.
+
+This script stops with a message when `docker` is not installed:
 
 ```ok
 if which("docker") == null {
@@ -598,7 +851,7 @@ if which("docker") == null {
 
 ## Dates and durations
 
-A `time` is a point in time and a `duration` a length of time, written as literals like `90s`, `1h30m` or `250ms`. A time has the fields `year`, `month`, `day`, `hour`, `minute`, `second` and `unix`. Times print in the local time zone; pass `utc: true` to `format` for output that is the same everywhere.
+A `time` is a point in time. A `duration` is a length of time, written as a literal such as `90s`, `1h30m` or `250ms`. A time has the fields `year`, `month`, `day`, `hour`, `minute`, `second` and `unix`. Times print in the local time zone. With `utc: true`, `format` gives the same text in every time zone.
 
 ```ok file=dates.ok
 let t = time("2026-11-24T10:30:15Z")
@@ -618,46 +871,56 @@ time true
 
 ### now
 
-`now()` returns the current `time`.
+`now()`
+
+Returns a `time`: the current time.
 
 ### time
 
-`time(s: string)` returns a `time` parsed from RFC 3339 (`"2026-11-24T10:30:00Z"`, `"2026-11-24T10:30:00+02:00"`) or from a date `YYYY-MM-DD`, which means midnight in the local time zone. Other text is a `value` error.
+`time(s: string)`
+
+Returns a `time` parsed from `s`. `s` is in RFC 3339 form, such as `"2026-11-24T10:30:00Z"` or `"2026-11-24T10:30:00+02:00"`, or a date `YYYY-MM-DD`, which means midnight in the local time zone. Other text is a `value` error.
 
 ### format
 
-`t.format(pattern: string, --utc: bool = false)` returns a `string`: the time `t` formatted with a strftime pattern, such as `%Y-%m-%d %H:%M:%S`. Common codes are `%Y %m %d %H %M %S %z %:z %a %b %j` and `%%`. Without `utc: true` the time is shown in the local time zone.
+`t.format(pattern: string, --utc: bool = false)`
+
+Returns a `string`: the time `t` formatted with a strftime pattern, such as `%Y-%m-%d %H:%M:%S`. Common codes are `%Y %m %d %H %M %S %z %:z %a %b %j` and `%%`. The time is shown in the local time zone, or in UTC with `utc: true`.
 
 ### sleep
 
-`sleep(d: duration)` returns `null` after waiting for `d`. A plain number is a `type` error: write `sleep(2s)`, not `sleep(2)`.
+`sleep(d: duration)`
+
+Returns `null` after waiting for `d`. A plain number is a `type` error: `sleep(2s)` is valid and `sleep(2)` is not.
 
 ### duration
 
-`duration(s: string)` returns a `duration` parsed from the literal syntax, such as `"1h30m"` or `"250ms"`. Useful for values from the environment or a config file. Other text is a `value` error.
+`duration(s: string)`
+
+Returns a `duration` parsed from a string in the literal syntax, such as `"1h30m"` or `"250ms"`. It converts durations that come from the environment or a configuration file. Other text is a `value` error.
 
 ## Environment and system
 
-These are values rather than functions; they are listed here because scripts use them in the same way. `env` and `os` are records you read fields from; `env` also has methods.
+The names in this section are global values, not functions. `env` and `os` are records, and `env` also has methods.
 
-| Name | Description |
-|---|---|
-| `env.NAME` | The environment variable `NAME` as a string. A `key` error if it is not set, with a hint to use `env.get`. |
-| `env.get(name: string, default = null)` | The variable, or `default` if it is not set. |
-| `env.has(name: string)` | `true` if the variable is set. |
-| `env.set(name: string, value: string)` | Sets a variable for `env.NAME` and every command started afterwards. |
-| `env.remove(name: string)` | Removes a variable, also for commands started afterwards. |
-| `env.all()` | A record of all variables. |
-| `os.name` | `"linux"`, `"macos"`, `"windows"`, or another OS name in lower case. |
-| `os.arch` | The processor architecture, such as `"x86_64"` or `"aarch64"`. |
-| `os.exe` | `".exe"` on Windows, `""` elsewhere. |
-| `args` | The script's arguments as a list of strings, when the script has no `main` function. |
-| `cwd` | The working directory (the project root in project mode). |
-| `invocation_dir` | The directory where you ran `ok`. |
-| `script_dir` | The directory of the file that the running code is in. |
-| `home` | Your home directory. |
+| Name | Type | Description |
+|---|---|---|
+| `env.NAME` | `string` | The environment variable `NAME`. A `key` error if the variable is not set, with a hint to use `env.get`. |
+| `env.get(name: string, default = null)` | value | The variable `name`, or `default` if it is not set. |
+| `env.has(name: string)` | `bool` | `true` if the variable is set. |
+| `env.set(name: string, value: string)` | `null` | Sets a variable for `env.NAME` and for every command started afterwards. |
+| `env.remove(name: string)` | `null` | Removes a variable, also for commands started afterwards. |
+| `env.all()` | `record` | All variables. |
+| `os.name` | `string` | `"linux"`, `"macos"`, `"windows"`, or another OS name in lower case. |
+| `os.arch` | `string` | The processor architecture, such as `"x86_64"` or `"aarch64"`. |
+| `os.exe` | `string` | `".exe"` on Windows, `""` elsewhere. |
+| `args` | `list[string]` | The script's arguments, when the script has no `main` function. |
+| `cwd` | `path` | The working directory, which is the project root when a task runs. |
+| `invocation_dir` | `path` | The directory where you ran `ok`. |
+| `script_dir` | `path` | The directory of the file that the running code is in. |
+| `home` | `path` | Your home directory. |
 
-On Windows, environment variable names are case-insensitive; elsewhere they are case-sensitive. To read a variable named like one of the methods, use `env.get("get")`.
+Environment variable names are case-insensitive on Windows and case-sensitive elsewhere. A variable named like one of the methods is read with `env.get`, as in `env.get("get")`. For `env.set` and `env.remove`, a name that is empty or contains `=` is a `value` error.
 
 ```ok file=env.ok
 env.set("GREETING", "hello")
@@ -686,24 +949,42 @@ print(hash(bytes("abc"), "md5"))
 
 ### hash
 
-`hash(x: path | bytes, algo: string = "sha256")` returns a `string` of lowercase hex. `algo` is `sha256`, `sha512`, `sha1` or `md5`. A path is hashed as a file, streaming, so large files are fine. A string is a `type` error, because it is ambiguous: write `hash(path(s))` for a file or `hash(bytes(s))` for the text. An unknown algorithm is an `arg` error.
+`hash(x: path | bytes, algo: string = "sha256")`
+
+Returns a `string`: the hash of `x` in lowercase hex. `algo` is `sha256`, `sha512`, `sha1` or `md5`. A path is hashed as a file, which is read in pieces, so the size of the file does not matter. A string is a `type` error, because it could mean a file name or the text itself: `hash(path(s))` hashes the file and `hash(bytes(s))` the text. An unknown algorithm is an `arg` error.
 
 ## Network
 
 ### fetch
 
-`fetch(url: string, --method: string = "GET", --headers: record = {}, --body = null, --json = null, --timeout: duration = 30s, --to: path? = null, --check: bool = true, --bytes: bool = false, --max_size: int? = 1_073_741_824)` returns a record `{status, ok, headers, body, url}`. It makes an HTTP or HTTPS request (TLS with the operating system's certificates), follows up to 10 redirects and honours `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`. `timeout` covers the whole call, redirects included.
+`fetch(url: string, --method: string = "GET", --headers: record = {}, --body = null, --json = null, --timeout: duration = 30s, --to: path? = null, --check: bool = true, --bytes: bool = false, --max_size: int? = 1_073_741_824)`
+
+Returns a record `{status, ok, headers, body, url}` for an HTTP or HTTPS request. TLS uses the certificates of the operating system. `fetch` follows up to 10 redirects and honours `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`.
+
+The named arguments are:
 
 - `method` is `GET`, `HEAD`, `POST`, `PUT`, `PATCH` or `DELETE`.
-- `body` is a string or bytes; `json` serialises a value as the body and sets `content-type: application/json`. Passing both is an `arg` error.
-- `to` streams the response body into a file, and `body` is then `null`. The file is saved as the server stores it (the request asks for no content encoding).
-- `max_size` limits the body in bytes: 1 GiB by default, and no limit for a download with `to` unless you pass one. A larger body is a `net` error; `null` lifts the limit.
-- `bytes: true` returns the body as bytes; otherwise a body that is not UTF-8 is an error.
-- With `check: true`, a status of 400 or more is a `net` error that shows the status and the start of the body. Pass `check: false` to get the response record instead, and look at `ok` and `status`.
-- `headers` in the result has lowercase names; a header sent several times has its values joined with `, `, except `set-cookie`, which is always a list. `url` is the final URL after redirects.
-- Redirects go only to `http://` and `https://` URLs and never from `https` to plain `http`. A redirect to another host, scheme or port drops the `headers` you passed, so a token such as `authorization` or `x-api-key` is only sent where you sent it.
+- `headers` is a record of request headers.
+- `body` is the request body, a string or bytes.
+- `json` is a value that is serialised as the request body, with `content-type: application/json`. Passing both `body` and `json` is an `arg` error.
+- `timeout` covers the whole call, redirects included.
+- `to` streams the response body into a file. The request then asks for no content encoding, so the file is saved as the server stores it.
+- `check: true` makes a status of 400 or more a `net` error that shows the status and the start of the body. With `check: false` such a response is returned like any other.
+- `bytes: true` returns the body as bytes. Without it, a body that is not UTF-8 is an error.
+- `max_size` limits the response body in bytes. The default is 1 GiB, and no limit for a download with `to` unless a limit is passed. `null` removes the limit. A larger body is a `net` error.
 
-A connection failure or timeout is a `net` error. A request that is not `GET` or `HEAD`, and any download with `to`, is skipped by `ok --dry-run`.
+The fields of the result are:
+
+- `status` is the status code, and `ok` is `true` for a status from 200 to 399.
+- `headers` is a record with lowercase names. A header that the response sends several times has its values joined with `, `, except `set-cookie`, which is always a list.
+- `body` is a string, bytes with `bytes: true`, or `null` with `to`.
+- `url` is the final URL after redirects.
+
+Redirects go only to `http://` and `https://` URLs and never from `https` to plain `http`. A redirect to another host, scheme or port drops the `headers` that were passed, so a token such as `authorization` or `x-api-key` is sent only to the place it was meant for.
+
+A connection failure and a timeout are `net` errors. `ok --dry-run` skips a request that is not `GET` or `HEAD`, and any download with `to`.
+
+This sample is not run here, because it needs the network:
 
 ```ok
 let url = "https://api.github.com/repos/xtr-dev/ok/releases/latest"
@@ -718,7 +999,15 @@ if not r.ok {
 
 ## Archives
 
-Archive members are stored with `/` paths relative to the parent of each source, so zipping the directory `site` gives members `site/...`. Extraction refuses members with an absolute path or one that escapes the destination ("zip slip"), member names that are not portable (with `:`, `\` or control characters, ending in a dot or space, or a Windows device name such as `NUL`), and links that point outside the destination; it never writes through a link already in the destination. Extracted files get the permissions of any new file (the umask applies), and an executable member stays executable. A missing archive is an `io` error.
+Archive members are stored with `/` paths relative to the parent directory of each source, so an archive of the directory `site` has members named `site/...`. A missing archive is an `io` error.
+
+Extraction writes only inside the destination. `unzip` and `untar` stop with an `io` error at:
+
+- a member with an absolute path, or a path that leaves the destination with `..` ("zip slip");
+- a member name that is not portable: one with `:`, `\` or a control character, one that ends in a dot or a space, or a Windows device name such as `NUL`;
+- a link that points outside the destination.
+
+They never write through a link that is already in the destination. Extracted files get the permissions of any new file, so the umask applies, and a member stored as executable stays executable.
 
 ```ok file=archives.ok
 write("hello\n", "site/index.html")
@@ -738,16 +1027,24 @@ print(glob("t/**/*"))
 
 ### zip
 
-`zip(src: path | list[path], dst: path)` returns `null`. Creates the zip archive `dst` from a file, a directory or a list of them.
+`zip(src: path | list[path], dst: path)`
+
+Returns `null`. Creates the zip archive `dst` from a file, a directory or a list of files and directories.
 
 ### unzip
 
-`unzip(archive: path, dst: path, --max_size: int? = 4_294_967_296, --max_entries: int? = 1_000_000)` returns `null`. Extracts a zip archive into the directory `dst`. Symbolic links in the archive are refused. Extraction stops with an `io` error when the files would hold more than `max_size` bytes (4 GiB) or the archive has more than `max_entries` members; pass a larger number, or `null` for no limit.
+`unzip(archive: path, dst: path, --max_size: int? = 4_294_967_296, --max_entries: int? = 1_000_000)`
+
+Returns `null`. Extracts a zip archive into the directory `dst`. A symbolic link in the archive is an `io` error. `max_size` is the largest total size in bytes of the extracted files (4 GiB by default) and `max_entries` the largest number of members. Going over either limit is an `io` error that stops the extraction. `null` removes a limit.
 
 ### tar
 
-`tar(src: path | list[path], dst: path)` returns `null`. Creates a tar archive, gzip-compressed when `dst` ends in `.gz` or `.tgz`.
+`tar(src: path | list[path], dst: path)`
+
+Returns `null`. Creates the tar archive `dst` from a file, a directory or a list of files and directories. The archive is gzip-compressed when `dst` ends in `.gz` or `.tgz`.
 
 ### untar
 
-`untar(archive: path, dst: path, --max_size: int? = 4_294_967_296, --max_entries: int? = 1_000_000)` returns `null`. Extracts a tar archive into `dst`; gzip compression is detected from the content, not the name. Symbolic links are created after every other member and only when they point inside `dst`; a hard link becomes a copy of the file it names; devices and pipes are skipped. `max_size` and `max_entries` work as for `unzip`.
+`untar(archive: path, dst: path, --max_size: int? = 4_294_967_296, --max_entries: int? = 1_000_000)`
+
+Returns `null`. Extracts a tar archive into the directory `dst`. Gzip compression is detected from the content of the archive, not from its name. Symbolic links are created after every other member, and only when they point inside `dst`. A hard link becomes a copy of the file it names. Devices and pipes are skipped. `max_size` and `max_entries` work as for `unzip`.
