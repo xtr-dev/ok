@@ -579,15 +579,7 @@ impl<'a> Formatter<'a> {
                 let (start, end) = (t.span.start as usize, t.span.end as usize);
                 let mut text = &src[start..end];
                 if matches!(t.tok, Tok::Command(_)) {
-                    let trimmed = text.trim_end_matches([' ', '\t']);
-                    // A `\` followed by blanks is an argument; without the
-                    // blanks it would continue the line (SPEC.md 9.2), so
-                    // one blank stays.
-                    text = if trimmed.ends_with('\\') && trimmed.len() < text.len() {
-                        &text[..trimmed.len() + 1]
-                    } else {
-                        trimmed
-                    };
+                    text = text.trim_end_matches([' ', '\t']);
                 }
                 FTok {
                     tok: &t.tok,
@@ -909,6 +901,28 @@ impl<'a> Formatter<'a> {
             s.push_str(self.toks[i].text);
             if self.commas.contains(&i) {
                 s.push(',');
+            }
+        }
+        // A command ending in `\` at the end of a line (`run a \`, or
+        // `run a b\` before a pipeline broken onto the next line) passes the
+        // `\` as an argument; directly before the newline it would continue
+        // the line (SPEC.md 9.2), so one blank stays after it.
+        // A `\` the lexer took as a continuation (at the end of the file)
+        // lies past the last word and stays one.
+        let t = &self.toks[line.last];
+        if let Tok::Command(c) = t.tok
+            && !t.has_comment
+            && t.text.ends_with('\\')
+            && self.trailing[line.last].is_none()
+        {
+            let last_word_end = c
+                .words
+                .iter()
+                .map(|w| w.span.end)
+                .chain(c.redirects.iter().map(|r| r.span.end))
+                .max();
+            if last_word_end == Some((t.start + t.text.len()) as u32) {
+                s.push(' ');
             }
         }
         s
@@ -1241,6 +1255,14 @@ mod tests {
         // a line continuation.
         assert_eq!(fmt("run a \\  \nprint(1)\n"), "run a \\ \nprint(1)\n");
         assert_eq!(fmt("run a \\   "), "run a \\ \n");
+        // A word ending in `\` before a pipeline broken onto the next line.
+        let src = "n|run u   l\\\\|run u   l\\\\";
+        let out = super::format_with_width(src, 20).expect("formats");
+        assert_eq!(out, "n\n  | run u   l\\\\ \n  | run u   l\\\\\n");
+        assert_eq!(
+            super::format_with_width(src, 100).unwrap(),
+            "n | run u   l\\\\ | run u   l\\\\\n"
+        );
     }
 
     #[test]
