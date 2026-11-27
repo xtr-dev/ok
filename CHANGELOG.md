@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-Some of these changes can stop a project or script from loading: source files may no longer contain raw control or bidirectional characters, env files may no longer set `OK_`, `LD_` or `DYLD_` variables, a root `ok.ok` may not link outside the project, and projects with env files must be trusted again. Data and archives that used to be accepted can now be errors: archive members with names that are not portable, CSV files whose header repeats a column, TOML date-times after 2262, and data beyond the new size limits. Scripts can also fail where they used to go on: `run a | run b` now fails when `a` does, environment variable names with `=` are refused, `.` in `PATH` is no longer searched, file names that are not UTF-8 are errors in `list_dir` and `glob`, and `copy` copies symlinks inside a directory as links.
+Some of these changes can stop a project or script from loading: source files may no longer contain raw control or bidirectional characters, env files may no longer set `OK_`, `LD_` or `DYLD_` variables, a root `ok.ok` may not link outside the project, and projects with env files must be trusted again. Data and archives that used to be accepted can now be errors: archive members with names that are not portable, CSV files whose header repeats a column, TOML date-times after 2262, and data beyond the new size limits. Programs with expressions chained more than 1000 levels deep, values nested more than 1000 levels, or JSON, YAML and TOML output nested deeper than ok can read back are now errors. Scripts can also fail where they used to go on: `run a | run b` now fails when `a` does, environment variable names with `=` are refused, `.` in `PATH` is no longer searched, file names that are not UTF-8 are errors in `list_dir` and `glob`, and `copy` copies symlinks inside a directory as links.
 
 ### Security
 
@@ -47,6 +47,10 @@ Some of these changes can stop a project or script from loading: source files ma
 - `remove` refuses a directory that contains the home directory (`remove("/home")`), as it does for the working directory.
 - Every project file and env file is read once per run: the bytes trust fingerprints, shows and snapshots are the ones parsed, imported and loaded, so a file replaced while ok starts cannot run unreviewed.
 - A parallel task's output lines are forwarded in pieces of at most 64 KiB, so a worker printing endless text without newlines cannot exhaust ok's memory.
+- Programs can no longer crash ok by exhausting the stack: an expression tree may be at most 1000 levels tall, counting every link of a chain (`a + b + ...`, `x | f | g`, `.a.b.c`, `else if`), which is a syntax error beyond that; evaluation nests at most 50000 levels across calls; and lists and records nest at most 1000 levels (`x = [x]` in a loop is a `value` error). Before, 150000 chained `+ 1`, 50000 `.field` accesses or a value wrapped in itself a million times aborted ok when it was evaluated, formatted, displayed, compared, sorted or written.
+- `sort` no longer aborts when some keys cannot be compared (such as rows where some `age` are `null`); it raises the type error.
+- `pad`, `repeat` and `+` on strings and lists, and materialising a stream (`len(range(10_000_000_000))`), refuse results over 1 GiB with an error instead of aborting on allocation, and a value that would take more than 1 GiB written out, counting shared parts each time they occur (`x = [x, x]` in a loop), is a `value` error instead of aborting when it is printed or written.
+- A key lookup with a huge unknown name no longer allocates a quadratic table for its "did you mean" suggestion.
 
 ### Changed
 
@@ -60,6 +64,11 @@ Some of these changes can stop a project or script from loading: source files ma
 - In a pipeline of commands, `run a | run b`, a failure of `a` is raised once `b` has finished, like `set -o pipefail`; with several failures the leftmost is raised, a command ended because the next one stopped reading is not a failure, and `run!` applies to the command it is written on.
 - `write` through a symlink to a missing file creates that file and keeps the link, instead of replacing the link with a regular file.
 - A NUL character in a command argument is reported as such, instead of as a problem with batch files.
+- Ints and floats compare by exact value: `9007199254740993 == 9007199254740992.0` is `false` (it was `true`), so `==`, `<`, `sort`, `min`, `max` and `uniq` agree on every mix of numbers; `uniq([1, 1.0])` gives `[1]`.
+- `to` and `write` refuse JSON nested more than 127 levels, YAML more than 255 and TOML more than 81: the depths ok's readers accept, so written files can be read back.
+- The `%` format type prints huge floats as digits instead of `inf%`.
+- A new fuzz target, `eval`, runs generated programs in a sandbox of the interpreter (no files, commands or network, a step budget), and `tests/no_panic.rs` does the same deterministically on every test run.
+- `ok self fmt` keeps a `#!` comment that is not the shebang off the first line (it failed with an internal error), and formats long `else if` chains and long files in linear time (1000 one-line branches took 5 s).
 
 ### Documentation
 
