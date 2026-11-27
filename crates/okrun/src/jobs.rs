@@ -9,8 +9,7 @@
 //! `ok` process, a *worker*, started with the hidden option
 //! `--task-worker`. The parent prefixes every line a worker prints with the
 //! task's name. Dependencies that can never overlap with another one, such
-//! as a single chain `a -> b -> c`, keep running in this process exactly as
-//! they always did.
+//! as a single chain `a -> b -> c`, run in this process.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -461,7 +460,10 @@ impl Interp {
         Ok(())
     }
 
-    /// The worker side: run the one instance that `spec` names. The parent
+    /// The worker side: run the one instance that `spec` names. `spec` is
+    /// `FINGERPRINT:TASK:FROM:K`: the fingerprint the parent computed, the
+    /// task to run, and the `needs` entry that asks for it (entry `K` of
+    /// task `FROM`), with both tasks by qualified name. The parent
     /// asked for trust and confirmations; the worker checks trust again
     /// without asking (the parent's approval is in the store, or `--trust`
     /// is passed on) and refuses to run if the project files changed since

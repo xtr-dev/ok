@@ -28,7 +28,8 @@ impl Span {
         }
     }
 
-    /// The smallest span covering both `self` and `other` (same file).
+    /// The smallest span covering both `self` and `other`, which must be in
+    /// the same file.
     pub fn to(self, other: Span) -> Span {
         Span {
             file: self.file,
@@ -45,11 +46,13 @@ pub struct SourceFile {
     /// Location on disk, used to resolve relative imports. `None` for `-e`.
     pub path: Option<PathBuf>,
     pub text: Rc<str>,
+    /// Byte offset where each line starts. The first entry is 0.
     line_starts: Vec<usize>,
 }
 
 impl SourceFile {
-    /// 1-based line and column (in characters) of a byte offset.
+    /// 1-based line and column (in characters) of a byte offset. An offset
+    /// past the end of the text counts as the end.
     pub fn line_col(&self, offset: usize) -> (usize, usize) {
         let offset = offset.min(self.text.len());
         let line = match self.line_starts.binary_search(&offset) {
@@ -61,7 +64,8 @@ impl SourceFile {
         (line + 1, col)
     }
 
-    /// Text of a 1-based line without its line ending.
+    /// Text of a 1-based line without its line ending. Panics when the file
+    /// has no such line.
     pub fn line_text(&self, line: usize) -> &str {
         let start = self.line_starts[line - 1];
         let end = self
@@ -72,7 +76,8 @@ impl SourceFile {
         self.text[start..end].trim_end_matches(['\n', '\r'])
     }
 
-    /// Byte offset where a 1-based line starts.
+    /// Byte offset where a 1-based line starts. Panics when the file has no
+    /// such line.
     pub fn line_start(&self, line: usize) -> usize {
         self.line_starts[line - 1]
     }
@@ -85,6 +90,8 @@ pub struct SourceMap {
 }
 
 impl SourceMap {
+    /// Adds a file and returns its id. Ids stay valid for the life of the
+    /// map, because files are never removed.
     pub fn add(&mut self, name: String, path: Option<PathBuf>, text: Rc<str>) -> FileId {
         let mut line_starts = vec![0];
         for (i, b) in text.bytes().enumerate() {
@@ -101,6 +108,8 @@ impl SourceMap {
         (self.files.len() - 1) as FileId
     }
 
+    /// The file with this id. Panics when `id` did not come from
+    /// [`SourceMap::add`] on this map.
     pub fn file(&self, id: FileId) -> &SourceFile {
         &self.files[id as usize]
     }

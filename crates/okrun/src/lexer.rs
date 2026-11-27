@@ -1,7 +1,7 @@
 //! The lexer (SPEC.md section 3 and 9.2).
 //!
-//! It turns source text into tokens. Two things make it more than a simple
-//! scanner:
+//! It turns source text into tokens. It differs from a plain scanner in two
+//! ways:
 //!
 //! * **Nested token streams.** String interpolations `{expr}` and command
 //!   words are lexed recursively, so a string token carries the tokens of its
@@ -11,7 +11,7 @@
 //!   of the command is lexed by different rules (words, quotes,
 //!   interpolation, redirects, `with {...}`) into one [`Tok::Command`].
 //!
-//! Newlines are significant; [`fix_newlines`] applies the continuation rules
+//! Newlines are significant. [`fix_newlines`] applies the continuation rules
 //! of SPEC.md 3.3 after lexing.
 
 use crate::error::{ErrKind, OkError};
@@ -305,12 +305,15 @@ pub struct Comment {
     pub own_line: bool,
 }
 
+/// The result of [`lex`]. Comments are not tokens, so they come separately.
 pub struct Lexed {
     pub tokens: Vec<Token>,
     pub comments: Vec<Comment>,
 }
 
-/// Lex a whole file.
+/// Lex a whole file. A byte order mark at the start is skipped. The error
+/// is a `syntax` error for the first refused character (SPEC.md 3.1) or
+/// malformed token.
 pub fn lex(file: FileId, src: &str) -> Result<Lexed, OkError> {
     let mut lx = Lexer {
         src,
@@ -335,7 +338,7 @@ pub fn lex(file: FileId, src: &str) -> Result<Lexed, OkError> {
 /// is (SPEC.md 3.1): control characters other than tab and the newline of
 /// `\n` or `\r\n`, and bidirectional controls, which can reorder a line on
 /// screen ("Trojan Source"). They are refused everywhere, in code, strings
-/// and comments, since a reviewer reads all of them; a string that needs
+/// and comments, since a reviewer reads all of them. A string that needs
 /// one writes it as an escape.
 fn check_characters(file: FileId, src: &str, from: usize) -> Result<(), OkError> {
     let bytes = src.as_bytes();
@@ -1012,10 +1015,11 @@ impl<'a> Lexer<'a> {
         None
     }
 
-    /// Dedent parameters of a triple-quoted string (SPEC.md 3.5): whether the
-    /// opening line break is skipped, the indentation removed from each line,
-    /// and where the content stops (before a closing line that holds only
-    /// indentation).
+    /// The layout of a triple-quoted string whose closing quotes are at
+    /// `close` (SPEC.md 3.5): where the content begins (after the opening
+    /// line break, if there is one), the indentation to remove from each
+    /// line, and where the content stops (before a closing line that holds
+    /// only indentation).
     fn triple_layout(&self, close: usize) -> (usize, usize, usize) {
         let content = &self.src[self.pos..close];
         let mut begin = self.pos;
@@ -1291,8 +1295,8 @@ impl<'a> Lexer<'a> {
         }
         let rest = &self.src[self.pos + 1..];
         // The end of the file ends the last line too, so a `\` there is a
-        // continuation onto nothing, as it would be with a final newline;
-        // otherwise adding that newline (as `ok self fmt` does) would change
+        // continuation onto nothing, as it would be with a final newline.
+        // Otherwise adding that newline (as `ok self fmt` does) would change
         // the command.
         let nl = if rest.starts_with("\r\n") {
             2
@@ -1327,7 +1331,7 @@ impl<'a> Lexer<'a> {
                 }
                 // `2>`, `2>>` and `2>&1` (SPEC.md 9.2 rule 13): only an
                 // unquoted `2` at the start of a word, directly followed by
-                // `>`, is a stream number; `2 > x` passes the argument `2`.
+                // `>`, is a stream number. `2 > x` passes the argument `2`.
                 b'2' if self.peek_at(1) == Some(b'>') => {
                     let rest = &self.src[self.pos..];
                     let kind = if rest.starts_with("2>&1") {
@@ -1660,7 +1664,7 @@ impl<'a> Lexer<'a> {
 
 /// Apply the newline rules of SPEC.md 3.3: drop a newline after a token that
 /// cannot end a statement, and before a line starting with `|`, `.name`,
-/// `else` or `catch`.
+/// `else`, `catch` or `finally`.
 pub fn fix_newlines(tokens: Vec<Token>) -> Vec<Token> {
     let mut out: Vec<Token> = Vec::with_capacity(tokens.len());
     let n = tokens.len();
@@ -1735,8 +1739,9 @@ pub fn fix_newlines(tokens: Vec<Token>) -> Vec<Token> {
 mod tests {
     use super::*;
 
-    /// Found by the lexer fuzzer: nested `"""{` used to be lexed again at
-    /// every level (exponential time and memory). It must fail fast.
+    /// Nested `"""{` must fail fast. Lexing the text again at every level
+    /// would take exponential time and memory. The regression file was
+    /// found by the lexer fuzzer.
     #[test]
     fn nested_triple_strings_fail_fast() {
         let start = std::time::Instant::now();

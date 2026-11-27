@@ -1,14 +1,19 @@
 //! The `ok` language: lexer, parser, evaluator and standard library.
 //!
-//! The binary in `main.rs` only calls [`cli::main`]; everything else lives
-//! here so it can be unit-tested. Pipeline: [`lexer`] turns text into
-//! tokens, [`parser`] builds the [`ast`], [`interp`] evaluates it using
-//! [`value`]s and the [`builtins`]. All failures are [`error::OkError`]s,
-//! rendered with source snippets from the [`source`] map.
+//! The binary in `main.rs` only calls [`cli::main`]. Everything else lives
+//! here so that it can be unit-tested. A program passes through three
+//! stages: [`lexer`] turns text into tokens, [`parser`] builds the [`ast`],
+//! and [`interp`] evaluates it using [`value`]s and the [`builtins`]. The
+//! standard library is spread over [`list`], [`text`], [`formats`],
+//! [`files`], [`system`], [`net`] and [`archive`], and `run` lives in
+//! [`command`]. Project mode ([`project`], [`jobs`], [`trust`]) and the
+//! `ok self` tools ([`tools`], [`fmt`], [`check`]) use the same
+//! interpreter. All failures are [`error::OkError`]s, rendered with source
+//! snippets from the [`source`] map.
 
-// Errors travel on the cold path and carry rich context (span, notes, help,
-// trace); boxing every `Result` to shrink them would add noise to the whole
-// interpreter for no measurable gain.
+// An `OkError` is large because it carries its context (span, notes, help,
+// trace), and errors are rare. Boxing every `Result` to shrink them would
+// add noise to the whole interpreter for no measurable gain.
 #![allow(clippy::result_large_err)]
 
 pub mod archive;

@@ -1,4 +1,6 @@
-//! `ok self check`, `ok self fmt` and `ok self init` (SPEC.md 17, 18).
+//! `ok self check`, `ok self fmt`, `ok self init` and `ok self promote`
+//! (SPEC.md 17), and the templates of the bootstrap wrappers that
+//! `ok self init --wrappers` writes (SPEC.md 18).
 
 use std::path::{Path, PathBuf};
 
@@ -7,7 +9,8 @@ use crate::interp::{FileKind, Flow, Interp, R, check_items};
 use crate::path::OkPath;
 use crate::value::Value;
 
-/// The release targets, the wrapper's name for each, and the binary name.
+/// The release targets: each target triple with the file name of its binary
+/// in a release, which is also its name in `SHA256SUMS`.
 pub const TARGETS: &[(&str, &str)] = &[
     ("x86_64-unknown-linux-musl", "ok-x86_64-unknown-linux-musl"),
     (
@@ -212,7 +215,9 @@ fn plural(n: usize) -> &'static str {
     if n == 1 { "" } else { "s" }
 }
 
-/// `ok self fmt [--check] [FILES...]`.
+/// `ok self fmt [--check] [FILES...]` (SPEC.md 17.2). Without files it
+/// formats every file of the project. With `--check` it writes nothing and
+/// exits with 1 when a file would change.
 pub fn fmt(interp: &mut Interp, args: &[String], start: &Path) -> R<Value> {
     let (check_only, mut files) = options_and_files(args, "--check", "fmt")?;
     if files.is_empty() {
@@ -274,8 +279,9 @@ pub fn fmt(interp: &mut Interp, args: &[String], start: &Path) -> R<Value> {
     Ok(Value::Null)
 }
 
-/// The starter `.ok/ok.ok`; `requires` is filled in with the running version's
-/// major.minor, the oldest ok the file is known to work with (SPEC.md 15.7).
+/// The starter `.ok/ok.ok`. `{requires}` is replaced by the running
+/// version's major.minor, the oldest ok the file is known to work with
+/// (SPEC.md 15.7).
 const STARTER: &str = r#"requires "{requires}"
 
 # Say hello

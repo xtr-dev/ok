@@ -81,7 +81,7 @@ pub struct SandboxRun {
 
 /// Run untrusted source text in a [`Sandbox`] with a budget of `steps`, on a
 /// thread of its own with a large stack (test and fuzzing threads have
-/// small ones). Used by the fuzz targets and the no-panic tests; a panic
+/// small ones). Used by the fuzz targets and the no-panic tests. A panic
 /// in the interpreter is passed on to the caller.
 pub fn run_sandboxed(src: &str, steps: u64) -> SandboxRun {
     let src = src.to_string();
@@ -117,7 +117,7 @@ pub fn run_sandboxed(src: &str, steps: u64) -> SandboxRun {
         }
         SandboxRun { output, outcome }
     };
-    // WASI has no threads; there the program runs on the caller's stack.
+    // WASI has no threads, so there the program runs on the caller's stack.
     if cfg!(target_os = "wasi") {
         return work();
     }
@@ -170,9 +170,10 @@ thread_local! {
     /// While a sandboxed program runs on this thread, every scope it
     /// creates. A function value refers to the scope it was declared in,
     /// which holds the function, so scopes form reference cycles that are
-    /// never freed; the `ok` process simply exits, but the fuzz targets run
-    /// many programs and would leak each one. [`run_sandboxed`] empties the
-    /// registered scopes afterwards, which breaks the cycles.
+    /// never freed. That is harmless in the `ok` process, which exits when
+    /// the program ends, but the fuzz targets run many programs and would
+    /// leak each one. [`run_sandboxed`] empties the registered scopes
+    /// afterwards, which breaks the cycles.
     static SANDBOX_SCOPES: RefCell<Option<Vec<std::rc::Weak<Scope>>>> = const { RefCell::new(None) };
 }
 
@@ -184,8 +185,9 @@ impl Scope {
         });
         SANDBOX_SCOPES.with(|reg| {
             if let Some(list) = reg.borrow_mut().as_mut() {
-                // Forget scopes that are already gone now and then, so a
-                // long loop does not grow the list without bound.
+                // Scopes that are already gone are dropped from the list
+                // whenever its length is a power of two of at least 4096,
+                // so a long loop does not grow it without bound.
                 if list.len() >= 4096 && list.len().is_power_of_two() {
                     list.retain(|w| w.strong_count() > 0);
                 }
@@ -243,6 +245,8 @@ pub struct Args {
     pub span: Span,
 }
 
+/// A function implemented in Rust: one entry of a module's `BUILTINS`
+/// table.
 pub struct Builtin {
     pub name: &'static str,
     pub f: fn(&mut Interp, Args) -> R<Value>,
@@ -263,10 +267,12 @@ pub struct Interp {
     /// Libraries imported without `as`, with the scope they were imported
     /// into: importing the same file there again is a no-op (SPEC.md 11).
     unaliased: Vec<(Weak<Scope>, PathBuf)>,
+    /// Current nesting of calls of ok functions, limited by
+    /// [`MAX_CALL_DEPTH`].
     depth: usize,
     /// Current nesting of `eval_lazy`, limited by `max_eval_depth`.
     eval_depth: usize,
-    /// [`MAX_EVAL_DEPTH`] by default; lower for an interpreter that runs on
+    /// [`MAX_EVAL_DEPTH`] by default. Lower for an interpreter that runs on
     /// a smaller stack than the `ok` binary's (the fuzz targets).
     pub max_eval_depth: usize,
     /// Caught error records, so `fail(e)` can re-raise the original error.
@@ -277,11 +283,11 @@ pub struct Interp {
     /// Temporary files and directories to remove when the run ends.
     pub temps: Vec<PathBuf>,
     /// Commands whose stdout was connected straight into the command being
-    /// started; finished after it.
+    /// started. They are finished after it.
     pub(crate) upstream: Vec<Box<dyn lazy::Source>>,
     /// Where the user ran `ok` (SPEC.md 12.2).
     pub invocation_dir: PathBuf,
-    /// The project root in project mode; `remove` refuses to delete it.
+    /// The project root in project mode. `remove` refuses to delete it.
     pub project_root: Option<PathBuf>,
     /// In project mode, the files as ok read them for trust: libraries are
     /// imported from these bytes, never read again (SPEC.md 16.2).
@@ -290,7 +296,7 @@ pub struct Interp {
     /// `env file`): `None` removes a variable. Applied to every child
     /// process, so ok never mutates its own process environment.
     pub env_overlay: Vec<(String, Option<String>)>,
-    /// Set for programs that must not touch the system; see [`Sandbox`].
+    /// Set for programs that must not touch the system (see [`Sandbox`]).
     pub sandbox: Option<Box<Sandbox>>,
 }
 
@@ -305,8 +311,8 @@ pub struct RunOpts {
     pub parallel: bool,
 }
 
-/// What kind of file is being loaded; decides which top-level items are
-/// allowed (SPEC.md 4.1).
+/// What kind of file is being loaded, which decides which top-level items
+/// are allowed (SPEC.md 4.1).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FileKind {
     Script,
@@ -656,7 +662,8 @@ impl Interp {
                 continue;
             }
             let v = self.exec_stmt(stmt, scope)?;
-            // A live `run` already showed its output; `ok -e` prints nothing more.
+            // A live `run` already showed its output, so `ok -e` prints
+            // nothing more.
             last = match &stmt.kind {
                 StmtKind::Expr(e) if !crate::command::is_run(e) => v,
                 _ => Value::Null,
@@ -801,8 +808,8 @@ impl Interp {
         let read = match &self.project_files {
             None => std::fs::read_to_string(full),
             // Every library a project imports was read, hashed and trusted
-            // with it; one that was not there then (or was not a project
-            // file) must not run now.
+            // with it. One that was not there at that time (or was not a
+            // project file) must not run.
             Some(store) => match store.cached(full) {
                 Some(_) => store.read_text(full),
                 None => {
@@ -942,7 +949,7 @@ impl Interp {
             other => {
                 // The help repeats the condition as written when it is short
                 // and has no spaces (`files`, `opts.items`), so it can be
-                // pasted back; otherwise it uses a placeholder name.
+                // pasted back. Otherwise it uses a placeholder name.
                 let text =
                     &self.sources.file(span.file).text[span.start as usize..span.end as usize];
                 let simple = !text.is_empty()
@@ -1519,7 +1526,7 @@ impl Interp {
                     return outcome;
                 };
                 // The finally block runs however the try and catch blocks
-                // ended; its own value is discarded (SPEC.md 6.7).
+                // ended. Its own value is discarded (SPEC.md 6.7).
                 match self.exec_block(finally, scope) {
                     Ok(_) => outcome,
                     Err(Flow::Err(mut e)) => {
@@ -1694,7 +1701,7 @@ impl Interp {
     }
 
     /// Whether `v` matches `pat` (SPEC.md 6.6). Bindings are appended to
-    /// `bound`; when the result is `false`, `bound` is left as it was.
+    /// `bound`. When the result is `false`, `bound` is left as it was.
     fn pattern_matches(
         &mut self,
         pat: &MatchPat,

@@ -210,7 +210,8 @@ impl TypeAnn {
 pub struct Param {
     /// The name bound in the body (`--dry-run` binds `dry_run`).
     pub name: String,
-    /// The name as written, without `--` (`dry-run`); used on the command line.
+    /// The name as written, without `--` (`dry-run`), as used on the command
+    /// line.
     pub cli_name: String,
     pub flag: bool,
     /// The one-letter short form on the command line: `--verbose, -v`.
@@ -270,7 +271,7 @@ pub struct Expr {
     /// the tallest child (blocks and closure bodies included). The
     /// evaluator, the checker and the formatter recurse once (or a few
     /// times) per level, so the parser rejects programs whose trees are
-    /// taller than its limit; computing it at construction keeps that check
+    /// taller than its limit. Computing it at construction keeps that check
     /// O(1) per node, also for long chains like `a + b + c ...`.
     pub height: u32,
 }
@@ -377,7 +378,7 @@ pub enum MatchPat {
         rest: Option<ListRest>,
         span: Span,
     },
-    /// `{key: p, other}`: the keys must exist; extra keys are allowed.
+    /// `{key: p, other}`: the keys must exist, and extra keys are allowed.
     Record {
         fields: Vec<(String, MatchPat)>,
         span: Span,
@@ -479,7 +480,7 @@ pub enum Stage {
     },
     /// Any other expression that evaluates to a function.
     Value(Box<Expr>),
-    /// A command; the left value becomes its stdin.
+    /// A command. The left value becomes its stdin.
     Run(Box<Expr>),
 }
 
@@ -532,7 +533,7 @@ pub enum ExprKind {
         subject: Box<Expr>,
         arms: Vec<Arm>,
     },
-    /// `try { } catch e { } finally { }`; at least one of `handler` and
+    /// `try { } catch e { } finally { }`. At least one of `handler` and
     /// `finally` is present.
     Try {
         body: Block,

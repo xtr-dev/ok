@@ -120,7 +120,8 @@ impl Replacement {
         let (tmp, file) = match created {
             Ok(f) => f,
             // A writable file in a directory where no new file may be
-            // created can still be written, as before, just not safely.
+            // created is written in place. A failure halfway then leaves it
+            // incomplete, which the temporary file would have prevented.
             Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && target.is_file() => {
                 let file = std::fs::OpenOptions::new()
                     .write(true)

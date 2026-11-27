@@ -2,7 +2,7 @@
 //!
 //! Every function takes the list first, so it reads well as a pipeline stage.
 //! The streaming ones (`where`, `map`, `take`, `skip`, `uniq`, `flat`,
-//! `enumerate`, `lines`) return a lazy list when given one; the consuming
+//! `enumerate`, `lines`) return a lazy list when given one. The consuming
 //! ones (`count`, `sum`, `first`, ...) pull elements one at a time and stop
 //! early when they can.
 
@@ -47,7 +47,9 @@ pub static BUILTINS: &[Builtin] = &[
     eager("has", has),
 ];
 
-/// Named arguments a builtin accepts, checked against what was passed.
+/// The named arguments of a call as a map, taken out of `args`. A name that
+/// is not in `allowed` is an `arg` error, with a suggestion when one of the
+/// allowed names is close.
 pub(crate) fn named(args: &mut Args, fname: &str, allowed: &[&str]) -> R<HashMap<String, Value>> {
     let mut out = HashMap::new();
     for (n, v, span) in std::mem::take(&mut args.named) {

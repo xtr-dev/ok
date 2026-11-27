@@ -399,7 +399,14 @@ fn prompt(interp: &mut Interp, mut args: Args) -> R<Value> {
     }))
 }
 
-/// Ask a yes/no question on the terminal. Shared with task `confirm`.
+/// Ask a yes/no question on the terminal, for `confirm()` and for the
+/// `confirm` modifier of a task. An empty answer gives `default`, and
+/// `yes_flag` (`--yes`) answers yes without asking.
+///
+/// # Errors
+///
+/// Fails when stdin is not a terminal and `yes_flag` is not set, and when
+/// the answer cannot be read.
 pub fn ask_yes_no(
     question: &str,
     default: bool,

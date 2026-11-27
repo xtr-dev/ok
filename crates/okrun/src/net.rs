@@ -349,6 +349,8 @@ fn fetch(interp: &mut Interp, mut args: Args) -> R<Value> {
         let (pending, mut file) = crate::files::ensure_parent(&native)
             .and_then(|()| crate::files::Replacement::create(&native))
             .map_err(write_fail)?;
+        // Reading one byte more than `max_size` allows is enough to tell
+        // that the body is too large, without reading the rest of it.
         let reader = resp.body_mut().with_config().limit(u64::MAX).reader();
         let n = std::io::copy(
             &mut reader.take(max_size.map_or(u64::MAX, |m| m.saturating_add(1))),

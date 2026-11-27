@@ -1,4 +1,4 @@
-//! `ok self fmt`: the canonical layout (SPEC.md 17).
+//! `ok self fmt`: the canonical layout (SPEC.md 17.2).
 //!
 //! The formatter works on the token stream of a file, guided by its syntax
 //! tree, and keeps the line structure the author chose:
@@ -41,7 +41,13 @@ pub const WIDTH: usize = 100;
 
 const INDENT: &str = "  ";
 
-/// Format source text. Fails if the text does not parse.
+/// Format source text.
+///
+/// # Errors
+///
+/// Fails if the text does not parse. Also fails, with an internal error, if
+/// the formatted text would not have the same syntax tree and comments as
+/// `src`, so no text is returned that could change what a program means.
 pub fn format_source(src: &str) -> Result<String, OkError> {
     format_with_width(src, WIDTH)
 }
@@ -854,8 +860,8 @@ impl<'a> Formatter<'a> {
         lines
     }
 
-    /// The indentation of `line` (SPEC.md 17), given the state after the lines before
-    /// it, which is updated to include `line`.
+    /// The indentation of `line` (SPEC.md 17.2), given the state after the
+    /// lines before it, which is updated to include `line`.
     fn indent_step(&self, state: &mut IndentState, line: &Line) -> usize {
         let first = self.toks[line.first].tok;
         let closes_first = is_closer(first);

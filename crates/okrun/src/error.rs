@@ -1,6 +1,6 @@
 //! Errors and their rendering (SPEC.md section 10).
 //!
-//! An [`OkError`] is what every failing operation produces: lexing, parsing,
+//! An [`OkError`] is what every failing operation produces. Lexing, parsing,
 //! loading and evaluation all use the same type, so all errors render the
 //! same way: kind, message, `file:line:col`, the source line with the span
 //! underlined, then notes, help and a short call trace.
@@ -27,8 +27,8 @@ pub enum ErrKind {
     Net,
     Fail,
     Trust,
-    /// A feature specified in SPEC.md whose milestone has not been reached.
-    /// Not catchable as a distinct kind by scripts; it reports as `value`.
+    /// A feature that SPEC.md specifies and ok does not implement. Scripts
+    /// cannot catch it as a kind of its own: its name is `value`.
     Unimplemented,
 }
 
@@ -78,7 +78,7 @@ impl ErrKind {
 #[derive(Clone, Debug)]
 pub struct Frame {
     pub function: String,
-    /// Where the function was called; `None` when ok itself started it (a
+    /// Where the function was called. `None` when ok itself started it (a
     /// script's `main`, or the task named on the command line), which has
     /// no call site in the source.
     pub call_site: Option<Span>,
@@ -87,6 +87,10 @@ pub struct Frame {
 /// Maximum number of call-trace frames shown under an error.
 pub const MAX_TRACE: usize = 8;
 
+/// An error, with everything needed to render it ([`render`]) and to build
+/// the error record a script catches (SPEC.md 10.2). Start one with
+/// [`OkError::new`] or [`OkError::at`] and add to it with the `with_`
+/// methods.
 #[derive(Clone, Debug)]
 pub struct OkError {
     pub kind: ErrKind,
@@ -112,7 +116,7 @@ pub struct OkError {
     /// Text printed after everything else, such as a usage line.
     pub trailer: Option<String>,
     /// A finding of `ok self check` that does not stop the program from
-    /// running (a lint); rendered as `warning[kind]:`.
+    /// running (a lint). It is rendered as `warning[kind]:`.
     pub warning: bool,
 }
 
@@ -179,6 +183,8 @@ impl OkError {
         self
     }
 
+    /// Set the help text when `help` is `Some`. `None` keeps the help the
+    /// error already has.
     pub fn maybe_help(mut self, help: Option<String>) -> OkError {
         if help.is_some() {
             self.help = help;
@@ -374,7 +380,8 @@ pub fn render(err: &OkError, sources: &SourceMap, color: Color) -> String {
 /// (C0 and C1 controls, DEL, which start ANSI and OSC sequences), reorder
 /// what is shown (bidirectional controls, as in "Trojan Source" attacks),
 /// or hide text (zero-width characters, line and paragraph separators).
-/// Tab and newline are included; callers that keep them decide so.
+/// Tab and newline count as unsafe here. A caller that prints them as they
+/// are, like [`terminal_safe`], must let them through itself.
 pub fn is_unsafe_char(c: char) -> bool {
     matches!(
         c,
@@ -483,12 +490,15 @@ pub fn edit_distance(a: &str, b: &str) -> usize {
     d[a.len()][b.len()]
 }
 
-/// The closest candidate to `name`: a case-only difference, or an edit
-/// distance of at most 2 (at most 1 for names of three characters or fewer,
-/// so that short names do not suggest unrelated ones).
 /// Names longer than this (in characters) only get case-only suggestions.
 const MAX_SUGGEST_LEN: usize = 200;
 
+/// The candidate closest to `name`, for "did you mean" help (SPEC.md 10.3).
+/// A candidate qualifies when it differs from `name` only in case, or when
+/// its edit distance is within a limit set by the length of `name`: no
+/// edits for one or two characters, 1 for three or four, 2 for longer
+/// names. Among candidates at the same distance, the one that sorts first
+/// is returned.
 pub fn suggest<'a>(name: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<String> {
     // At most two edits, and fewer than half the name's length, so that a
     // short name is not "corrected" to an unrelated one (`b` to `a`, `grep`

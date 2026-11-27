@@ -1,6 +1,11 @@
-//! Built-in functions available in milestone M1: output, conversions and a
-//! few numeric helpers (SPEC.md 12.4, 12.5, 12.8). The data, file, command
-//! and network functions of later milestones are added here as they land.
+//! The core builtins, and what the other builtin modules share.
+//!
+//! The core functions (the `CORE` table) are output, conversions, a few
+//! numeric helpers and `range`. The other builtins live with their subject
+//! in `list`, `formats`, `files`, `text`, `system`, `net` and `archive`,
+//! each of which has a `BUILTINS` table. [`install`] declares every table
+//! in the global scope. [`eager`] and [`streaming`] make the table entries,
+//! and [`SIGNATURES`] describes every builtin for `ok self check`.
 
 use std::io::Write as _;
 use std::rc::Rc;
@@ -11,7 +16,7 @@ use crate::interp::{Args, Builtin, Flow, Interp, R, Scope};
 use crate::path::OkPath;
 use crate::value::{Func, Record, Value};
 
-/// Builtins that receive their arguments materialised.
+/// A table entry for a builtin that receives its arguments materialised.
 pub const fn eager(name: &'static str, f: BuiltinFn) -> Builtin {
     Builtin {
         name,
@@ -20,7 +25,8 @@ pub const fn eager(name: &'static str, f: BuiltinFn) -> Builtin {
     }
 }
 
-/// Builtins that stream lazy arguments (SPEC.md 8.3).
+/// A table entry for a builtin that receives lazy arguments as they are,
+/// so that it can stream them (SPEC.md 8.3).
 pub const fn streaming(name: &'static str, f: BuiltinFn) -> Builtin {
     Builtin {
         name,
@@ -85,8 +91,8 @@ pub const GLOBAL_VALUES: &[&str] = &[
 /// What a builtin accepts, for the static checks of `ok self check`
 /// (SPEC.md 17): how many positional arguments (counting the receiver of a
 /// method call and the input of a pipeline stage) and which named ones. It
-/// must agree with the argument checks inside each builtin; a test calls
-/// every builtin to make sure it does.
+/// must agree with the argument checks inside each builtin. A test calls
+/// every builtin to compare the two.
 pub struct BuiltinSig {
     pub name: &'static str,
     pub min: usize,
@@ -170,12 +176,14 @@ pub const ENV_METHODS: &[(&str, usize, usize)] = &[
     ("all", 0, 0),
 ];
 
-/// The signature of a builtin function.
+/// The signature of a builtin function, or `None` when `name` is not one.
 pub fn signature(name: &str) -> Option<&'static BuiltinSig> {
     SIGNATURES.iter().find(|s| s.name == name)
 }
 
-/// Declare the builtins, `os` and `args` in the global scope.
+/// Declare the builtins and the global values `os`, `env`, `cwd`,
+/// `invocation_dir`, `home` and `args` in the global scope. `script_dir` is
+/// not declared here: each file gets its own (`Interp::file_scope`).
 pub fn install(globals: &Rc<Scope>, script_args: Vec<String>) {
     for table in tables() {
         for b in table {
@@ -183,7 +191,8 @@ pub fn install(globals: &Rc<Scope>, script_args: Vec<String>) {
         }
     }
     let mut os = Record::new();
-    // Rust's `consts::OS` is empty on wasm32-wasip1; SPEC.md 19 names it "wasi".
+    // Rust's `consts::OS` is empty on wasm32-wasip1. SPEC.md 19 names it
+    // "wasi".
     let os_name = if cfg!(target_os = "wasi") {
         "wasi"
     } else {
@@ -262,6 +271,8 @@ fn write_line(interp: &mut Interp, to_stderr: bool, args: &Args) -> R<Value> {
         .map(Value::display)
         .collect::<Vec<_>>()
         .join(" ");
+    // A sandboxed program prints into memory. A line that would go past the
+    // limit is dropped without an error.
     if let Some(sb) = &mut interp.sandbox {
         if sb.output.len() + line.len() < crate::interp::SANDBOX_MAX_OUTPUT {
             sb.output.push_str(&line);
@@ -576,7 +587,7 @@ mod tests {
 
     #[test]
     fn signatures_agree_with_the_argument_checks() {
-        // These read the terminal or print; their valid calls are not run.
+        // These read the terminal or print, so their valid calls are not run.
         let interactive = ["prompt", "confirm", "stdin", "print", "eprint"];
         for s in SIGNATURES {
             let count_error = format!("`{}` takes ", s.name);

@@ -7,9 +7,15 @@
 
 use std::path::PathBuf;
 
+/// A normalised path. Two paths are equal when their normalised forms are,
+/// whatever separators and `.` components they were written with.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct OkPath {
+    /// Empty for a relative path, otherwise `/`, `C:/`, `C:` (relative to
+    /// the current directory of drive C) or `//server/share/`.
     prefix: String,
+    /// The components after the prefix, without empty ones and `.`. A `..`
+    /// occurs only at the start, and only when the prefix is not a root.
     parts: Vec<String>,
 }
 
@@ -22,7 +28,8 @@ impl OkPath {
     }
 
     /// Parse with Windows rules (`\` separators, drive and UNC prefixes) on
-    /// or off; split out so both rule sets can be unit-tested on any host.
+    /// or off. It is separate from [`OkPath::parse`] so that both rule sets
+    /// can be unit-tested on any host.
     pub fn parse_with(s: &str, windows: bool) -> OkPath {
         let sep = |c: char| c == '/' || (windows && c == '\\');
         let chars: Vec<char> = s.chars().collect();
@@ -68,6 +75,8 @@ impl OkPath {
         OkPath { prefix, parts }
     }
 
+    /// Reports whether the path starts at a root. `C:rel`, a drive without
+    /// a root, is not absolute.
     pub fn is_abs(&self) -> bool {
         self.prefix.ends_with('/')
     }
@@ -92,8 +101,8 @@ impl OkPath {
     }
 
     /// A native path as an ok path. A name that is not UTF-8 is converted
-    /// lossily; where the path will be used to reach a file, use
-    /// [`OkPath::try_from_native`], so ok never acts on a different file.
+    /// lossily, so the result can name a different file. Where the path
+    /// will be used to reach a file, use [`OkPath::try_from_native`].
     pub fn from_native(p: &std::path::Path) -> OkPath {
         OkPath::parse(&p.to_string_lossy())
     }
@@ -103,7 +112,8 @@ impl OkPath {
         p.to_str().map(OkPath::parse)
     }
 
-    /// `self / other`. An absolute `other` replaces `self` (SPEC.md 5.8).
+    /// `self / other`. An `other` that is absolute or starts with a drive
+    /// (`C:rel`) replaces `self` (SPEC.md 5.8).
     pub fn join(&self, other: &OkPath) -> OkPath {
         if other.is_abs() || !other.prefix.is_empty() {
             return other.clone();
@@ -127,6 +137,9 @@ impl OkPath {
         self.join(&OkPath::parse(other))
     }
 
+    /// The path without its last component. The parent of a root is that
+    /// root. The parent of `.`, or of a path that ends in `..`, has one
+    /// more `..`.
     pub fn parent(&self) -> OkPath {
         let mut out = self.clone();
         match out.parts.last().map(String::as_str) {
@@ -140,6 +153,8 @@ impl OkPath {
         out
     }
 
+    /// The last component, or an empty string when there is none (a root,
+    /// `.`) or when it is `..`.
     pub fn name(&self) -> String {
         match self.parts.last() {
             Some(p) if p != ".." => p.clone(),
@@ -147,6 +162,9 @@ impl OkPath {
         }
     }
 
+    /// The name split at its last `.` into stem and extension (without the
+    /// dot). A `.` that starts the name does not count, so `.bashrc` is all
+    /// stem.
     fn split_ext(&self) -> (String, String) {
         let name = self.name();
         match name.rfind('.') {
@@ -163,6 +181,8 @@ impl OkPath {
         self.split_ext().1
     }
 
+    /// The components after the prefix. Scripts get
+    /// [`OkPath::parts_with_root`] instead.
     pub fn parts(&self) -> &[String] {
         &self.parts
     }

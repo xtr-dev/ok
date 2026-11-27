@@ -50,7 +50,9 @@ fn sources(args: &Args, fname: &str) -> R<Vec<OkPath>> {
     }
 }
 
-/// Every file and directory under `src`, with its member name.
+/// Every file and directory under `src`, as (native path, member name,
+/// whether it is a directory), each directory before its entries and the
+/// entries of a directory in name order.
 fn members(src: &OkPath) -> std::io::Result<Vec<(PathBuf, String, bool)>> {
     let mut out = Vec::new();
     let base = src.name();
@@ -436,8 +438,12 @@ fn link_target(link: &[String], target: &str) -> Result<(Vec<String>, String), U
 
 /// A symbolic link from a tar archive, created after every other member.
 struct PendingLink {
+    /// The member name as the archive has it, for messages.
     name: String,
+    /// The link's own path, as components inside the destination.
     parts: Vec<String>,
+    /// The target as it will be written: the form [`link_target`] rewrote
+    /// it to.
     target: String,
 }
 
@@ -632,10 +638,13 @@ impl<'a> Extractor<'a> {
             // The umask applies to these, as to any file a program creates.
             opts.mode(if executable { 0o777 } else { 0o666 });
         }
+        // Only Unix has an execute bit to set.
         let _ = executable;
         let mut f = opts
             .open(&out)
             .map_err(|e| self.io_err("write", &out, &e))?;
+        // Copying one byte more than the room left is enough to tell that
+        // the archive is over `max_size`, without unpacking the rest.
         let room = self.max_size.map_or(u64::MAX, |m| m - self.size);
         let n = std::io::copy(&mut data.take(room.saturating_add(1)), &mut f).map_err(|e| {
             self.err(format!(

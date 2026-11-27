@@ -169,8 +169,9 @@ pub fn help(t: &Target, sources: &SourceMap) -> String {
                     .as_ref()
                     .is_some_and(|d| matches!(d.kind, ExprKind::Bool(true)));
                 // `--[no-]name`: the help text describes the setting, so it
-                // must sit next to the positive name; `--no-name` alone read
-                // as if `--no-compress` would compress (SPEC.md 14.2).
+                // must sit next to the positive name. Beside `--no-compress`
+                // alone, "compress the output" would read as what that flag
+                // does (SPEC.md 14.2).
                 if default_true {
                     format!("--[no-]{}", p.cli_name)
                 } else {
@@ -326,9 +327,14 @@ fn parse_value(
     })
 }
 
-/// Parse `argv` against the signature. `base` is the directory relative
-/// path arguments are resolved against (`invocation_dir`).
-/// When `anchor` is set, relative path arguments are joined to `base`.
+/// Parse `argv` against the signature. When `anchor` is set, relative path
+/// arguments are joined to `base`, the directory the user ran ok in
+/// (`invocation_dir`). Otherwise they stay relative.
+///
+/// # Errors
+///
+/// An argument error with exit code 2 and the usage line: an unknown flag,
+/// a missing or unexpected argument, or text its parameter's type refuses.
 pub fn parse(t: &Target, argv: &[String], base: &Path, anchor: bool) -> Result<Outcome, OkError> {
     let positional: Vec<&Param> = t.params.iter().filter(|p| !p.flag && !p.rest).collect();
     let rest = t.params.iter().find(|p| p.rest);

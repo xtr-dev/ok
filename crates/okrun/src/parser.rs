@@ -3,8 +3,8 @@
 //! A hand-written recursive-descent parser with one precedence function per
 //! level of SPEC.md 4.4. Interpolations and command words arrive from the
 //! lexer as nested token lists and are parsed by sub-parsers over those
-//! lists. The parser never panics; nesting depth is limited so that hostile
-//! input produces an error rather than a stack overflow.
+//! lists. The parser never panics. Nesting depth is limited so that hostile
+//! input produces an error, not a stack overflow.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -25,7 +25,8 @@ const MAX_DEPTH: usize = 150;
 /// WebAssembly build (which overflows at about 3000 levels of `+`).
 const MAX_HEIGHT: u32 = 1000;
 
-/// Parse a whole file.
+/// Lex and parse a whole file. The error is the first lexing or syntax
+/// error found.
 pub fn parse(file: FileId, src: &str) -> Result<Program, OkError> {
     let lexed = lexer::lex(file, src)?;
     let mut line_starts = vec![0];
@@ -1787,7 +1788,7 @@ impl Parser {
                 simple(ExprKind::Ident(name))
             }
             Tok::Dot if matches!(self.peek_at(1).tok, Tok::Ident(_) | Tok::Kw(_)) => {
-                // The receiver of `.name` shorthand; `postfix` adds the field.
+                // The receiver of `.name` shorthand. `postfix` adds the field.
                 Ok(Expr::new(ExprKind::It, span))
             }
             Tok::LParen => {
@@ -2314,8 +2315,8 @@ impl Parser {
     }
 }
 
-/// A literal default of a choice-typed parameter must be one of the choices;
-/// catching it at load time keeps `--help` from advertising a bad default.
+/// A literal default of a choice-typed parameter must be one of the choices.
+/// Catching it at load time keeps `--help` from advertising a bad default.
 fn check_choice_default(ty: Option<&TypeAnn>, default: &Expr) -> PResult<()> {
     let Some(choices) = ty.and_then(TypeAnn::choices) else {
         return Ok(());

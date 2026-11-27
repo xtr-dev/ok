@@ -13,6 +13,8 @@ use crate::ast::FnDecl;
 use crate::interp::{Builtin, Scope};
 use crate::path::OkPath;
 
+/// A runtime value. Cloning is cheap: strings, bytes, lists, records, paths
+/// and functions are reference-counted.
 #[derive(Clone)]
 pub enum Value {
     Null,
@@ -29,13 +31,15 @@ pub enum Value {
     /// Nanoseconds since the Unix epoch, UTC.
     Time(i64),
     Func(Rc<Func>),
-    /// A streaming list or string; see `lazy.rs`. Never visible to scripts
-    /// as a separate kind.
+    /// A streaming list or string (see `lazy.rs`). Scripts never see it as
+    /// a separate kind: `type` reports `list` or `string`.
     Lazy(Rc<crate::lazy::Lazy>),
     /// The `env` object (SPEC.md 12.3): fields are environment variables.
     Env,
 }
 
+/// A function value: one declared in ok, with the scope it closes over, or
+/// a builtin.
 pub enum Func {
     User { decl: Rc<FnDecl>, env: Rc<Scope> },
     Builtin(&'static Builtin),
@@ -60,7 +64,7 @@ pub const MAX_VALUE_DEPTH: u32 = 1000;
 
 /// The largest [`Value::weight`] a value may have (SPEC.md 5.7). Lists and
 /// records share their elements, so `r = [r, r]` doubles a value's size at
-/// no cost; after 40 rounds displaying, serialising or comparing it would
+/// no cost. After 40 rounds, displaying, serialising or comparing it would
 /// need terabytes. Data that really is this large would not fit in memory
 /// (`read` stops at 1 GiB), so the limit only stops runaway sharing.
 pub const MAX_VALUE_WEIGHT: u64 = 1 << 30;
@@ -68,7 +72,7 @@ pub const MAX_VALUE_WEIGHT: u64 = 1 << 30;
 /// The elements of a list, with the list's nesting depth and weight cached
 /// so that checking a new value against [`MAX_VALUE_DEPTH`] and
 /// [`MAX_VALUE_WEIGHT`] costs O(1). It dereferences to the `Vec` for
-/// reading; changes go through methods that keep the depth an upper bound
+/// reading. Changes go through methods that keep the depth an upper bound
 /// and the weight exact.
 #[derive(Clone, Default)]
 pub struct List {
@@ -131,8 +135,8 @@ impl Record {
         self.index.get(key).map(|&i| &self.values[i])
     }
 
-    /// Changes the value of `key` with `f`, if the key exists, then raises
-    /// the cached depth if the value got deeper.
+    /// Changes the value of `key` with `f`, if the key exists, then updates
+    /// the cached depth and weight.
     pub fn update<T>(&mut self, key: &str, f: impl FnOnce(&mut Value) -> T) -> Option<T> {
         let i = *self.index.get(key)?;
         let before = self.values[i].weight();
@@ -336,6 +340,7 @@ impl Value {
     }
 }
 
+/// A kind name with `a` or `an` in front. `null` gets no article.
 pub fn with_article(name: &str) -> String {
     let vowel = matches!(
         name.as_bytes().first(),
@@ -429,7 +434,9 @@ fn trim_decimal(n: u128, unit: u128, digits: usize) -> String {
     format!("{whole}.{}", s.trim_end_matches('0'))
 }
 
-/// RFC 3339 in UTC. (Local-time display arrives with the time functions.)
+/// RFC 3339 in UTC, to the whole second: a fraction of a second is
+/// dropped. The data formats write times this way. Display in local time
+/// is `system::format_time_local`.
 pub fn format_time_utc(ns: i64) -> String {
     let secs = ns.div_euclid(1_000_000_000);
     let days = secs.div_euclid(86_400);
@@ -457,7 +464,7 @@ pub fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-/// (year, month, day) to days since 1970-01-01, proleptic Gregorian; the
+/// (year, month, day) to days since 1970-01-01, proleptic Gregorian. The
 /// inverse of [`civil_from_days`].
 pub fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
@@ -533,8 +540,8 @@ pub fn cmp_int_float(x: i64, y: f64) -> Option<Ordering> {
     if y.is_nan() {
         return None;
     }
-    // 2^63 is exactly representable; every float at or above it is larger
-    // than any i64, every float below -2^63 smaller.
+    // 2^63 is exactly representable. Every float at or above it is larger
+    // than any i64, and every float below -2^63 is smaller.
     const TWO_63: f64 = 9_223_372_036_854_775_808.0;
     if y >= TWO_63 {
         return Some(Ordering::Less);
@@ -542,7 +549,8 @@ pub fn cmp_int_float(x: i64, y: f64) -> Option<Ordering> {
     if y < -TWO_63 {
         return Some(Ordering::Greater);
     }
-    // In range, the integral part converts exactly; the fraction decides ties.
+    // In range, the integral part converts exactly and the fraction decides
+    // ties.
     let whole = y.trunc();
     match x.cmp(&(whole as i64)) {
         Ordering::Equal => {
@@ -626,7 +634,8 @@ fn fallback_order(a: &Value, b: &Value) -> Ordering {
         (Value::Func(x), Value::Func(y)) => Rc::as_ptr(x).cast::<u8>().cmp(&Rc::as_ptr(y).cast()),
         (Value::Lazy(x), Value::Lazy(y)) => Rc::as_ptr(x).cast::<u8>().cmp(&Rc::as_ptr(y).cast()),
         // Two numbers are only incomparable when one is NaN, which ok never
-        // produces; order NaN after every other number to stay total.
+        // produces. NaN goes after every other number, so the order stays
+        // total.
         (x, y) => num_nan_last(x).cmp(&num_nan_last(y)),
     }
 }

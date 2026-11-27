@@ -39,6 +39,7 @@ pub enum Mode {
 /// Lines of stderr kept in a command error.
 const STDERR_TAIL: usize = 20;
 
+/// The options of one command (SPEC.md 9.6).
 #[derive(Default)]
 struct Options {
     cwd: Option<PathBuf>,
@@ -106,9 +107,12 @@ impl Redirects {
 /// A command ready to start.
 struct Prepared {
     argv: Vec<String>,
+    /// The file `argv[0]` resolved to (SPEC.md 9.3).
     program: PathBuf,
     opts: Options,
     redirects: Redirects,
+    /// Written `run!`: a failing exit code is returned in the result, not
+    /// raised as an error.
     bang: bool,
     span: Span,
 }
@@ -484,7 +488,7 @@ impl Interp {
         if self.run_opts.trace {
             eprintln!("+ {cwd_note}{line}{redirect_note}");
         }
-        // WASI has no way to start a process (SPEC.md 17). Say so plainly
+        // WASI has no way to start a process (SPEC.md 19). Say so plainly
         // instead of the misleading "command not found" a PATH search gives.
         if cfg!(target_os = "wasi") {
             return Err(cmd_err(
@@ -574,7 +578,9 @@ impl Interp {
         Ok(c)
     }
 
-    /// Set up stdin; returns bytes that a writer thread must feed in.
+    /// Connect the command's stdin. Returns the bytes that a writer thread
+    /// must feed in, or `None` when stdin is a file, the stdout of an
+    /// upstream command, or not set.
     fn stdin_setup(&mut self, c: &mut Proc, p: &mut Prepared) -> R<Option<Vec<u8>>> {
         if let Some(path) = &p.redirects.stdin_from {
             let f = std::fs::File::open(path).map_err(|e| {
@@ -850,8 +856,8 @@ impl Interp {
         }
         let started = Instant::now();
         let (mut child, mut guard) = self.spawn(&mut c, &p)?;
-        // The command keeps copies of the pipe's write end; dropping it
-        // lets the reader see the end of the output once the child exits.
+        // `c` holds copies of the pipes' write ends. Dropping it lets the
+        // readers see the end of the output once the child exits.
         drop(c);
         let feeder = feed_stdin(&mut child, feed);
         let out_reader = match merged_reader {

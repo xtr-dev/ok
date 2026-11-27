@@ -1,8 +1,7 @@
 //! Text functions and regular expressions (SPEC.md 12.4).
 //!
-//! Regexes use the `regex` crate's syntax (linear time, no backreferences);
-//! compiled patterns are cached per run so a regex in a loop is compiled
-//! once.
+//! Regexes use the `regex` crate's syntax (linear time, no backreferences).
+//! Compiled patterns are cached, so a regex in a loop is compiled once.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -297,7 +296,7 @@ fn pad(interp: &mut Interp, mut args: Args) -> R<Value> {
 
 /// Compiled regexes kept for reuse. A script that builds patterns from data
 /// (one per input line, say) would otherwise grow the cache without bound,
-/// so it is emptied when it reaches this many entries; patterns written in
+/// so it is emptied when it reaches this many entries. Patterns written in
 /// the source are few and are compiled again on their next use.
 const REGEX_CACHE_LIMIT: usize = 256;
 

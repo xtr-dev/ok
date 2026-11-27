@@ -9,7 +9,7 @@
 //! Laziness never escapes into ordinary code: binding a lazy value to a name,
 //! storing it in a list or record, passing it to a function that does not
 //! stream, or printing it **materialises** it first (see `Interp::eval`). A
-//! lazy value is therefore consumed at most once; it either streams through
+//! lazy value is therefore consumed at most once: it either streams through
 //! one pipeline or becomes a normal value.
 //!
 //! Pulling an element may call back into ok code (a `where` predicate), so
@@ -26,9 +26,10 @@ use crate::interp::{Flow, Interp, R};
 use crate::source::Span;
 use crate::value::Value;
 
-/// A producer of elements. Errors from sources usually have no span; the
+/// A producer of elements. Errors from sources usually have no span. The
 /// consumer attaches its own with [`at_span`].
 pub trait Source {
+    /// The next element, or `None` at the end.
     fn next(&mut self, interp: &mut Interp) -> R<Option<Value>>;
 
     /// For the stdout of a piped command: hand over the raw pipe so the next
@@ -45,12 +46,16 @@ pub trait Source {
 }
 
 enum State {
+    /// Nothing was read yet.
     Pending(Box<dyn Source>),
     /// Handed to a streaming consumer.
     Taken,
+    /// Materialised by [`force`], which keeps the value for later uses.
     Done(Value),
 }
 
+/// A streaming list or string. Its source can be taken once: by a streaming
+/// consumer ([`cursor`], [`text_cursor`]), or by [`force`].
 pub struct Lazy {
     /// A lazy string (its elements are chunks of text, normally lines with
     /// their line endings) rather than a lazy list.
@@ -82,7 +87,9 @@ pub fn at_span<T>(r: R<T>, span: Span) -> R<T> {
     })
 }
 
-/// Materialise a lazy value; any other value is returned unchanged.
+/// Materialise a lazy value. Any other value is returned unchanged. The
+/// result is an error when a source fails, or when the string or list
+/// would grow past `Interp::max_built_size`.
 pub fn force(interp: &mut Interp, v: Value, span: Span) -> R<Value> {
     let Value::Lazy(lazy) = v else { return Ok(v) };
     let state = std::mem::replace(&mut *lazy.state.borrow_mut(), State::Taken);
@@ -126,8 +133,9 @@ pub fn force(interp: &mut Interp, v: Value, span: Span) -> R<Value> {
     }
 }
 
-/// A source over the elements of a list or lazy list. Lazy text and strings
-/// are not lists; `what` names the function for the error message.
+/// A source over the elements of a list or lazy list. Any other value,
+/// lazy text and strings included, is a type error in which `what` names
+/// the function.
 pub fn cursor(interp: &mut Interp, v: Value, span: Span, what: &str) -> R<Box<dyn Source>> {
     match v {
         Value::Lazy(lazy) if !lazy.text => {
@@ -162,7 +170,8 @@ pub fn cursor(interp: &mut Interp, v: Value, span: Span, what: &str) -> R<Box<dy
     }
 }
 
-/// Whether a value streams (a lazy list), so a stage should stay lazy.
+/// Whether a value is lazy (a lazy list or lazy text), so that a stage
+/// given it should stay lazy.
 pub fn is_lazy(v: &Value) -> bool {
     matches!(v, Value::Lazy(_))
 }
@@ -213,6 +222,8 @@ pub struct RangeSource {
     pub next: i64,
     pub end: i64,
     pub step: i64,
+    /// Set when the element after the current one would overflow an `i64`,
+    /// which ends the range.
     pub done: bool,
 }
 
@@ -298,6 +309,8 @@ impl Source for ReaderLines {
                 .into());
             }
         }
+        // A UTF-8 byte order mark at the start of the data is not part of
+        // the first line.
         if self.line == 1 && buf.starts_with(b"\xEF\xBB\xBF") {
             buf.drain(..3);
         }

@@ -33,10 +33,13 @@ pub struct PFile {
 }
 
 pub struct Task {
+    /// The namespace, or `None` for a task of the root file.
     pub ns: Option<String>,
     pub name: String,
     pub decl: Rc<TaskDecl>,
+    /// The task as a function declaration, which is how its body is called.
     pub func: Rc<FnDecl>,
+    /// Index into [`Project::files`] of the file that declares the task.
     pub file: usize,
     /// Indexes of the tasks this one needs, in order.
     pub needs: Vec<usize>,
@@ -110,12 +113,17 @@ impl FileStore {
 
 pub struct Project {
     pub root: PathBuf,
+    /// The files that declare tasks: the root file first, then the
+    /// namespace files, then the root files of mounted sub-projects.
     pub files: Vec<PFile>,
     pub tasks: Vec<Task>,
     /// Namespace names: files in `.ok/` (or the deprecated `ok/`) and mounts.
     pub namespaces: Vec<String>,
     pub env_files: Vec<String>,
-    /// Every project file for trust: root file, `.ok/*.ok`, mounts and imports.
+    /// Every file trust covers, as (path relative to the root, path on
+    /// disk), sorted: the root file, the namespace files and `_` helper
+    /// files of `.ok/` (or the deprecated `ok/`), the root files of mounts,
+    /// and every file any of these imports.
     pub trust_files: Vec<(String, PathBuf)>,
     /// The content of those files and of the env files, as first read.
     pub store: Rc<FileStore>,
@@ -143,9 +151,9 @@ pub fn root_files_in(dir: &Path) -> Vec<&'static str> {
         .collect()
 }
 
-/// The one root file of the project at `root`. Two root files are an
-/// error rather than a choice, because either one could be the file the
-/// author edits while ok silently runs the other.
+/// The one root file of the project at `root`. A directory with no root
+/// file is an error. So is one with two, because either could be the file
+/// the author edits while ok silently runs the other.
 pub fn root_file(root: &Path) -> Result<&'static str, OkError> {
     match root_files_in(root).as_slice() {
         [one] => Ok(one),
@@ -253,7 +261,8 @@ fn valid_name(n: &str) -> bool {
         && !n.ends_with('-')
 }
 
-/// Compare `requires` with this ok's version: `"0.3"` means 0.3.0 or newer.
+/// Whether this ok satisfies `requires`: `"0.3"` means 0.3.0 or newer.
+/// `None` when `required` is not a dotted version number.
 fn version_ok(required: &str) -> Option<bool> {
     let parse = |s: &str| -> Option<Vec<u64>> {
         s.trim()
@@ -293,6 +302,13 @@ impl Interp {
     }
 
     /// Load the project at `root` without running any of its code.
+    ///
+    /// # Errors
+    ///
+    /// Fails on every load-time error of SPEC.md 15 and 16.6: no root file
+    /// or two of them, a file that cannot be read or parsed, a project file
+    /// or import that leaves the root, an invalid, reserved or duplicate
+    /// name, and an unknown or cyclic `needs`.
     pub fn load_project(&mut self, root: &Path) -> R<Project> {
         let root = crate::path::canonical(root).unwrap_or_else(|_| root.to_path_buf());
         let store = Rc::new(FileStore::default());
@@ -505,7 +521,8 @@ impl Interp {
             file_ns.push(Some(alias));
         }
 
-        // Tasks.
+        // Collect the tasks of every file. A root task may not use a
+        // reserved name or the name of a namespace.
         let mut tasks: Vec<Task> = Vec::new();
         for (fi, f) in files.iter().enumerate() {
             for stmt in &f.prog.stmts {
@@ -561,7 +578,10 @@ impl Interp {
             }
         }
 
-        // Dependencies.
+        // Resolve each `needs` entry to a task. `ns.name` names a task of
+        // that namespace. A bare name is looked up in the task's own
+        // namespace first and then among the root tasks, except for a task
+        // of a mounted sub-project, which sees only the tasks of its file.
         let mounted: HashSet<String> = file_ns
             .iter()
             .enumerate()

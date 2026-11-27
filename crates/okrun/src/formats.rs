@@ -92,7 +92,7 @@ fn gz_name(p: &OkPath) -> bool {
     p.ext().eq_ignore_ascii_case("gz")
 }
 
-/// The format a file name implies (SPEC.md 13.1); for a compressed file,
+/// The format a file name implies (SPEC.md 13.1). For a compressed file,
 /// the name without `.gz` decides (13.1.1).
 pub fn format_for(p: &OkPath) -> &'static str {
     if gz_name(p) {
@@ -435,7 +435,7 @@ fn write(interp: &mut Interp, mut args: Args) -> R<Value> {
         && p.ext().is_empty()
     {
         // `write("out.txt", text)` with the arguments swapped would write
-        // a file named after the text; refuse the likely mistake.
+        // a file named after the text, so the likely mistake is refused.
         return Err(OkError::at(
             ErrKind::Arg,
             span,
@@ -687,8 +687,8 @@ fn serialize(
 /// The deepest value ok's own reader accepts for each nested format
 /// (`Value::depth`: 1 for a list of scalars). Writing deeper data would
 /// produce a file that `read` then refuses, so the writer refuses it
-/// first; this also bounds the writers' recursion and the indentation of
-/// pretty-printed JSON, which grows with the square of the depth.
+/// first. The limit also bounds the writers' recursion and the indentation
+/// of pretty-printed JSON, which grows with the square of the depth.
 fn max_writable_depth(fmt: &str) -> Option<(u32, &'static str)> {
     match fmt {
         "json" | "jsonl" => Some((127, "JSON")),
@@ -833,7 +833,8 @@ pub fn to_json(
 
 // ----- documents ------------------------------------------------------------------
 
-/// Parse a whole-document format. Errors are messages; the caller adds the span.
+/// Parse a whole-document format. An error is a message, to which the
+/// caller adds the span.
 pub fn parse_document(fmt: &str, text: &str, name: &str) -> Result<Value, String> {
     match fmt {
         "json" => serde_json::from_str::<serde_json::Value>(text)
@@ -1002,7 +1003,7 @@ impl YamlSize {
 /// in a YAML text would add once resolved, without building them.
 /// `YamlLoader` copies an anchor's whole value at every alias, so aliases
 /// that repeat each other ("billion laughs"), or a large scalar aliased many
-/// times, turn a small file into gigabytes and exhaust memory; this pass
+/// times, turn a small file into gigabytes and exhaust memory. This pass
 /// lets `parse_yaml` refuse such a file first.
 #[derive(Default)]
 struct AliasCounter {
@@ -1741,7 +1742,8 @@ mod tests {
     #[test]
     fn yaml_alias_expansion_is_limited() {
         // Nine levels of nine aliases each: 9^9 values once resolved. Without
-        // the limit this exhausts memory; with it, it fails before building.
+        // the limit this exhausts memory. With it, parsing fails before
+        // anything is built.
         let mut lines = vec!["a: &a [x, x, x, x, x, x, x, x, x]".to_string()];
         for (prev, cur) in "abcdefgh".chars().zip("bcdefghi".chars()) {
             lines.push(format!(

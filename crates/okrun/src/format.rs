@@ -9,17 +9,22 @@
 
 use crate::value::{Value, format_float};
 
+/// A parsed format spec, made by [`parse_spec`] and used by [`apply`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Spec {
     fill: char,
     align: Option<char>,
     zero: bool,
+    /// The minimum width in characters. 0 when the spec gives none.
     width: usize,
     comma: bool,
     precision: Option<usize>,
     ty: Option<char>,
 }
 
+/// Parses a format spec. The error is a message, to which the caller adds
+/// the span: the spec does not follow the grammar, names an unknown type,
+/// or asks for a width above 10000 or a precision above 100.
 pub fn parse_spec(s: &str) -> Result<Spec, String> {
     let chars: Vec<char> = s.chars().collect();
     let mut i = 0;
@@ -158,7 +163,9 @@ fn float_body(f: f64, spec: &Spec) -> Result<String, String> {
     Ok(body)
 }
 
-/// Format a value with a spec.
+/// Format a value with a spec. The error is a message for a type the value
+/// cannot take: any type on a value that is not a number, or an integer
+/// type (`d`, `x`, `X`, `o`, `b`) on a float.
 pub fn apply(v: &Value, spec: &Spec) -> Result<String, String> {
     let (sign, body, numeric) = match v {
         Value::Int(i) => {

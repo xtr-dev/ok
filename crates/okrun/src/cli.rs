@@ -1,8 +1,9 @@
 //! The `ok` command line (SPEC.md section 2).
 //!
-//! Global options come before the script or task name; everything after the
-//! name belongs to the script. Project mode, trust and most `ok self`
-//! commands arrive in later milestones and say so when used.
+//! Global options come before the script or task name. Everything after the
+//! name belongs to the script or task. [`main`] parses the options and then
+//! runs one of: `-e` source, a task worker, `ok self`, `ok trust` or
+//! `ok untrust`, a script file, or a task of the discovered project.
 
 use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
@@ -64,8 +65,7 @@ Usage:
   ok untrust [DIR]        remove trust for the project at DIR
 ";
 
-/// Global options (SPEC.md 2.2). Several only take effect in later
-/// milestones; they are parsed now so the command line is stable.
+/// Global options (SPEC.md 2.2).
 #[derive(Default)]
 #[allow(dead_code)]
 struct Opts {
@@ -306,8 +306,8 @@ fn task_opts(opts: &Opts, color: Color) -> crate::project::TaskOpts {
     }
 }
 
-/// The value of `--jobs`: a whole number of at least 1; an error returns
-/// the usage exit code.
+/// The value of `--jobs`, a whole number of at least 1. Anything else prints
+/// a usage error, and the `Err` holds the exit code for it.
 fn parse_jobs(v: &str) -> Result<usize, i32> {
     match v.parse::<usize>() {
         Ok(n) if n >= 1 => Ok(n),
@@ -445,7 +445,8 @@ fn finish(
     color: Color,
     print_value: bool,
 ) -> i32 {
-    // A materialised result must be printed before temporary files go away.
+    // The value of `-e` may be lazy and still read from temporary files, so
+    // it is materialised before `cleanup` removes them.
     let result = match result {
         Ok(v) if print_value => {
             let span = crate::source::Span::default();

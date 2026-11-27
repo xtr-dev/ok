@@ -71,7 +71,7 @@ impl Scope {
     }
 }
 
-/// Where a name was found.
+/// The result of looking a name up in the scopes.
 enum Found {
     Sym(Sym),
     Missing,
@@ -237,7 +237,7 @@ fn check(
 }
 
 enum LoadError {
-    /// The file cannot be read; the reason.
+    /// The file cannot be read. Holds the reason.
     Missing(String),
     /// It is not a library the checker can use (a syntax error, a URL).
     Other,
@@ -688,6 +688,8 @@ impl Checker<'_> {
             .scopes
             .iter()
             .flat_map(|s| s.all.keys().cloned())
+            // Internal names, such as the implicit closure parameter
+            // (`ast::IT`), start with `·` and are never suggested.
             .filter(|n| !n.starts_with('·'))
             .collect();
         v.sort();

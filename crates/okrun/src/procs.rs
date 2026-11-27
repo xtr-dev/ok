@@ -8,7 +8,7 @@
 //! without a timeout stay in ok's process group, so they keep reading from
 //! the terminal and get Ctrl-C from it directly.
 //!
-//! Because a command in its own process group no longer gets the
+//! Because a command in its own process group does not get the
 //! terminal's Ctrl-C, ok handles SIGINT, SIGTERM and SIGHUP itself as soon
 //! as it starts such a command or creates a temporary file: it passes
 //! SIGTERM on to the process groups that are still running, removes the
@@ -43,7 +43,7 @@ fn pending() -> MutexGuard<'static, Pending> {
 
 /// Install the interrupt handler, once. It is installed only when ok first
 /// needs it, so a script that makes no temporary files and sets no timeout
-/// ends on Ctrl-C exactly as it always did.
+/// keeps the system's default handling of Ctrl-C.
 pub fn watch_interrupts() {
     #[cfg(any(unix, windows))]
     {
@@ -231,6 +231,9 @@ pub struct Watchdog {
 }
 
 impl Watchdog {
+    /// Start the thread that kills `tree` at `deadline`. If the thread
+    /// cannot be started, the watchdog never fires and only the caller's
+    /// own deadline checks stop the command.
     pub fn start(tree: Arc<Tree>, deadline: Instant) -> Watchdog {
         let (tx, rx) = mpsc::channel::<()>();
         let fired = Arc::new(AtomicBool::new(false));
@@ -257,7 +260,7 @@ impl Watchdog {
         self.fired.load(Ordering::SeqCst)
     }
 
-    /// Stop watching; returns whether the deadline had already passed.
+    /// Stop watching. Returns whether the deadline had already passed.
     pub fn stop(&mut self) -> bool {
         drop(self.stop.take());
         if let Some(t) = self.thread.take() {

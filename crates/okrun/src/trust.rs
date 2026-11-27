@@ -2,9 +2,15 @@
 //!
 //! A project's tasks run only after the user approved the exact content of
 //! its files. Trust is content-addressed: the fingerprint is a SHA-256 over
-//! every project file. Each trusted version is kept as a snapshot so that a
-//! changed project can show a diff. Trust is not a sandbox; it only answers
-//! "did I agree to run this code?".
+//! every project file and every env file the run loads ([`Inputs`]). Each
+//! trusted version is kept as a snapshot so that a changed project can show
+//! a diff. Trust is not a sandbox. It only answers "did I agree to run this
+//! code?".
+//!
+//! The store ([`store_dir`]) holds `trust.json`, the list of trusted roots,
+//! and for each trusted version `snapshots/FINGERPRINT/`, a copy of its
+//! project files, and `snapshots/FINGERPRINT-env.json`, the variable names
+//! of its env files.
 
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -18,7 +24,8 @@ use crate::path::OkPath;
 use crate::project::Project;
 
 /// The trust store directory: `OK_CONFIG_DIR` if set (used by tests), else
-/// the platform configuration directory (SPEC.md 16.5).
+/// the platform configuration directory (SPEC.md 16.5). `None` when the
+/// environment names neither.
 pub fn store_dir() -> Option<PathBuf> {
     if let Some(d) = std::env::var_os("OK_CONFIG_DIR").filter(|d| !d.is_empty()) {
         return Some(PathBuf::from(d));
@@ -37,7 +44,9 @@ pub fn store_dir() -> Option<PathBuf> {
     base.map(|b| b.join("ok"))
 }
 
-/// SHA-256 over every file: path, NUL, length, NUL, content (SPEC.md 16.2).
+/// SHA-256 over every file in path order: path, NUL, length, NUL, content
+/// (SPEC.md 16.2). The separators and the length keep two different sets of
+/// files from feeding the same bytes to the hash.
 pub fn fingerprint(files: &[(String, Rc<[u8]>)]) -> String {
     let mut sorted: Vec<&(String, Rc<[u8]>)> = files.iter().collect();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
@@ -144,10 +153,13 @@ fn env_summary(bytes: &[u8]) -> String {
 
 #[derive(Clone)]
 struct Entry {
+    /// The project root, as `/`-separated display text.
     root: String,
-    /// `"content"` or `"dir"`.
+    /// `"content"`: trusted with exactly `fingerprint`. `"dir"`: trusted
+    /// whatever its content (`ok trust --dir`), with no fingerprint.
     mode: String,
     fingerprint: Option<String>,
+    /// When trust was given, in local time. Only `ok trust --list` shows it.
     at: String,
 }
 
@@ -251,9 +263,10 @@ struct Lock {
 }
 
 impl Lock {
-    /// How long to wait for another process before giving up, and how old
-    /// a lock file must be to count as left behind by a crashed process.
+    /// How long to wait for another process before giving up.
     const WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+    /// How old a lock file must be to count as left behind by a crashed
+    /// process.
     const STALE: std::time::Duration = std::time::Duration::from_secs(30);
 
     fn take(dir: &Path) -> Result<Lock, OkError> {
@@ -448,7 +461,14 @@ fn root_key(p: &Project) -> String {
 }
 
 /// Check that a project may run tasks, asking on a terminal if needed
-/// (SPEC.md 16.3, 16.4).
+/// (SPEC.md 16.3, 16.4). `skip` (`--trust`) and `OK_TRUST=1` allow the run
+/// without reading the store.
+///
+/// # Errors
+///
+/// Returns `Flow::Exit(1)` when the user answers no or stdin ends, and a
+/// trust error when the project is not trusted and stdin is not a terminal.
+/// A store that cannot be read or written is an error too.
 pub fn ensure_trusted(project: &Project, skip: bool, env: Option<&str>) -> R<()> {
     if skip || std::env::var("OK_TRUST").is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true")) {
         return Ok(());
@@ -617,11 +637,14 @@ fn collect_rel(base: &Path, dir: &Path, out: &mut Vec<String>) {
 }
 
 /// A line diff with three lines of context, computed with a longest common
-/// subsequence table (project files are small).
+/// subsequence table (project files are small). A pair of files too large
+/// for the table gets a one-line note in place of the diff.
 pub fn unified_diff(name: &str, old: &str, new: &str) -> String {
     let a: Vec<&str> = old.lines().collect();
     let b: Vec<&str> = new.lines().collect();
     let (n, m) = (a.len(), b.len());
+    // The table has (n + 1) * (m + 1) cells of 4 bytes, so this limit keeps
+    // it near 100 MB.
     if n * m > 25_000_000 {
         let name = terminal_safe_line(name);
         return format!(
