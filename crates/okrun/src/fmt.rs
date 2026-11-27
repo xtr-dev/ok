@@ -1173,7 +1173,12 @@ mod tests {
     fn keeps_the_space_between_a_minus_and_a_command() {
         // Found by fuzzing: `- run a` lost its space and became `-run a`,
         // where `run` glued to a `-` is a name.
-        for src in ["- run a | f\n", "- run! a\n", "- run(\"a\")\n", "x - run a\n"] {
+        for src in [
+            "- run a | f\n",
+            "- run! a\n",
+            "- run(\"a\")\n",
+            "x - run a\n",
+        ] {
             let out = fmt(src);
             assert!(out.contains("- run"), "{src:?} became {out:?}");
             assert_eq!(out, fmt(&out));
