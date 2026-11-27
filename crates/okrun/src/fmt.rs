@@ -966,7 +966,9 @@ impl<'a> Formatter<'a> {
                     _ => j + 1,
                 };
             }
-            if !matches!(self.toks[m - 1].tok, Tok::Comma) {
+            // No comma after a command: it would become part of the
+            // command's last word (`run a 0` would become `run a 0,`).
+            if !matches!(self.toks[m - 1].tok, Tok::Comma | Tok::Command(_)) {
                 comma = Some(m - 1);
             }
         }
@@ -1183,6 +1185,16 @@ mod tests {
             assert!(out.contains("- run"), "{src:?} became {out:?}");
             assert_eq!(out, fmt(&out));
         }
+    }
+
+    #[test]
+    fn no_trailing_comma_after_a_command() {
+        // Found by fuzzing: breaking the arguments of a call added a comma
+        // after the last one, which joined the command ending it.
+        let src = "sumpub(run1 + run / 0 in 2 0)(ysum | z | y)\n";
+        let out = super::format_with_width(src, 20).expect("formats");
+        assert!(!out.contains("0,"), "{out:?}");
+        assert_eq!(out, super::format_with_width(&out, 20).unwrap());
     }
 
     #[test]

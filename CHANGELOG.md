@@ -71,6 +71,7 @@ Some of these changes can stop a project or script from loading: source files ma
 - `ok self fmt` keeps a `#!` comment that is not the shebang off the first line and keeps a name `run` from being followed by a space that would start a command (both failed with an internal error), and formats long `else if` chains and long files in linear time (1000 one-line branches took 5 s).
 - A `\` at the very end of a file without a final newline continues the command onto nothing, as it does with the newline; before, it was an argument, and `ok self fmt` failed with an internal error on such a file.
 - `ok self fmt` keeps the space between a unary `-` and a command (`- run a`); it wrote `-run a`, where `run` is a name, and failed with an internal error.
+- `ok self fmt` adds no trailing comma after a command that ends a broken-up argument list, where the comma would join the command's last word.
 
 ### Documentation
 
