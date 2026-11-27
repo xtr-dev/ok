@@ -579,7 +579,15 @@ impl<'a> Formatter<'a> {
                 let (start, end) = (t.span.start as usize, t.span.end as usize);
                 let mut text = &src[start..end];
                 if matches!(t.tok, Tok::Command(_)) {
-                    text = text.trim_end_matches([' ', '\t']);
+                    let trimmed = text.trim_end_matches([' ', '\t']);
+                    // A `\` followed by blanks is an argument; without the
+                    // blanks it would continue the line (SPEC.md 9.2), so
+                    // one blank stays.
+                    text = if trimmed.ends_with('\\') && trimmed.len() < text.len() {
+                        &text[..trimmed.len() + 1]
+                    } else {
+                        trimmed
+                    };
                 }
                 FTok {
                     tok: &t.tok,
@@ -1206,6 +1214,14 @@ mod tests {
         assert_eq!(fmt("run a \\"), fmt("run a \\\n"));
         assert_eq!(fmt("run a b\\"), fmt("run a b\\\n"));
         assert_eq!(fmt("_ + run . y\\"), fmt("_ + run . y\\\n"));
+    }
+
+    #[test]
+    fn keeps_a_blank_after_a_backslash_argument() {
+        // Found by fuzzing: removing the blanks after a `\` argument made it
+        // a line continuation.
+        assert_eq!(fmt("run a \\  \nprint(1)\n"), "run a \\ \nprint(1)\n");
+        assert_eq!(fmt("run a \\   "), "run a \\ \n");
     }
 
     #[test]

@@ -24,3 +24,6 @@ in the code. Each needs a spec change and review before it is built.
 - `ok self fmt` joining short multi-line groups back onto one line, and
   aligning runs of end-of-line comments.
 - A man page (`ok.1`), printed by `ok self man` and attached to releases.
+- An `ok self check` warning for a `\` followed by blanks at the end of a
+  command line: it is an argument, but was almost certainly meant as a line
+  continuation (as in a shell script with trailing spaces).

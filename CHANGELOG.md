@@ -72,6 +72,7 @@ Some of these changes can stop a project or script from loading: source files ma
 - A `\` at the very end of a file without a final newline, alone or at the end of a word, continues the command onto nothing, as it does with the newline; before, it was an argument, and `ok self fmt` failed with an internal error on such a file.
 - `ok self fmt` keeps the space between a unary `-` and a command (`- run a`); it wrote `-run a`, where `run` is a name, and failed with an internal error.
 - `ok self fmt` adds no trailing comma after a command that ends a broken-up argument list, where the comma would join the command's last word.
+- `ok self fmt` keeps one blank after a `\` argument at the end of a command line; removing all of them turned the argument into a line continuation.
 
 ### Documentation
 
