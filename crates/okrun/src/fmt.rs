@@ -756,6 +756,23 @@ impl<'a> Formatter<'a> {
         let keep = self.space_before[b];
         let minus_unary = |i: usize| self.info.minus_unary.contains(&self.toks[i].start);
         let minus_binary = |i: usize| self.info.minus_binary.contains(&self.toks[i].start);
+        // A name `run` starts a command when a space follows it, unless it
+        // is glued to a `.` or `-` before it (SPEC.md 3.4). So the spacing
+        // right after `run`, and around a `-` glued to it, stays as written.
+        let is_run = |i: usize| matches!(self.toks[i].tok, Tok::Ident(w) if w == "run");
+        if is_run(a) {
+            return keep;
+        }
+        if is_run(b) && !keep {
+            return false;
+        }
+        if matches!(tb, Tok::Minus)
+            && b + 1 < self.toks.len()
+            && is_run(b + 1)
+            && !self.space_before[b + 1]
+        {
+            return keep;
+        }
         if matches!(tb, Tok::Comma) {
             return false;
         }
@@ -1038,7 +1055,16 @@ impl<'a> Formatter<'a> {
                 // The comment stays in its column, so aligned comments stay
                 // aligned; if the code now reaches it, two spaces separate.
                 let used = text.rsplit('\n').next().map_or(0, |l| l.chars().count());
-                let pad = if *column > used { column - used } else { 2 };
+                // After a name `run`, a space would start a command, so a
+                // comment there stays glued to it as written.
+                let after_run = matches!(self.toks[line.last].tok, Tok::Ident(w) if w == "run");
+                let pad = if after_run {
+                    0
+                } else if *column > used {
+                    column - used
+                } else {
+                    2
+                };
                 text.push_str(&" ".repeat(pad));
                 text.push_str(c);
             }
@@ -1102,6 +1128,23 @@ mod tests {
         let once = format_source(src).unwrap();
         assert_eq!(format_source(&once).unwrap(), once, "not idempotent");
         once
+    }
+
+    #[test]
+    fn spacing_never_turns_a_run_name_into_a_command() {
+        // Found by fuzzing: `run--'\t'` became `run - -'\t'`, where the
+        // space after `run` starts command mode.
+        for src in [
+            "run--'\t'\n",
+            "a-run+1\n",
+            "run+1\n",
+            "run==1\n",
+            "-run*2\n",
+            "x.run+1\n",
+        ] {
+            let out = fmt(src);
+            assert!(!out.contains("run "), "{src:?} became {out:?}");
+        }
     }
 
     #[test]
