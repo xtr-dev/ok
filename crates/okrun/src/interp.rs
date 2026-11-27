@@ -85,40 +85,45 @@ pub struct SandboxRun {
 /// in the interpreter is passed on to the caller.
 pub fn run_sandboxed(src: &str, steps: u64) -> SandboxRun {
     let src = src.to_string();
+    let work = move || {
+        SANDBOX_SCOPES.with(|reg| *reg.borrow_mut() = Some(Vec::new()));
+        let mut interp = Interp::new(Vec::new());
+        interp.sandbox = Some(Box::new(Sandbox {
+            steps_left: steps,
+            output: String::new(),
+        }));
+        // Sanitizer and debug builds take much more stack per level.
+        interp.max_eval_depth = 3000;
+        let base = std::env::temp_dir();
+        let outcome = match interp.run_source("sandbox.ok", &src, base) {
+            Ok(_) => "ok".to_string(),
+            Err(Flow::Exit(code)) => format!("exit {code}"),
+            Err(Flow::Err(e)) => format!("error {}: {}", e.kind.name(), e.message),
+            Err(_) => "stray control flow".to_string(),
+        };
+        interp.cleanup();
+        let output = interp
+            .sandbox
+            .take()
+            .map(|sb| sb.output)
+            .unwrap_or_default();
+        drop(interp);
+        let scopes = SANDBOX_SCOPES
+            .with(|reg| reg.borrow_mut().take())
+            .unwrap_or_default();
+        for scope in scopes.iter().filter_map(std::rc::Weak::upgrade) {
+            let vars = std::mem::take(&mut *scope.vars.borrow_mut());
+            drop(vars);
+        }
+        SandboxRun { output, outcome }
+    };
+    // WASI has no threads; there the program runs on the caller's stack.
+    if cfg!(target_os = "wasi") {
+        return work();
+    }
     let thread = std::thread::Builder::new()
         .stack_size(256 * 1024 * 1024)
-        .spawn(move || {
-            SANDBOX_SCOPES.with(|reg| *reg.borrow_mut() = Some(Vec::new()));
-            let mut interp = Interp::new(Vec::new());
-            interp.sandbox = Some(Box::new(Sandbox {
-                steps_left: steps,
-                output: String::new(),
-            }));
-            // Sanitizer and debug builds take much more stack per level.
-            interp.max_eval_depth = 3000;
-            let base = std::env::temp_dir();
-            let outcome = match interp.run_source("sandbox.ok", &src, base) {
-                Ok(_) => "ok".to_string(),
-                Err(Flow::Exit(code)) => format!("exit {code}"),
-                Err(Flow::Err(e)) => format!("error {}: {}", e.kind.name(), e.message),
-                Err(_) => "stray control flow".to_string(),
-            };
-            interp.cleanup();
-            let output = interp
-                .sandbox
-                .take()
-                .map(|sb| sb.output)
-                .unwrap_or_default();
-            drop(interp);
-            let scopes = SANDBOX_SCOPES
-                .with(|reg| reg.borrow_mut().take())
-                .unwrap_or_default();
-            for scope in scopes.iter().filter_map(std::rc::Weak::upgrade) {
-                let vars = std::mem::take(&mut *scope.vars.borrow_mut());
-                drop(vars);
-            }
-            SandboxRun { output, outcome }
-        })
+        .spawn(work)
         .expect("start the sandbox thread");
     match thread.join() {
         Ok(run) => run,

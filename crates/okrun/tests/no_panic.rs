@@ -218,6 +218,13 @@ fn the_sandbox_denies_side_effects_and_ends_endless_loops() {
     assert_eq!((r.output.as_str(), r.outcome.as_str()), ("1\n", "exit 125"));
     let r = run_sandboxed("print(len(range(1000000000)))", 1000);
     assert_eq!(r.outcome, "exit 125");
+    // Materialising a stream obeys the size limit (64 MiB in the sandbox).
+    let r = run_sandboxed("print(len(range(1000000000)))", 10_000_000);
+    assert!(
+        r.outcome.contains("the list would be too large"),
+        "{}",
+        r.outcome
+    );
     let r = run_sandboxed("while true { try { while true { } } catch e { } }", 1000);
     assert_eq!(r.outcome, "exit 125");
     let r = run_sandboxed("var s = \"ab\"\nwhile true { s = s + s }", 100_000);

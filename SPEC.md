@@ -958,7 +958,9 @@ The stages `where`, `map`, `take`, `skip`, `uniq`, `flat`, `enumerate` and
 lazy list element by element, and `first`, `any`, `all` and `take` stop
 early. A `for` loop also pulls one element per iteration. Everything else,
 including `sort`, `group`, `reverse`, indexing, `len` and `print`,
-materialises the value first.
+materialises the value first. A materialised list or string is limited to
+1 GiB like one built with `+` (5.6, 5.7): `len(range(10_000_000_000))` is a
+`value` error.
 
 ## 9. Commands (`run`)
 

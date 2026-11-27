@@ -98,10 +98,14 @@ pub fn force(interp: &mut Interp, v: Value, span: Span) -> R<Value> {
         )
         .into()),
         State::Pending(mut src) => {
+            // Materialising is where a stream like `range(10_000_000_000)`
+            // would exhaust memory, so it obeys the same size limit as `+`.
+            let max = interp.max_built_size();
             let v = if lazy.text {
                 let mut s = String::new();
                 while let Some(chunk) = at_span(src.next(interp), span)? {
                     if let Value::Str(c) = chunk {
+                        interp.check_built_size(s.len() + c.len(), "string", span)?;
                         s.push_str(&c);
                     }
                 }
@@ -109,6 +113,9 @@ pub fn force(interp: &mut Interp, v: Value, span: Span) -> R<Value> {
             } else {
                 let mut items = Vec::new();
                 while let Some(item) = at_span(src.next(interp), span)? {
+                    if (items.len() + 1) * std::mem::size_of::<Value>() > max {
+                        interp.check_built_size(usize::MAX, "list", span)?;
+                    }
                     items.push(item);
                 }
                 Value::list(items)
