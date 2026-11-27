@@ -1633,6 +1633,12 @@ bits are stored where the OS has them. `zip` and `tar` list their sources
 before they create the archive, so an archive written inside a source
 directory does not contain itself, and they write it as 12.1.2 describes.
 
+A symbolic link in a source is stored differently by the two formats.
+`tar` stores the link itself. `zip` stores what the link points to, the
+content of a file or a directory with its entries, because `unzip` refuses
+links. A link to a directory that contains the link is an `io` error in
+`zip`, since following it would never end.
+
 Extraction treats the archive as untrusted and stops with an `io` error,
 naming the member, rather than write anywhere but inside `dst`:
 

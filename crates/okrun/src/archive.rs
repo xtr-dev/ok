@@ -53,7 +53,17 @@ fn sources(args: &Args, fname: &str) -> R<Vec<OkPath>> {
 /// Every file and directory under `src`, as (native path, member name,
 /// whether it is a directory), each directory before its entries and the
 /// entries of a directory in name order.
-fn members(src: &OkPath) -> std::io::Result<Vec<(PathBuf, String, bool)>> {
+///
+/// With `follow`, a symbolic link to a directory is listed as that
+/// directory with its entries (SPEC.md 12.10). Without it, such a link is
+/// listed as a file, for a writer that stores links itself.
+///
+/// # Errors
+///
+/// Fails when a directory cannot be read, when a name is not valid UTF-8,
+/// and, with `follow`, when a link leads back to a directory that contains
+/// it, which would never end.
+fn members(src: &OkPath, follow: bool) -> std::io::Result<Vec<(PathBuf, String, bool)>> {
     let mut out = Vec::new();
     let base = src.name();
     let base = if base.is_empty() {
@@ -61,8 +71,17 @@ fn members(src: &OkPath) -> std::io::Result<Vec<(PathBuf, String, bool)>> {
     } else {
         base
     };
-    fn walk(dir: &Path, name: &str, out: &mut Vec<(PathBuf, String, bool)>) -> std::io::Result<()> {
+    /// `open` holds the directories being listed, outermost first, so that
+    /// a followed link can be compared with them.
+    fn walk(
+        dir: &Path,
+        name: &str,
+        follow: bool,
+        open: &mut Vec<PathBuf>,
+        out: &mut Vec<(PathBuf, String, bool)>,
+    ) -> std::io::Result<()> {
         out.push((dir.to_path_buf(), name.to_string(), true));
+        open.push(dir.to_path_buf());
         let mut entries: Vec<_> = std::fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
         entries.sort_by_key(|e| e.file_name());
         for e in entries {
@@ -73,17 +92,32 @@ fn members(src: &OkPath) -> std::io::Result<Vec<(PathBuf, String, bool)>> {
                 )));
             };
             let child = format!("{name}/{file}");
-            if e.file_type()?.is_dir() {
-                walk(&e.path(), &child, out)?;
+            let kind = e.file_type()?;
+            let linked_dir = follow
+                && kind.is_symlink()
+                && std::fs::metadata(e.path()).is_ok_and(|m| m.is_dir());
+            if linked_dir {
+                let target = std::fs::canonicalize(e.path())?;
+                for outer in open.iter() {
+                    if std::fs::canonicalize(outer)? == target {
+                        return Err(std::io::Error::other(format!(
+                            "{child} is a symbolic link to a directory that contains it"
+                        )));
+                    }
+                }
+            }
+            if kind.is_dir() || linked_dir {
+                walk(&e.path(), &child, follow, open, out)?;
             } else {
                 out.push((e.path(), child, false));
             }
         }
+        open.pop();
         Ok(())
     }
     let native = src.native();
     if std::fs::metadata(&native)?.is_dir() {
-        walk(&native, &base, &mut out)?;
+        walk(&native, &base, follow, &mut Vec::new(), &mut out)?;
     } else {
         out.push((native, base, false));
     }
@@ -106,10 +140,10 @@ fn mode_of(_: &Path) -> Option<u32> {
 /// The members of every source, listed before the archive file is created
 /// so that an archive written inside a source directory does not contain
 /// itself.
-fn all_members(args: &Args, srcs: &[OkPath]) -> R<Vec<(PathBuf, String, bool)>> {
+fn all_members(args: &Args, srcs: &[OkPath], follow: bool) -> R<Vec<(PathBuf, String, bool)>> {
     let mut out = Vec::new();
     for src in srcs {
-        out.extend(members(src).map_err(|e| {
+        out.extend(members(src, follow).map_err(|e| {
             fail(
                 args,
                 format!("cannot read {}: {}", src.display(), io_reason(&e)),
@@ -148,7 +182,7 @@ fn zip(interp: &mut Interp, mut args: Args) -> R<Value> {
     )) {
         return Ok(Value::Null);
     }
-    let list = all_members(&args, &srcs)?;
+    let list = all_members(&args, &srcs, true)?;
     let (pending, file) = create_archive(&args, &dst)?;
     let mut w = zip::ZipWriter::new(file);
     for (path, name, is_dir) in list {
@@ -204,7 +238,7 @@ fn tar(interp: &mut Interp, mut args: Args) -> R<Value> {
     )) {
         return Ok(Value::Null);
     }
-    let list = all_members(&args, &srcs)?;
+    let list = all_members(&args, &srcs, false)?;
     let (pending, file) = create_archive(&args, &dst)?;
     let name = dst.name();
     let gzip = name.ends_with(".gz") || name.ends_with(".tgz");
@@ -1002,5 +1036,47 @@ mod tests {
             link_target(&link("a/b/l"), "../../x/y").map(|(r, _)| r),
             Ok(vec!["x".to_string(), "y".to_string()])
         );
+    }
+
+    /// `zip` stores what a link points to, so a link to a directory must
+    /// be listed as a directory. Listed as a file, it made `zip` fail with
+    /// "Is a directory". A link back to a containing directory would never
+    /// end, so it is an error.
+    #[cfg(unix)]
+    #[test]
+    fn members_follow_a_link_to_a_directory_for_zip() {
+        let base = std::env::temp_dir().join(format!("ok-zip-links-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("src/real")).unwrap();
+        std::fs::write(base.join("src/real/a.txt"), "a").unwrap();
+        std::os::unix::fs::symlink("real", base.join("src/link")).unwrap();
+        let src = OkPath::from_native(&base.join("src"));
+        let names = |follow| -> Vec<(String, bool)> {
+            members(&src, follow)
+                .unwrap()
+                .into_iter()
+                .map(|(_, name, is_dir)| (name, is_dir))
+                .collect()
+        };
+        assert_eq!(
+            names(true),
+            [
+                ("src".to_string(), true),
+                ("src/link".to_string(), true),
+                ("src/link/a.txt".to_string(), false),
+                ("src/real".to_string(), true),
+                ("src/real/a.txt".to_string(), false),
+            ]
+        );
+        // `tar` stores the link itself, so it is listed as one entry.
+        assert!(names(false).contains(&("src/link".to_string(), false)));
+
+        std::os::unix::fs::symlink("..", base.join("src/real/up")).unwrap();
+        let err = members(&src, true).unwrap_err().to_string();
+        assert_eq!(
+            err,
+            "src/link/up is a symbolic link to a directory that contains it"
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

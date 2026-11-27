@@ -311,6 +311,8 @@ An archive whose files would hold more than 4 GiB, or that has more than a milli
 unzip("out/report.zip", "big", max_size: 20_000_000_000)
 ```
 
+`tar` stores a symbolic link as a link. `zip` stores what the link points to: the content of a file, or a directory with its entries. A link to a directory that contains the link is an error in `zip`.
+
 A single data file compressed with gzip, such as `events.jsonl.gz`, is not an archive. `read` and `write` handle it directly, as [Compressed files](data.md#compressed-files) describes.
 
 ## What is the same on every OS

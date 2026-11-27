@@ -1029,7 +1029,7 @@ print(glob("t/**/*"))
 
 `zip(src: path | list[path], dst: path)`
 
-Returns `null`. Creates the zip archive `dst` from a file, a directory or a list of files and directories.
+Returns `null`. Creates the zip archive `dst` from a file, a directory or a list of files and directories. A symbolic link is stored as what it points to: the content of a file, or a directory with its entries. A link to a directory that contains the link is an `io` error.
 
 ### unzip
 

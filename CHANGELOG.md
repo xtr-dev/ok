@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `zip` packs a directory that contains a symbolic link to a directory. It failed with "cannot write out.zip: Is a directory". `zip` stores what a link points to (the content of a file, or a directory with its entries), and a link to a directory that contains the link is an `io` error naming the link. `tar` stores links as links, as before.
+
+### Documentation
+
+- The guide and the comments in the source were revised for accuracy and plain wording. About a dozen statements in the guide that did not match ok's behaviour are corrected, and every standard library entry has the same layout.
+
 ## [0.4.0] - 2026-11-27
 
 Projects can now keep everything in one hidden `.ok/` directory (or a single `.ok` file), and `ok self init` writes the wrappers only with `--wrappers`; an `ok/` directory of namespaces still works for this release, with a warning, and `ok self promote` moves it. A directory with two root files is now an error. Much of this release hardens ok as a default scripting language: limits on untrusted data, archives and programs, safer files, processes and fetch, and stricter trust.
