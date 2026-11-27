@@ -2,11 +2,11 @@
 
 Chain list and text functions with `|`, write short predicates like `.age > 30`, and stream big files in bounded memory.
 
-Most scripts take some data, filter it, reshape it and print or write the result. In ok you write that as a pipeline: a value on the left, then a chain of stages separated by `|`. The fine print is in [section 8 of the spec](../SPEC.md#8-pipelines).
+A pipeline is a value followed by a chain of stages separated by `|`. Each stage is a call that receives the result of the stage before it. Most scripts take some data, filter it, reshape it and print or write the result, and a pipeline writes those steps in the order they happen. The exact rules are in [section 8 of the spec](../SPEC.md#8-pipelines).
 
 ## What `|` does
 
-`a | f(x)` means `f(a, x)`: the value on the left becomes the first argument of the call on the right. That is all there is to it. Every list, text and file function in ok takes its main input first, so they all work as stages.
+`a | f(x)` means `f(a, x)`: the value on the left becomes the first argument of the call on the right. Every list, text and file function in ok takes its main input first, so each of them works as a stage.
 
 ```ok file=pipe.ok
 let words = ["pear", "apple", "fig"]
@@ -19,9 +19,9 @@ apple, fig, pear
 apple, fig, pear
 ```
 
-Both lines do the same thing. The pipeline reads left to right in the order things happen, while the nested calls read inside out.
+Both lines do the same thing. The pipeline lists the steps from left to right, in the order they happen. The nested calls list them from the inside out.
 
-Your own functions work as stages too, as long as they take the piped value as their first parameter:
+Your own functions work as stages too when they take the piped value as their first parameter:
 
 ```ok file=own.ok
 fn add_tax(price, rate) { price * (1 + rate) }
@@ -35,15 +35,15 @@ print([10, 20] | map(p => (p | add_tax(0.1))))
 [11.0, 22.0]
 ```
 
-The parentheses around `p | add_tax(0.1)` matter. The body of an arrow closure stops before `|`, so without them `p => p | add_tax(0.1)` would pipe the closure itself into `add_tax`. Either parenthesise the body or call the function directly: `map(p => add_tax(p, 0.1))`.
+The parentheses around `p | add_tax(0.1)` are required. The body of an arrow closure stops before `|`, so without them `p => p | add_tax(0.1)` would pipe the closure itself into `add_tax`. Either parenthesise the body or call the function directly: `map(p => add_tax(p, 0.1))`.
 
-## The shapes of a stage
+## The five forms of a stage
 
-The right side of `|` can take a few shapes:
+The right side of `|` is a stage. A stage has one of five forms:
 
 - A call with parentheses: `| sort(.size, desc: true)`. The piped value is added in front of the arguments.
 - A bare name: `| sort`, `| count`, `| print`. The function is called with the piped value only.
-- A name and one argument, separated by a space: `| take 5`, `| join ", "`, `| sort .name`, `| where not .done`. This is the same as `| take(5)` and reads more like a sentence. It takes exactly one argument; for more, use parentheses.
+- A juxtaposed call, which is a name and one argument separated by a space: `| take 5`, `| join ", "`, `| sort .name`, `| where not .done`. `| take 5` is the same as `| take(5)`. A juxtaposed call takes exactly one argument. For more arguments, use parentheses.
 - A `run` command: `| run sort -u`. The value becomes the command's standard input. See [Running commands](commands.md).
 - Any other expression that gives a function, such as `| .items` or `| (x => x * 2)`.
 
@@ -60,7 +60,7 @@ print(data.items | sort(desc: true) | join " > ")
 8 > 5 > 3 > 1
 ```
 
-A stage must be something to call. If you want to compare or calculate with the result of a pipeline, put the pipeline in parentheses:
+A stage must be something that can be called. To compare or calculate with the result of a pipeline, put the pipeline in parentheses:
 
 ```ok file=compare.ok
 let xs = [1, 2, 3, 4]
@@ -77,7 +77,7 @@ Without the parentheses, `xs | count > 3` is an error that tells you to add them
 
 ## Short predicates with `.field`
 
-Most stages take a function: which items to keep, what to sort by, how to transform each item. You can always write a closure, `u => u.age > 30`, but usually you can leave out the parameter. A `.` followed by a name, where a value is expected, refers to a field (or property, or method) of the current item:
+Most stages take a function that says which elements to keep, what to sort by or how to transform each element. You can write that function as a closure, `u => u.age > 30`, or leave out the parameter and write `.age > 30`. The short form is an implicit closure: a `.` followed by a name, where a value is expected, refers to a field, property or method of the current element.
 
 ```ok file=users.ok
 let users = [
@@ -98,18 +98,18 @@ print(users | map(.age * 2))
 [68, 54, 82]
 ```
 
-The whole argument becomes the function: `where .age > 30 and .active` means `where(u => u.age > 30 and u.active)`. You can also store one in a variable, since `let older = .age > 30` is a function.
+The whole argument becomes the function: `where .age > 30 and .active` means `where(u => u.age > 30 and u.active)`. You can store an implicit closure in a variable: `let older = .age > 30` binds a function.
 
-Two things to know about this shorthand:
+An implicit closure has two limits:
 
-- It covers one argument, list element or record value. Inside a record literal, each value is its own function, so `map({id: .id})` builds a record holding a function, which `map` then rejects. Write the closure: `map(u => {id: u.id})`.
-- A `.` alone is not a closure. For the item itself, write `x => x`. And `.name` cannot appear inside string interpolation; use `map(u => "{u.name}")`.
+- It covers one argument, list element or record value. Inside a record literal, each value is its own function, so `map({id: .id})` builds a record that holds a function, and `map` rejects a record. Write the closure: `map(u => {id: u.id})`.
+- A `.` alone is not an implicit closure. For the element itself, write `x => x`. `.name` also cannot appear inside string interpolation. Write `map(u => "{u.name}")`.
 
-[Implicit closures](../SPEC.md#69-implicit-closures-field) in the spec has the exact rules, and [Functions](functions.md) covers closures in general.
+[Functions](functions.md#implicit-closures-with-field) explains how far an implicit closure reaches, and [section 6.9 of the spec](../SPEC.md#69-implicit-closures-field) has the exact rules.
 
 ## Filtering and transforming
 
-`where` keeps the items for which the predicate is `true`. The predicate must return a bool: ok has no truthiness, so `where .name` on strings is an error rather than a silent guess. `map` replaces each item with the result of the function, and `each` calls a function for its effect, such as printing.
+`where` keeps the elements for which a function (the predicate) returns `true`. The predicate must return a `bool`, because ok has no truthiness: `where .name` is an error when `name` is a string. `map` replaces each element with the result of a function. `each` calls a function on each element for its effect, such as printing.
 
 ```ok file=orders.ok
 let orders = [
@@ -128,13 +128,13 @@ orders
 #2 bo vip=false
 ```
 
-Long pipelines go on several lines, each stage starting with `|`. The `{...o, vip: ...}` record copies every field of `o` and adds one; it is the usual way to add or change a field in `map`.
+A long pipeline can continue on the following lines, with each stage starting with `|`. The record `{...o, vip: ...}` copies every field of `o` and adds one. Use this form to add or change a field in `map`.
 
 ## Sorting, grouping and summarising
 
-`sort` sorts by value, or by a key function, and is stable. `desc: true` reverses the order. `reverse`, `take` and `skip` do what their names say.
+`sort` sorts a list by value, or by the result of a key function, and keeps equal elements in their original order. `desc: true` sorts from largest to smallest. `take n` keeps the first `n` elements, `skip n` drops them, and `reverse` reverses the list.
 
-`group` puts the items in a record of lists keyed by the result of the key function, in order of first appearance. Combine it with `entries` to turn the groups back into a list you can map over.
+`group` returns a record of lists. Each key is the result of the key function, as a string, and the keys are in order of first appearance. `entries` turns that record into a list of `{key, value}` records, which you can pass to `map`.
 
 ```ok file=report.ok
 let orders = [
@@ -162,14 +162,14 @@ cy      25
 bo      12
 ```
 
-The functions that reduce a list to one value:
+These functions reduce a list to one value:
 
 | Function | Gives |
 |---|---|
-| `count`, `count(pred)` | how many items (that match) |
+| `count`, `count(pred)` | how many elements (that match) |
 | `sum`, `sum(key)` | the total, `0` for an empty list |
-| `min(key)`, `max(key)` | the smallest or largest item (not the key), `null` for an empty list |
-| `first`, `first(pred)`, `last` | one item, or `null` if there is none |
+| `min(key)`, `max(key)` | the smallest or largest element (not the key), `null` for an empty list |
+| `first`, `first(pred)`, `last` | one element, or `null` if there is none |
 | `any(pred)`, `all(pred)` | a bool |
 | `join(sep)` | one string |
 
@@ -200,11 +200,11 @@ true false
 [{index: 0, value: "a"}, {index: 1, value: "b"}]
 ```
 
-`uniq` keeps the first item of each distinct value or key and does not need sorted input. The full list of list and record functions is in the [standard library reference](stdlib.md).
+`uniq` keeps the first element of each distinct value or key and does not need sorted input. `flat` joins the lists inside a list into one list, one level deep. `enumerate` pairs each element with its index. All list and record functions are in the [standard library reference](stdlib.md).
 
-## Methods or pipes
+## Method calls or pipelines
 
-Every function can also be called as a method, with the first argument before the dot. `xs.where(.ok).map(.id)` is the same as `xs | where .ok | map .id`. Use whichever reads better: methods suit short chains on one value, such as `name.trim().lower()`, and pipes suit longer data flows.
+Every function can also be called as a method, with the first argument before the dot. `xs.where(.ok).map(.id)` is the same as `xs | where .ok | map .id`. A method call suits a short chain on one value, such as `name.trim().lower()`. A pipeline suits a longer chain of steps.
 
 ```ok file=methods.ok
 let tags = [" Web", "ops ", "web"]
@@ -219,13 +219,13 @@ print(tags | map(.trim().lower()) | uniq)
 
 ## Lazy data and big files
 
-Some values are lazy: their data is produced only as a pipeline asks for it. These are:
+A lazy value produces its data only when a pipeline asks for it. These values are lazy:
 
 - `read` of a line or row format: text, lines, CSV, TSV and JSON Lines (also when gzip-compressed). See [Data formats](data.md).
 - `lines` applied to a lazy string, `range`, and `stdin()`.
 - The output of a command in a pipeline.
 
-The stages `where`, `map`, `take`, `skip`, `uniq`, `flat`, `enumerate` and `lines` pass laziness on: given a lazy list, they return a lazy list. The consumers `each`, `count`, `sum`, `min`, `max`, `first`, `last`, `any`, `all`, `join` and `write` pull one item at a time, so a pipeline made of these runs in bounded memory however big the file is. `first`, `any`, `all` and `take` stop as soon as they know the answer.
+The stages `where`, `map`, `take`, `skip`, `uniq`, `flat`, `enumerate` and `lines` stream: given a lazy list, they return a lazy list. `each`, `count`, `sum`, `min`, `max`, `first`, `last`, `any`, `all`, `join` and `write` consume a lazy list one element at a time. A pipeline made only of these functions therefore uses a bounded amount of memory, whatever the size of the file. `first`, `any`, `all` and `take` stop as soon as they have their answer.
 
 ```ok file=big.ok
 write(range(100_000) | map(n => "line {n}"), "big.log")
@@ -240,9 +240,9 @@ line 0
 [7, 14, 21]
 ```
 
-The script never holds the whole file in memory, not even while writing it, and the range of a trillion numbers produces only the 22 it needs.
+The script never holds the whole file in memory, also not while it writes the file. The range of a trillion numbers produces only the 22 numbers that the pipeline needs.
 
-Stopping early is visible when the data has a problem further on. In this file, line 4 has one field too many. Reading the first two rows works, because ok never gets to line 4; counting the rows has to read everything and fails:
+Stopping early has a visible effect when the data has a problem further on. In this file, line 4 has one field too many. Reading the first two rows works, because ok never reaches line 4. Counting the rows has to read everything, and fails:
 
 ```csv file=orders.csv
 id,name
@@ -266,9 +266,9 @@ error[format]: line 4 of orders.csv has 3 fields, but the header has 2
   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^
 ```
 
-As this shows, an error in lazy data is raised where the data is consumed, and the message gives the line number in the file.
+An error in lazy data is raised where the data is consumed, and the message gives the line number in the file.
 
-A `for` loop also pulls one item per iteration, so `break` stops the reading:
+A `for` loop also pulls one element per iteration, so `break` stops the reading:
 
 ```ok file=loop.ok
 write(["ok start", "ERROR disk full", "ok retry", "ERROR disk full again"], "app.log")
@@ -288,7 +288,7 @@ A lazy value is read completely into an ordinary list or string (materialised) a
 
 - bind it to a name with `let` or `var`,
 - put it in a list or record,
-- pass it to a function that does not stream: any function you wrote, and the builtins not listed above, such as `sort`, `group`, `reverse` and `len`,
+- pass it to a function that does not stream: any function you wrote, and the built-in functions not listed above, such as `sort`, `group`, `reverse` and `len`,
 - index it, print it, interpolate it or compare it.
 
 ```ok
@@ -296,6 +296,6 @@ read("big.log") | lines | where .contains("ERROR") | count   # bounded memory
 let all = read("big.log") | lines                             # the whole file in memory
 ```
 
-Usually this is what you want: a few thousand rows fit in memory easily, and once a value is bound to a name you can use it several times. For files of gigabytes, keep the work in one pipeline that ends in a consumer such as `count`, `each` or `write`, and put the streaming stages (`where`, `take`) before the ones that materialise (`sort`, `group`).
+For most files this is what you want. A few thousand rows fit in memory, and a value that is bound to a name can be used several times. A materialised list or string is limited to 1 GiB. For files of gigabytes, keep the work in one pipeline that ends in a consuming function such as `count`, `each` or `write`, and put the stages that stream (`where`, `take`) before the stages that materialise (`sort`, `group`).
 
 [Section 13.2](../SPEC.md#132-lazy-values) of the spec has the details.

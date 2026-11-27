@@ -1,10 +1,10 @@
 # Errors
 
-How to read ok's error messages, catch errors with `try`, `catch`, `finally` and `?`, raise your own with `fail`, and choose an exit code.
+Read ok's error messages, catch errors with `try`, `catch`, `finally` and `?`, raise your own with `fail`, and choose an exit code.
 
 ## Reading an error message
 
-When something goes wrong, ok stops and tells you what happened, where, and, when it can, how to fix it. Here is a script with a typo in a variable name:
+When a script fails, ok stops and prints an error message that says what happened and where. When ok knows the fix, the message also says how to fix the problem. This script has a typo in a variable name:
 
 ```ok file=typo.ok
 let release = true
@@ -25,13 +25,13 @@ error[name]: unknown name `relase`
 
 Every error has the same parts:
 
-- `error[name]` is the **kind** of error, here a name that is not defined. The kinds are listed [below](#error-kinds).
-- After the colon comes the **message**.
-- `--> typo.ok:2:4` is the **location**: file, line and column.
-- The **snippet** shows the line with the problem underlined.
-- Lines starting with `=` add **notes**, a **call trace** and a **help** line. The help line appears when the fix is knowable, and it is usually the line to read first.
+- `error[name]` is the kind of error, here a name that is not defined. The kinds are listed [below](#error-kinds).
+- After the colon comes the message.
+- `--> typo.ok:2:4` is the location: file, line and column.
+- The snippet shows the line with the problem underlined.
+- Lines that start with `=` add notes, a call trace and a help line. ok adds the help line when it knows the fix, so read that line first.
 
-ok spends effort on these messages. Misspelled names, fields, flags and tasks get a "did you mean" suggestion, and habits from other languages and from the shell get a direct fix:
+A misspelt name, field, flag or task gets a "did you mean" suggestion. An operator or keyword from another language or from the shell gets a help line with the ok form:
 
 ```ok nocheck file=habits.ok
 let ready = true && false
@@ -51,7 +51,7 @@ On a terminal the message is in colour. `NO_COLOR=1` or `--color never` turns co
 
 ## Errors inside functions
 
-When an error happens inside a function, the message ends with a short call trace, innermost call first, so you can see how the program got there:
+When an error happens inside a function, the message ends with a call trace, innermost call first, which shows how the script reached that line:
 
 ```ok file=trace.ok
 fn check_port(port: int) {
@@ -85,7 +85,7 @@ The trace shows at most eight frames. Recursion that repeats the same frame show
 
 ## Error kinds
 
-The kind tells you what sort of problem it is, and it is what you test when you catch an error. These are the kinds:
+The kind says what sort of problem the error is. It is also the value you test when you catch an error (see [The error value](#the-error-value)). ok has these kinds:
 
 | Kind | Raised for |
 |---|---|
@@ -104,7 +104,7 @@ The kind tells you what sort of problem it is, and it is what you test when you 
 | `fail` | your own error, raised with `fail` |
 | `trust` | a project that has not been trusted (see [Trust](trust.md)) |
 
-Syntax errors and load errors (a bad import, a library that runs code) are found before any of the script runs. Everything else happens while it runs. `ok self check` finds many of the runtime kinds, such as unknown names and wrong argument counts, without running anything; see [Tools](tools.md).
+Syntax errors and load errors (a bad import, a library that runs code) are found before any of the script runs. Every other error happens while the script runs. `ok self check` finds many of the runtime errors, such as unknown names and wrong argument counts, without running anything. See [Tools](tools.md).
 
 ## Catching errors with try and catch
 
@@ -136,7 +136,7 @@ print(n)
 -1
 ```
 
-`catch` catches every kind of error. To handle only some of them, look at `e.kind` and raise the others again with `fail(e)`, which re-raises the error unchanged, location and all:
+`catch` catches every kind of error. To handle only some kinds, test `e.kind` and raise the other errors again with `fail(e)`. `fail(e)` raises the error unchanged, with its original kind and location:
 
 ```ok file=rethrow.ok
 fn load_settings(file) {
@@ -158,7 +158,7 @@ settings.toml not found, using defaults
 8080
 ```
 
-A missing file falls back to the defaults, but a file with a syntax error in it still stops the script, which is what you want: a broken config should not be silently replaced.
+A missing file gives the defaults. A file with a syntax error in it still stops the script, because that error has the kind `format` and is raised again.
 
 ## The error value
 
@@ -183,11 +183,11 @@ io
 | `cmd`, `code`, `stderr` | for `command` errors: the command as a list, its exit code, and the end of its stderr when it was captured |
 | `status` | for `net` errors with an HTTP response: the status code |
 
-Fields that only some errors have are easiest to read with `?`, for example `e.code? ?? 1`.
+Read a field that only some errors have with `?`, for example `e.code? ?? 1`.
 
 ## Defaults with ? and ??
 
-Often you do not want to handle an error, only to fall back to something. Writing `try ... catch` for that is noisy, so ok has the catch operator `?`. Put it at the end of an expression: if anything in it raises an error, the result is `null`. Combine it with `??`, which replaces `null` with a default:
+The catch operator `?` turns an error into `null`. Put `?` at the end of an expression: if anything in the expression raises an error, the result is `null`. Combine `?` with `??`, which replaces `null` with a default, when you need a fallback value and do not need to look at the error:
 
 ```ok file=question.ok
 let cfg = read("config.toml")? ?? {}
@@ -200,7 +200,7 @@ print(port, retries)
 8080 3
 ```
 
-`?` covers the whole chain to its left: in `cfg.server.port?` a missing `server` or a missing `port` both give `null`. There is no optional chaining, so `cfg?.port` is an error that tells you where to put the `?` instead. `?` does not catch `exit()`.
+`?` covers the whole chain to its left: in `cfg.server.port?` a missing `server` and a missing `port` both give `null`. ok has no optional chaining, so `cfg?.port` is an error whose help line says where to put the `?`. `?` does not catch `exit()`.
 
 Use `?` when any failure means the same thing ("not there"), and `try`/`catch` when you need to tell failures apart or report them.
 
@@ -229,7 +229,7 @@ error[fail]: the build broke
   |   ^^^^^^^^^^^^^^^^^^^^^^^
 ```
 
-A `try` without `catch` catches nothing: the error carries on after `finally` has run. With both, write `catch` first and `finally` last.
+A `try` without `catch` catches nothing. The error continues after the `finally` block has run. When a `try` has both, write `catch` first and `finally` last.
 
 If the `finally` block itself fails, its error replaces the original one, and a note keeps the original message so it is not lost:
 
@@ -255,7 +255,7 @@ error[fail]: cleanup failed
 
 ## Raising your own errors
 
-`fail(message)` raises an error of kind `fail` at the place where you call it. Use it when your script finds something it cannot continue with: the message, location and call trace are shown like any other error, and the script exits with code 1.
+`fail(message)` raises an error of kind `fail` at the place where you call it. Use it when your script finds a problem that it cannot continue with. ok shows the message, location and call trace as for any other error, and the script exits with code 1.
 
 ```ok file=fail.ok
 fn main(--env: string = "dev") {
@@ -277,7 +277,7 @@ error[fail]: unknown environment qa; expected one of dev, staging, production
   = in `main`, started by ok
 ```
 
-For a fixed set of values like this one, a choice type does the check for you before the script starts; see [Command-line scripts](script-cli.md#choices).
+For a fixed set of values like this one, a choice type does the check for you before the script starts. See [Command-line scripts](script-cli.md#choices).
 
 A caught error passed to `fail` is raised again as it was, with its own kind and location, as shown in [Catching errors](#catching-errors-with-try-and-catch).
 
@@ -297,7 +297,7 @@ When a script ends normally, ok exits with code 0. When an error is not caught, 
 | 128+S | on Unix, a command was killed by signal S |
 | 130 | interrupted with Ctrl-C |
 
-Passing a failed command's code through means `ok test.ok` in CI fails the same way the tool inside it did. The full table is in the [spec](../SPEC.md#23-exit-codes).
+Because ok passes on the exit code of a failed command, `ok test.ok` in CI fails with the same code as the tool that the script ran. The full table is in the [spec](../SPEC.md#23-exit-codes).
 
 ## Ending a script with exit
 
@@ -334,4 +334,4 @@ error[arg]: exit codes go from 0 to 255, got 256
 
 - [Running commands](commands.md) shows what a failing command's error looks like and how `run!` lets you handle exit codes yourself.
 - [Command-line scripts](script-cli.md) covers the argument errors that end with exit code 2.
-- The spec has the fine print: [errors](../SPEC.md#10-errors), [`try`/`catch`](../SPEC.md#67-try--catch) and [the `?` operator](../SPEC.md#62-catch-operator-).
+- The spec has the exact rules: [errors](../SPEC.md#10-errors), [`try`/`catch`](../SPEC.md#67-try--catch) and [the `?` operator](../SPEC.md#62-catch-operator-).

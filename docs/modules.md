@@ -1,10 +1,10 @@
 # Modules
 
-Split code across files with `import`: what a library file may contain, what it exports, how import paths work, and the errors you can meet.
+Split code across files with `import`, and learn what a library may contain, what it exports and how import paths are resolved.
 
 ## A first library
 
-When a script grows, or two scripts need the same helper, move the shared functions into their own file and `import` it. Here is a small library and a script that uses it:
+`import "path"` makes the functions and constants of another file available in your script. The imported file is called a library. Use a library when a script grows, or when two scripts need the same helper. This is a small library and a script that imports it:
 
 ```ok file=lib/release.ok
 # Helpers for release scripts.
@@ -39,7 +39,7 @@ print(next, tag_name(next))
 
 ## Importing under a name
 
-With `as`, the names stay inside a namespace instead. You call them as `name.function(...)`:
+`import "path" as name` puts the exported names in a namespace called `name`. You call a function as `name.function(...)`:
 
 ```ok file=lib/release.ok
 let prefix = "v"
@@ -61,9 +61,9 @@ v2.0.0
 v
 ```
 
-A namespace is easier to read in a long script, because every call says where the function comes from, and it cannot clash with your own names. Use the plain form for a small set of helpers you use everywhere, and `as` for everything else.
+In a long script a namespace is easier to read, because every call says which library the function comes from. The names in a namespace also cannot clash with your own names. Use `import` without `as` for a small set of helpers that you use everywhere, and `as` for every other library.
 
-A namespace is a record of the exported names. A misspelled name gets an error that names the namespace, with a suggestion:
+A namespace is a record of the exported names. A misspelt name gets an error that names the namespace, with a suggestion:
 
 ```ok file=typo.ok
 import "./lib/release.ok" as release
@@ -81,7 +81,7 @@ error[name]: `release` has no function `tagname`
   = help: did you mean `release.tag_name`?
 ```
 
-## What a module exports
+## What a library exports
 
 Every top-level `fn` and `let` of a library is exported, except names that start with `_`. Use a leading underscore for helpers that are not part of the library's interface:
 
@@ -109,15 +109,15 @@ hello-big-world
 {slug: <fn slug>}
 ```
 
-Functions in a library see the library's own names, private ones included, and the names it imports. They do not see the names of the script that imports them: a library is self-contained, so it behaves the same whoever imports it.
+Functions in a library see the library's own names, private ones included, and the names the library imports. They do not see the names of the script that imports the library, so a library behaves the same in every script that imports it.
 
-Names a library imports are not exported again. If `lib/math.ok` imports `lib/helpers.ok`, a script that imports `lib/math.ok` does not get the helpers; it imports `lib/helpers.ok` itself if it needs them.
+Names a library imports are not exported again. If `lib/math.ok` imports `lib/helpers.ok`, a script that imports `lib/math.ok` does not get the helpers. A script that needs the helpers imports `lib/helpers.ok` itself.
 
 ## Libraries only declare
 
-An imported file is a **library**, and a library may contain only `fn` declarations, constant `let` declarations and `import`. Loading a library never runs any code. This makes imports safe and predictable: the order of your imports cannot matter, and importing a file cannot print, write files or start programs behind your back.
+A library may contain only `fn` declarations, constant `let` declarations and `import`. Loading a library never runs code. The order of your imports therefore does not matter, and importing a file cannot print, write files or start programs.
 
-A constant is built from literals, lists and records, operators, string interpolation, other constants, `path(...)` and `os.name`, `os.arch` and `os.exe`. Anything that does work belongs inside a function:
+A constant is built from literals, lists and records, operators, string interpolation, other constants, `path(...)` and `os.name`, `os.arch` and `os.exe`. Any other computation belongs inside a function:
 
 ```ok file=lib/config.ok
 let settings = read("settings.toml")
@@ -145,13 +145,13 @@ fn settings() {
 }
 ```
 
-Statements such as `print(...)` or `run` at the top level of a library are errors for the same reason. A library may still declare `fn main`; it is only run when the file itself is run as a script.
+Statements such as `print(...)` or `run` at the top level of a library are errors for the same reason. A library may still declare `fn main`. ok calls `main` only when the file itself is run as a script.
 
 ## Import paths
 
-The path after `import` is a string literal, relative to the directory of the file that contains the `import`, not to your working directory. That way a library that imports its neighbours keeps working wherever it is used from. `"./lib/release.ok"` and `"lib/release.ok"` mean the same thing; the `./` just makes it obvious that the path is relative. `..` goes up a directory, and paths use `/` on every OS.
+The path after `import` is a string literal, relative to the directory of the file that contains the `import`, not to your working directory. A library that imports the files next to it therefore works from any working directory. `"./lib/release.ok"` and `"lib/release.ok"` mean the same thing. The `./` shows the reader that the path is relative. `..` goes up a directory, and paths use `/` on every OS.
 
-Some paths are refused, because they would make a script depend on the machine it runs on or on the network:
+ok refuses some paths, because they would make a script depend on the machine it runs on or on the network:
 
 - Absolute paths, such as `"/opt/lib.ok"`, are an error that suggests a relative path.
 - URLs are an error: ok has no remote imports, package manager or search path.
@@ -173,7 +173,7 @@ error[io]: cannot import "./lib/nothing.ok": no such file
 
 ## Clashes and cycles
 
-A plain `import` puts names straight into your scope, so they must not collide with your own declarations or with another import. A collision is an error when the script loads, with the fix in the help line:
+An `import` without `as` puts names directly into your scope, so they must not clash with your own declarations or with another import. A clash is an error when the script loads, with the fix in the help line:
 
 ```ok file=lib/a.ok
 fn greet() {
@@ -204,7 +204,7 @@ error[name]: `greet` from lib/b.ok clashes with a name already declared here
   = help: import it under a name instead: import "./lib/b.ok" as lib
 ```
 
-ok never lets one name silently win over another. Import one or both files with `as` and the names no longer meet. Importing the same file twice is not a clash: the second `import` of it does nothing.
+To fix a clash, import one or both files with `as`. Importing the same file twice is not a clash: the second `import` does nothing.
 
 Each file is loaded once per run, however many files import it. Two libraries that import each other, directly or through others, are an import cycle, and the error shows the whole cycle:
 
@@ -238,15 +238,15 @@ error[name]: import cycle: lib/one.ok -> lib/two.ok -> lib/one.ok
 
 Move the shared part into a third file that both import.
 
-## Modules in a project
+## Imports in a project
 
-Project files (the root file, such as `.ok/ok.ok`, and the files in `.ok/`) use the same `import`, with two additions:
+A project (see [Tasks](tasks.md)) has a root file, such as `.ok/ok.ok`, and can have more files in `.ok/`. These files use the same `import`, with two additions:
 
 - Every import must stay inside the project root, after following symlinks. A path that escapes with `..` or a symlink is an error, so the code you trust for a project is the code in that project. See [Trust](trust.md).
 - Importing another project's root file with `as`, such as `import "../frontend/ok.ok" as fe` in `.ok/ok.ok`, mounts that project's tasks under a namespace. See [Tasks](tasks.md#mounting-a-sub-project).
 
 ## Where to go next
 
-- [Functions](functions.md) covers what goes inside a library: parameters, defaults and named arguments.
+- [Functions](functions.md) covers what goes inside a library: parameters, defaults and flags.
 - [Tasks](tasks.md) shows how project files are organised with namespaces and imports.
-- The spec has the fine print on [modules](../SPEC.md#11-modules) and [which declarations each kind of file allows](../SPEC.md#41-files).
+- The spec has the exact rules for [modules](../SPEC.md#11-modules) and for [which declarations each kind of file allows](../SPEC.md#41-files).

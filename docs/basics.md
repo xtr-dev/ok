@@ -1,12 +1,12 @@
 # Values and variables
 
-Bindings with let and var, and the values ok works with: numbers, strings, durations, null, lists, records and paths, and how they compare.
+Bind names with `let` and `var`, and use the kinds of value ok has: numbers, strings, booleans, `null`, lists, records, paths and durations.
 
-Every value in ok has a kind: `null`, `bool`, `int`, `float`, `string`, `bytes`, `list`, `record`, `path`, `duration`, `time` or `fn`. There are no classes and no objects with hidden state. Values behave as if they were immutable, so passing a list to a function never lets that function change your copy. This page walks through each kind and the operators that work on them. The exact rules are in [section 5 of the spec](../SPEC.md#5-values-and-types).
+Every value in ok has a kind: `null`, `bool`, `int`, `float`, `string`, `bytes`, `list`, `record`, `path`, `duration`, `time` or `fn`. ok has no classes. Values behave as immutable values, so a function that receives a list cannot change your copy of it. This page covers the kinds that most scripts use and the operators that work on them. Functions have [their own page](functions.md). The exact rules for every kind are in [section 5 of the spec](../SPEC.md#5-values-and-types).
 
 ## Naming values with let and var
 
-`let` binds a name to a value for good. `var` binds a name you intend to change. Use `let` by default: when you read a script, a `let` tells you the value stays the same from here on.
+`let` binds a name to a value, and that binding cannot change. `var` binds a name that you can assign to again. Use `let` unless you need to assign again, because a `let` tells the reader that the name keeps its value.
 
 ```ok file=bindings.ok
 let name = "ok"
@@ -37,7 +37,7 @@ error[name]: cannot assign to `attempts`: it was declared with let
   = help: declare it with `var attempts = ...` to change it
 ```
 
-A name can be declared only once in a scope. A block (the `{ ... }` of an `if`, a loop or a function) is a new scope, and a name declared inside it may shadow an outer one until the block ends:
+A name can be declared only once in a scope. A block (the `{ ... }` of an `if`, a loop or a function) is a new scope. A name declared inside a block can reuse an outer name, and it hides (shadows) the outer name until the block ends:
 
 ```ok file=shadow.ok
 let level = "outer"
@@ -53,11 +53,11 @@ inner
 outer
 ```
 
-`let` and `var` can also take a list or record apart; see [Lists](#lists) and [Records](#records) below.
+`let` and `var` can also take a list or a record apart. See [Lists](#lists) and [Records](#records).
 
 ## Numbers
 
-ok has two kinds of number. An `int` is a 64-bit signed integer; a `float` is a 64-bit floating-point number. Integer literals may use `_` to group digits, and `0x`, `0o` and `0b` prefixes for hexadecimal, octal and binary. A float needs digits on both sides of the dot: `0.5`, not `.5`.
+ok has two kinds of number: `int`, a 64-bit signed integer, and `float`, a 64-bit floating-point number. Integer literals may use `_` to group digits, and the prefixes `0x`, `0o` and `0b` for hexadecimal, octal and binary. A float needs digits on both sides of the dot: `0.5`, not `.5`.
 
 ```ok file=numbers.ok
 print(42, 1_000_000, 0x1F, 0o755, 0b1010)
@@ -77,8 +77,8 @@ print(floor(7 / 2), ceil(7 / 2), round(2.5), int(3.9))
 
 Two things differ from many languages:
 
-- `/` always gives a float, even for two ints: `7 / 2` is `3.5`, not `3`. When you want whole numbers, say how to round with `floor`, `ceil`, `round` or `int` (which truncates toward zero).
-- Arithmetic never wraps or produces infinity. An int that overflows, a division by zero, or a result that would be NaN is an error, so a bad number stops the script instead of quietly spreading.
+- `/` always gives a float, also for two ints: `7 / 2` is `3.5`, not `3`. When you want a whole number, say how to round with `floor`, `ceil`, `round` or `int` (which truncates toward zero).
+- Arithmetic never wraps and never produces infinity or NaN. An int that overflows, a division by zero and a float result that is not a finite number are errors, so the script stops at the calculation that went wrong.
 
 ```ok file=divide.ok
 let total = 10
@@ -98,7 +98,7 @@ Mixing an int and a float gives a float. Floats always print with a decimal poin
 
 ## Strings
 
-Double-quoted strings understand escapes (`\n`, `\t`, `\"`, `\\`, `\u{1F600}`) and interpolation. Single-quoted strings are raw: no escapes and no interpolation, which makes them the natural form for regular expressions and Windows paths.
+A double-quoted string can contain escapes (`\n`, `\t`, `\"`, `\\`, `\u{1F600}`) and interpolation: `{name}` inserts the value of `name` (see [Interpolation and format specs](#interpolation-and-format-specs)). A single-quoted string is raw. It has no escapes and no interpolation, so use it for regular expressions and Windows paths, which contain backslashes and braces.
 
 ```ok file=strings.ok
 let name = "Ana"
@@ -130,7 +130,7 @@ Text functions such as `upper`, `trim`, `split` and `replace` are listed in the 
 
 ### Multi-line strings
 
-Triple quotes, `"""..."""` or `'''...'''` for raw text, are for blocks of text. ok removes the indentation that all lines share, so you can indent the string along with your code:
+A string in triple quotes can span several lines. Write `"""..."""`, or `'''...'''` for raw text. ok removes the indentation that all lines share, so you can indent the string along with your code:
 
 ```ok file=letter.ok
 let name = "Bas"
@@ -152,7 +152,7 @@ The newline right after the opening quotes is dropped, and because the closing q
 
 ### Joining strings
 
-`+` joins two strings, but adding a string and anything else is an error. Interpolation is the usual way to build text, because it converts the value for you:
+`+` joins two strings. Adding a string and a value of another kind is an error:
 
 ```ok file=plus.ok
 let count = 3
@@ -169,11 +169,11 @@ error[type]: cannot use `+` on a string and an int
   = help: build strings with interpolation: "{a}{b}"
 ```
 
-Written as `"found {count} files"`, the same line works.
+Interpolation converts the value for you. Written as `"found {count} files"`, the same line works.
 
 ## Interpolation and format specs
 
-Inside a double-quoted string, `{expr}` inserts the value of any expression: a name, a calculation, a field, a method call. Strings are inserted as they are; lists and records are shown in their display form, with strings in them quoted.
+Inside a double-quoted string, `{expr}` inserts the value of any expression, such as a name, a calculation, a field or a method call. A string is inserted as it is. A list or a record is inserted in its display form, in which strings are quoted.
 
 ```ok file=interp.ok
 let files = ["a.txt", "b.txt"]
@@ -187,7 +187,7 @@ print("{user.name.upper()} is {user.age + 1} next year")
 ANA is 35 next year
 ```
 
-Add `:spec` after the expression to control width, alignment and number formatting. The spec language is a subset of Python's: an optional fill and alignment (`<`, `>`, `^`), a width, `,` for thousands separators, `.N` for precision, and a type (`d`, `f`, `e`, `x`, `X`, `o`, `b`, `%`).
+To control width, alignment and number formatting, add `:spec` after the expression. A format spec is a subset of Python's: an optional fill and alignment (`<`, `>`, `^`), a width, `,` for thousands separators, `.N` for precision, and a type (`d`, `f`, `e`, `x`, `X`, `o`, `b`, `%`).
 
 ```ok file=specs.ok
 let n = 1234567
@@ -205,13 +205,13 @@ build     12.5s
 test       3.4s
 ```
 
-Strings align left by default and numbers align right, which is what you want for tables. The `fmt(value, spec)` function applies the same specs outside a string: `fmt(42, "05")` is `"00042"`. A spec that does not fit the value is an error, not a guess; `{2.5:d}` fails because `d` needs an int. The full grammar is in [section 12.6 of the spec](../SPEC.md#126-format-specs).
+Strings align left by default and numbers align right, which suits tables. The `fmt(value, spec)` function applies the same format specs outside a string: `fmt(42, "05")` is `"00042"`. A format spec that does not fit the value is an error. For example, `{2.5:d}` fails because `d` needs an int. The full grammar is in [section 12.6 of the spec](../SPEC.md#126-format-specs).
 
 ## Booleans and the absence of truthiness
 
 `true` and `false` are combined with `and`, `or` and `not`. `and` and `or` stop as soon as the answer is known.
 
-ok has no truthiness: `if`, `while`, `and`, `or`, `not` and match guards all need an actual `bool`. An empty list, `0` or `""` is not false. This avoids a whole class of bugs where `0` or an empty string is mistaken for "missing". Write the test you mean:
+ok has no truthiness. `if`, `while`, `and`, `or`, `not` and match guards all need a `bool` (see [Control flow and patterns](control-flow.md) for `if`, `while` and `match`). An empty list, `0` or `""` does not count as `false`, so a script cannot mistake `0` or an empty string for a missing value. A condition of another kind is an error:
 
 ```ok file=truthy.ok
 let files = []
@@ -230,15 +230,15 @@ error[type]: `if` needs a bool, got a list
   = help: to test for an empty list use `if len(files) > 0` or `if files != []`
 ```
 
-`if files == []` or `if len(files) == 0` says what you mean. The symbols `!`, `&&` and `||` are not ok operators; the error for each one points you to `not`, `and` and `or`.
+Write the test you mean: `if files == []` or `if len(files) == 0`. The symbols `!`, `&&` and `||` are not ok operators. The error for each of them names the ok operator to use: `not`, `and` or `or`.
 
 ## null, ?? and ?
 
-`null` means "no value". Two operators make it easy to handle.
+`null` means "no value". The operator `??` replaces `null` with a default, and the operator `?` turns an error into `null`.
 
-`a ?? b` gives `a` unless it is `null`, and then `b`. Only `null` triggers the fallback: `0`, `false` and `""` are kept.
+`a ?? b` gives `a`, or `b` when `a` is `null`. Only `null` is replaced: `0`, `false` and `""` are kept.
 
-`expr?` turns an error into `null`. It applies to the whole chain of fields, indexes and calls to its left, so `user.email?` is `null` when the record has no `email` field, and `int(text)?` is `null` when `text` is not a number. Together they give a default for anything that might be missing or malformed:
+`expr?` is the catch operator. It turns an error into `null`, and it applies to the whole chain of fields, indexes and calls to its left. So `user.email?` is `null` when the record has no `email` field, and `int(text)?` is `null` when `text` is not a number. Together, `?` and `??` give a default for a value that may be missing or malformed:
 
 ```ok file=null.ok
 let user = {name: "ana"}
@@ -254,13 +254,13 @@ null no email
 0 false
 ```
 
-Without the `?`, a missing field is an error that shows you the fields that do exist. That is usually what you want while writing a script: use `?` only where a missing value is expected.
+Without the `?`, a missing field is an error whose help line lists the fields that the record has. That error is useful while you write a script, so add `?` only where a missing value is expected.
 
-There is no optional chaining like `a?.b` in other languages; ok reports it as a syntax error and suggests `a.b?` (catch the whole chain) or `(a?).b`. Mixing `??` with `and` or `or` needs parentheses, because readers disagree about how it groups. For catching errors with more control, see [Errors](errors.md).
+ok has no optional chaining. `a?.b` is a syntax error whose help line suggests `a.b?` (catch the whole chain) or `(a?).b`. An expression that mixes `??` with `and` or `or` needs parentheses, because readers disagree about how it groups. To catch an error and look at it, use `try` and `catch`. See [Errors](errors.md).
 
 ## Lists
 
-A list holds values of any kind, in order. Index from `0`; a negative index counts from the end. Reading past the end is an error (`xs[i]?` gives `null` instead). `+` joins two lists, and `...xs` spreads a list into a list literal.
+A list holds values of any kind, in order. The first element has index `0`, and a negative index counts from the end. Reading past the end is an error, and `xs[i]?` gives `null` instead. `+` joins two lists, `...xs` spreads a list into a list literal, and `in` tests whether a list contains a value.
 
 ```ok file=lists.ok
 let xs = [10, 20, 30]
@@ -277,7 +277,7 @@ true true
 null
 ```
 
-A `var` list can be changed by index or extended with `+=`. Lists are values, not references: copying a list into another variable and changing the copy leaves the original alone.
+You can change a `var` list by index and extend it with `+=`. A list is a value, so a change to a copy leaves the original as it was:
 
 ```ok file=copy.ok
 let original = [1, 2, 3]
@@ -305,11 +305,11 @@ print(first, rest)
 build ["--release", "--verbose"]
 ```
 
-Most work on lists happens in pipelines with `where`, `map`, `sort` and friends; see [Pipelines](pipelines.md).
+Most work on lists is done in pipelines, with functions such as `where`, `map` and `sort`. See [Pipelines](pipelines.md).
 
 ## Records
 
-A record maps string keys to values and remembers the order the keys were added. Read a field with `r.key`, or `r["key"]` when the key is not a plain name or is in a variable. Keys that are not identifiers are written as strings.
+A record maps string keys to values and keeps the keys in the order they were added. Read a field with `r.key`, or with `r["key"]` when the key is not a plain name or is in a variable. In a record literal, write a key that is not a plain name as a string. `in` tests for a key, and `len` counts the fields.
 
 ```ok file=records.ok
 let user = {name: "ana", age: 34, "e-mail": "ana@example.com"}
@@ -323,7 +323,7 @@ ana 34 ana@example.com
 true 3
 ```
 
-Two shorthands keep record literals short. `{name}` means `{name: name}`, and `...r` copies the fields of another record. When a key appears twice, the later one wins, which makes `...` the way to build an updated copy:
+A record literal has two shorthands. `{name}` means `{name: name}`, and `...r` copies the fields of the record `r`. When a key appears twice, the later value wins, so `{...r, key: value}` builds a copy of `r` with one field changed:
 
 ```ok file=update.ok
 let name = "bo"
@@ -353,9 +353,9 @@ print(before)
 {server: {port: 80}, tags: []}
 ```
 
-Reading a field that does not exist is an error that lists close matches. Add `?` to get `null` instead (see [null, ?? and ?](#null-and)).
+Reading a field that does not exist is an error. Its help line lists the record's fields or suggests a close match. Add `?` to get `null` instead (see [null, ?? and ?](#null-and)).
 
-A record pattern takes the fields you name out of a record; other fields are ignored, and patterns nest:
+A record pattern on the left of `let` takes the fields you name out of a record. Other fields are ignored, and a pattern can contain another pattern:
 
 ```ok file=destructure.ok
 let repo = {name: "ok", stars: 12, owner: {login: "xtr-dev", id: 1}}
@@ -369,7 +369,7 @@ ok xtr-dev
 
 ## Paths
 
-A `path` is a file-system path. Make one with `path("...")` and join parts with `/`. ok normalises paths without touching the disk: repeated separators collapse, `.` disappears and `a/..` cancels out. Paths always print with `/`, so a script prints the same on Windows as on Linux, and ok converts them to the native form when they reach a command or the file system.
+A `path` is a file-system path. Make one with `path("...")` and join parts with `/`. ok normalises paths without reading the file system: repeated separators collapse, `.` disappears and `a/..` cancels out. Paths always print with `/`, so a script prints the same on Windows as on Linux. ok converts a path to the native form when it reaches a command or the file system.
 
 ```ok file=paths.ok
 let src = path("src")
@@ -405,7 +405,7 @@ A path never equals a string, even with the same text: `path("a") == "a"` is `fa
 
 ## Durations
 
-A duration literal is a number followed by a unit: `ms`, `s`, `m`, `h` or `d` (24 hours). Units can be combined from largest to smallest, as in `1h30m`. Durations are what `sleep`, timeouts and retry delays take, so a script never has to guess whether `30` means seconds or milliseconds.
+A duration literal is a number followed by a unit: `ms`, `s`, `m`, `h` or `d` (24 hours). Units can be combined from largest to smallest, as in `1h30m`. `sleep`, timeouts and retry delays take a duration, so the unit is always written in the script.
 
 ```ok file=durations.ok
 print(250ms, 1.5s, 90s, 1h30m, 36h, -2m)
@@ -421,11 +421,11 @@ print(5s > 1s)
 true
 ```
 
-Durations add and subtract, scale by a number, and dividing one duration by another gives a float. `duration("1h30m")` parses the same syntax from a string. Adding a plain number to a duration is an error, because ok cannot know the unit you meant. A `time` (from `now()`, `time("2026-11-24")` or a file's modification time) minus another `time` is a duration; see [section 5.9 of the spec](../SPEC.md#59-durations-and-times).
+You can add and subtract durations, and multiply or divide a duration by a number. Dividing one duration by another gives a float. The properties `.seconds` and `.millis` give a duration as a number. `duration("1h30m")` parses the same syntax from a string. Adding a plain number to a duration is an error, because ok cannot know the unit you meant. A `time` (from `now()`, `time("2026-11-24")` or a file's modification time) minus another `time` is a duration. See [section 5.9 of the spec](../SPEC.md#59-durations-and-times).
 
 ## Operators
 
-From loosest to tightest binding:
+The table lists the operators from loosest to tightest binding:
 
 | Operators | Meaning |
 |---|---|
@@ -438,9 +438,9 @@ From loosest to tightest binding:
 | `-` (prefix) | negate |
 | `.field` `[index]` `(call)` `?` | postfix |
 
-So `not a == b` means `not (a == b)`, and `a + b * c` means `a + (b * c)`. When in doubt, add parentheses; `ok self fmt` keeps them.
+So `not a == b` means `not (a == b)`, and `a + b * c` means `a + (b * c)`. When in doubt, add parentheses. `ok self fmt` keeps them.
 
-`in` asks a different question depending on its right side: membership for a list, a key for a record, a substring for a string.
+`in` tests for an element of a list, a key of a record or a substring of a string:
 
 ```ok file=in.ok
 print(2 in [1, 2, 3], "port" in {port: 80}, "ell" in "hello", 4 not in [1, 2])
@@ -452,7 +452,7 @@ true true true true
 
 ## Equality and comparison
 
-`==` and `!=` compare structure: two lists are equal when their elements are equal in order, and two records are equal when they have the same keys and values in any order. Values of different kinds are never equal, with one exception: an int and a float compare as numbers.
+`==` and `!=` compare values by structure. Two lists are equal when their elements are equal in order, and two records are equal when they have the same keys and values, in any order. Values of different kinds are never equal, except that an int and a float compare as numbers.
 
 ```ok file=equal.ok
 print([1, "a"] == [1, "a"], {a: 1, b: 2} == {b: 2, a: 1})
@@ -464,13 +464,13 @@ true true
 true false false true
 ```
 
-`<`, `<=`, `>` and `>=` work between two numbers, two strings (by Unicode code point, so `"B" < "a"`), two durations, two times, two paths, two bools (`false < true`) and two lists (element by element). Comparing values of different kinds is an error rather than an arbitrary answer.
+`<`, `<=`, `>` and `>=` work between two numbers, two strings (by Unicode code point, so `"B" < "a"`), two durations, two times, two paths, two bools (`false < true`) and two lists (element by element). Any other pair, such as a number and a string, is an error.
 
 Comparisons do not chain. `1 < x < 10` is a syntax error that tells you to write `1 < x and x < 10`.
 
 ## Types and conversions
 
-`type(x)` returns the name of a value's kind as a string. The conversion functions `int`, `float` and `str` turn values into each other; `int` and `float` fail on text that is not a number, which combines well with `?` and `??`.
+`type(x)` returns the name of a value's kind as a string. The functions `int`, `float` and `str` convert a value to that kind. `int` and `float` fail on text that is not a number, so add `?` and `??` when the text may be malformed.
 
 ```ok file=types.ok
 print(type(1), type(1.0), type("s"), type([]), type({}), type(null))
@@ -486,4 +486,4 @@ path duration bool fn
 0
 ```
 
-ok has no type annotations on variables. Function parameters can declare types, and ok checks them at every call; see [Functions](functions.md#parameter-types).
+ok has no type annotations on variables. Function parameters can declare types, and ok checks them at every call. See [Functions](functions.md#parameter-types).

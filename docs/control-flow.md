@@ -1,12 +1,12 @@
 # Control flow and patterns
 
-Choosing and repeating: if and match as expressions, for and while loops, break and continue, and the patterns that take lists and records apart.
+Choose with `if` and `match`, repeat with `for` and `while`, and take lists and records apart with patterns.
 
-ok has a small set of control structures. `if` and `match` are expressions, so they produce a value you can bind with `let`. `for` and `while` are statements. Conditions must be real booleans: ok has no truthiness (see [Values and variables](basics.md#booleans-and-the-absence-of-truthiness)). The fine print is in [section 6](../SPEC.md#6-expressions) and [section 7.3](../SPEC.md#73-loops) of the spec.
+This page covers `if`, `match`, `for` and `while`. `if` and `match` are expressions, so they produce a value that you can bind with `let`. `for` and `while` are statements. A condition must be a `bool`, because ok has no truthiness (see [Values and variables](basics.md#booleans-and-the-absence-of-truthiness)). `try` and `catch` are covered in [Errors](errors.md). The exact rules are in [section 6](../SPEC.md#6-expressions) and [section 7.3](../SPEC.md#73-loops) of the spec.
 
 ## if and else
 
-`if` runs a block when its condition is `true`. Chain more conditions with `else if`, and end with `else` for everything else:
+`if` runs a block when its condition is `true`. Add more conditions with `else if`, and add `else` for the case where no condition is `true`:
 
 ```ok file=if.ok
 let free_gb = 3
@@ -27,7 +27,7 @@ The braces are always required, even for one statement, and the condition needs 
 
 ### if as an expression
 
-An `if` has a value: the value of the last expression in the branch that ran. That lets you bind the result directly instead of declaring a `var` and assigning it in each branch:
+The value of an `if` is the value of the last expression in the branch that ran, so you can bind the result with `let`:
 
 ```ok file=if-value.ok
 let n = 7
@@ -96,7 +96,7 @@ web listens on 8080
 db listens on 5432
 ```
 
-The loop variable can be a pattern, like the left side of `let`. This is handy for lists of records:
+The loop variable can be a pattern, as on the left side of `let`. A record pattern takes the fields out of each record in a list:
 
 ```ok file=for-pattern.ok
 let users = [{name: "ana", age: 34}, {name: "bo", age: 15}]
@@ -110,7 +110,7 @@ ana is 34
 bo is 15
 ```
 
-`range(n)` counts from `0` to `n - 1`; `range(start, end, step)` counts from `start` up to, but not including, `end`. Ranges are lazy, so `range(1_000_000)` costs nothing until the loop pulls the numbers.
+`range(n)` counts from `0` to `n - 1`. `range(start, end, step)` counts from `start` up to, but not including, `end`. A range is lazy: it produces each number when the loop asks for it, so `range(1_000_000)` does not build a list of a million numbers.
 
 ```ok file=range.ok
 for i in range(3) {
@@ -145,11 +145,11 @@ error[type]: cannot loop over a string directly
   = help: loop over s.chars() for characters or s.lines() for lines
 ```
 
-Many loops are clearer as a pipeline: `users | where .age >= 18 | map(.name)` says what it computes in one line. Use `for` when each step does something, such as printing, writing a file or running a command. See [Pipelines](pipelines.md).
+A loop that only filters or transforms a list is shorter as a pipeline, such as `users | where .age >= 18 | map(.name)`. Use `for` when each iteration does something, such as printing, writing a file or running a command. See [Pipelines](pipelines.md).
 
 ## while loops
 
-`while` repeats a block as long as its condition is `true`. It suits loops where you do not know the number of rounds in advance, such as waiting for something:
+`while` repeats a block as long as its condition is `true`. Use it when you do not know the number of iterations in advance:
 
 ```ok file=while.ok
 var size = 100
@@ -167,7 +167,7 @@ print("{rounds} rounds, size {size}")
 
 ## break and continue
 
-`break` leaves the innermost loop at once. `continue` skips the rest of the block and starts the next round. Both work in `for` and `while`.
+`break` leaves the innermost loop at once. `continue` skips the rest of the block and starts the next iteration. Both work in `for` and `while`.
 
 ```ok file=break.ok
 for n in range(1, 20) {
@@ -192,7 +192,7 @@ To leave several loops at once, put them in a function and use `return` (see [Fu
 
 ## match
 
-`match` compares a value against a list of patterns, top to bottom, and evaluates the first arm that fits. Like `if`, it is an expression:
+`match` compares a value with a list of patterns, from top to bottom, and evaluates the result of the first pattern that matches. Like `if`, it is an expression:
 
 ```ok file=match.ok
 for os in ["windows", "linux", "macos", "plan9"] {
@@ -212,7 +212,7 @@ ok
 unknown system plan9
 ```
 
-Each arm is `pattern => result`. The result is an expression, or a block when it needs several statements; the block's last expression is the arm's value. Arms are separated by newlines, or by commas when you write a short `match` on one line.
+Each `pattern => result` line is an arm. The result is an expression, or a block when it needs several statements. The value of a block is its last expression. Arms are separated by newlines, or by commas when you write a short `match` on one line.
 
 ```ok file=match-block.ok
 let retries = 3
@@ -235,10 +235,10 @@ some
 
 ### Simple patterns
 
-- A **literal**, such as `0`, `-1.5`, `"linux"`, `true` or `null`, matches a value equal to it with `==`. Ints and floats compare as numbers, so `1` matches `1.0`.
+- A literal, such as `0`, `-1.5`, `"linux"`, `true` or `null`, matches a value equal to it with `==`. Ints and floats compare as numbers, so `1` matches `1.0`.
 - `_` matches anything and binds nothing. Use it as the last arm for "everything else".
-- A **name** matches anything and binds the value to that name, so the arm can use it. `other => ...` above is such an arm.
-- **Alternatives** `a | b | c` match when any of them does.
+- A name matches anything and binds the value to that name, so the arm can use it. `other => ...` above is such an arm.
+- Alternatives `a | b | c` match when any of them does.
 
 ### Guards
 
@@ -260,11 +260,11 @@ print(grade(100), grade(85), grade(60), grade(10))
 perfect good pass fail
 ```
 
-As everywhere in ok, a guard must be a `bool`. Any expression that gives one works, including a single name: `_ if verbose => "details"`.
+A guard must be a `bool`, like every condition in ok. Any expression that gives a `bool` works, including a single name: `_ if verbose => "details"`.
 
 ### When nothing matches
 
-`match` does not force you to cover every value. If no arm matches, that is an error that shows the value, so a case you did not expect never slips through silently:
+ok does not check that the arms of a `match` cover every value. When no arm matches, ok raises an error that shows the value:
 
 ```ok file=no-match.ok
 let code = 5
@@ -284,7 +284,7 @@ error[value]: no match arm matches 5
   = help: add a `_ => ...` arm for all other values
 ```
 
-When an unknown value is a mistake in the input, a final arm that calls `fail` gives a clearer message: `other => fail("unsupported platform: {other}")`.
+When an unknown value is a mistake in the input, a final arm that calls `fail` gives a clearer message: `other => fail("unsupported platform: {other}")`. `fail` is described in [Errors](errors.md#raising-your-own-errors).
 
 ## List patterns
 
@@ -292,7 +292,7 @@ A list pattern looks like a list literal and matches lists by shape:
 
 - `[]` matches only the empty list.
 - `[a, b]` matches a list of exactly two elements and binds them.
-- `[first, ...rest]` matches a list with at least one element; `rest` gets the remaining elements as a list. `..._` ignores them.
+- `[first, ...rest]` matches a list with at least one element, and `rest` gets the remaining elements as a list. `..._` ignores them.
 
 Elements of a list pattern are patterns themselves, so they can be literals, nested lists or records:
 
@@ -321,7 +321,7 @@ starts with 1, then 3 more
 not a list: text
 ```
 
-A list pattern simply does not match a value that is not a list; that is not an error. This is the difference from `let [a, b] = xs`, which fails when `xs` has the wrong shape: `match` tests, `let` insists.
+A list pattern does not match a value that is not a list, and that is not an error: `match` goes on to the next arm. `let [a, b] = xs` is different. It raises an error when `xs` is not a list of two elements.
 
 ## Record patterns
 
@@ -354,9 +354,9 @@ other status
 not a response
 ```
 
-Notice the third call: the status is 301, but the headers have no `location`, so the second arm does not match and the search goes on. Keys that are not plain names are written as strings, as in a record literal: `{"content-type": ct}`.
+In the third call the status is 301, but the headers have no `location`. The second arm therefore does not match, and `match` goes on to the next arms. Keys that are not plain names are written as strings, as in a record literal: `{"content-type": ct}`.
 
-Patterns nest as deeply as the data does:
+A pattern can nest to any depth:
 
 ```ok file=nested-patterns.ok
 let accounts = [
@@ -393,7 +393,7 @@ print(got, first)
 9 outer
 ```
 
-A name may appear only once in a pattern, and every alternative of a `|` must bind the same names, so the result can rely on them. Both mistakes are caught before the script runs:
+A name may appear only once in a pattern, and every alternative of a `|` must bind the same names, so the result can rely on them. Both mistakes are syntax errors, which ok reports before the script runs:
 
 ```ok nocheck
 let label = match pair {

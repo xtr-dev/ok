@@ -1,8 +1,8 @@
 # Functions
 
-Declaring functions with typed parameters, defaults and named flags, writing closures and implicit closures, and how calls fit into pipelines.
+Declare functions with typed parameters, defaults and flags, write closures and implicit closures, and call functions in pipelines.
 
-Functions in ok are values: you can store them in variables, put them in records and pass them to other functions. Most of the time you pass them to list functions such as `where`, `map` and `sort`, and ok has two short forms for exactly that: arrow closures (`x => x * 2`) and implicit closures (`.name`). The rules are in [section 5.10](../SPEC.md#510-functions), [section 6.8](../SPEC.md#68-closures), [section 6.9](../SPEC.md#69-implicit-closures-field) and [section 7.2](../SPEC.md#72-function-parameters) of the spec.
+Functions in ok are values. You can store a function in a variable, put it in a record and pass it to another function. Most often you pass a function to a list function such as `where`, `map` or `sort`, and ok has two short forms for that: arrow closures (`x => x * 2`) and implicit closures (`.name`). The exact rules are in [section 5.10](../SPEC.md#510-functions), [section 6.8](../SPEC.md#68-closures), [section 6.9](../SPEC.md#69-implicit-closures-field) and [section 7.2](../SPEC.md#72-function-parameters) of the spec.
 
 ## Declaring a function
 
@@ -23,9 +23,9 @@ print(human_size(1536))
 1.5 KiB
 ```
 
-The comment lines directly above a `fn` are its doc comment. They describe the function to readers, and for `main` and for tasks they also become the `--help` text (see [Script arguments](script-cli.md)).
+The comment lines directly above a `fn` are its doc comment. A doc comment describes the function to readers. For `main` and for tasks it also becomes the `--help` text (see [Command-line scripts](script-cli.md)).
 
-A function can be used before the line that declares it. Declarations are hoisted: at the top level a function is visible in the whole file, and inside a block in the whole block. This lets you put the main flow of a script first and the helpers below it.
+You can call a function before the line that declares it. A function declared at the top level is visible in the whole file, and a function declared inside a block is visible in the whole block. A script can therefore start with its main steps and declare the helpers below them.
 
 ```ok file=hoisting.ok
 print(greet("Ana"))
@@ -85,7 +85,7 @@ print(banner("ok", 10))
 
 ### Named flags
 
-A parameter written with `--` is a flag. Callers must pass it by name, as `name: value`, after the positional arguments. Use flags for options: a call such as `copy(src, dest, overwrite: true)` says what `true` means, where `copy(src, dest, true)` would not.
+A parameter written with `--` is a flag. Callers must pass a flag by name, as `name: value`, after the positional arguments. Use flags for options: the call `glob("*", hidden: true)` says what `true` means, and `glob("*", true)` would not.
 
 ```ok file=flags.ok
 fn greet(name: string, --greeting: string = "Hello", --loud: bool) {
@@ -101,7 +101,7 @@ Hello, Ana
 Hi, Bo!
 ```
 
-A `bool` flag without a default is `false`, a `T?` flag is `null` and a `list[T]` flag is `[]`, so these are optional without writing a default. A flag with dashes, `--dry-run`, is the name `dry_run` inside the body and at the call: `deploy("prod", dry_run: true)`.
+The `: string` and `: bool` after the names are types, described in [Parameter types](#parameter-types). A `bool` flag without a default is `false`, a `T?` flag is `null` and a `list[T]` flag is `[]`, so these flags are optional without a written default. A flag with dashes, `--dry-run`, is the name `dry_run` inside the body and at the call: `deploy("prod", dry_run: true)`.
 
 Positional parameters cannot be passed by name, and a misspelt name is caught with a suggestion:
 
@@ -122,7 +122,7 @@ error[arg]: `greet` has no parameter `lound`
   = help: did you mean `loud`?
 ```
 
-Flags matter most for `main` and for tasks: there, each flag becomes a command-line option `--name value`. See [Script arguments](script-cli.md) and [Tasks](tasks.md).
+For `main` and for tasks, each flag becomes a command-line option `--name value`. See [Command-line scripts](script-cli.md) and [Tasks](tasks.md).
 
 ### Rest parameters and spreading
 
@@ -146,7 +146,7 @@ print(total(1), total(1, 2, 3), total(...more))
 
 ## Parameter types
 
-A parameter can declare a type after a colon. ok checks it at every call, and a wrong argument is an error at the call site that names the parameter, which is much easier to fix than a failure deep inside the function:
+A parameter can declare a type after a colon. ok checks the type at every call. An argument of the wrong type is an error that points at the call and names the parameter:
 
 ```ok file=types.ok
 fn backup(file: path, --keep: int = 3) {
@@ -212,11 +212,11 @@ print(index_of(["a", "b", "c"], "b"), index_of(["a"], "z"))
 1 null
 ```
 
-`return` at the top level of a script is an error; use `exit(code)` to end a script early.
+`return` at the top level of a script is an error. To end a script early, use `exit(code)`.
 
 ## Recursion
 
-A function may call itself. Calls nest at most 2000 deep; going deeper is an error that points at the repeating call, not a crash:
+A function may call itself:
 
 ```ok file=recursion.ok
 fn fib(n) {
@@ -229,11 +229,13 @@ print(fib(15))
 610
 ```
 
-For deep structures such as a directory tree, prefer the library functions that already walk them, like `glob("**/*.txt")`, over hand-written recursion.
+Calls nest at most 2000 deep. Deeper recursion is an error that points at the repeating call.
+
+To walk a deep structure such as a directory tree, use a function that already does it, such as `glob("**/*.txt")`.
 
 ## Closures
 
-`fn(parameters) { body }` without a name is an anonymous function. For a function whose body is a single expression, the arrow form is shorter: `x => x * 2`, or `(a, b) => a + b` for several parameters, or `() => ...` for none.
+A closure is a function written as an expression, without a name. `fn(parameters) { body }` is a closure with a block as its body. The arrow form is shorter and has a single expression as its body: `x => x * 2`, `(a, b) => a + b` for several parameters, or `() => ...` for none.
 
 ```ok file=closures.ok
 let add = (a, b) => a + b
@@ -278,7 +280,7 @@ An arrow's body extends over operators but stops at `|`. So in `xs | map x => x 
 
 ## Implicit closures with .field
 
-Most closures in scripts look up a field or call a method on their argument: `u => u.name`, `line => line.contains("ERROR")`. ok lets you leave out the parameter. A `.` followed by a name, where a value is expected, refers to a field, property or method of an implicit argument, and the surrounding expression becomes a one-parameter function:
+An implicit closure is a closure without a written parameter: `.name` means `u => u.name`. A `.` followed by a name, where a value is expected, refers to a field, property or method of an implicit argument, and the surrounding expression becomes a function of one parameter. Most closures in scripts look up a field or call a method on their argument, as in `u => u.name` and `line => line.contains("ERROR")`, so the implicit form fits most of them:
 
 ```ok file=implicit.ok
 let users = [
@@ -300,9 +302,9 @@ print(by_name(users[0]))
 ana
 ```
 
-The spec calls the implicit argument `it`, so `.age >= 18 and .active` means `it => it.age >= 18 and it.active`. `it` is only a way to explain the rule, not a name you can write in code; when you need the argument itself rather than one of its fields, use an arrow such as `x => x > 2`.
+The spec calls the implicit argument `it`, so `.age >= 18 and .active` means `it => it.age >= 18 and it.active`. `it` only explains the rule. It is not a name you can write in a script. When you need the argument itself and not one of its fields, write an arrow such as `x => x > 2`.
 
-How far does the closure reach? It covers the whole expression up to the nearest argument boundary: a call argument, a pipeline-stage argument, a list element, a record value, the right side of `let`, `var` or an assignment, or an arrow or `fn` body. That is why `.age >= 18 and .active` is one closure and not two. Inside the arguments of a call within an implicit closure, a new `.x` starts a new closure:
+An implicit closure covers the whole expression up to the nearest argument boundary: a call argument, a pipeline-stage argument, a list element, a record value, the right side of `let`, `var` or an assignment, or an arrow or `fn` body. That is why `.age >= 18 and .active` is one closure and not two. Inside the arguments of a call within an implicit closure, a new `.x` starts a new closure:
 
 ```ok file=nested-implicit.ok
 let teams = [
@@ -316,7 +318,7 @@ print(teams | map(.members | where .active | map(.name)))
 [["ana"], ["cy"]]
 ```
 
-The outer `.members` belongs to the closure passed to the first `map`; `.active` and `.name` start their own closures for `where` and the inner `map`.
+The outer `.members` belongs to the closure passed to the first `map`. `.active` and `.name` start their own closures for `where` and for the inner `map`.
 
 ## Method calls
 
@@ -335,11 +337,11 @@ HI! HI!
 ["c", "b", "a"]
 ```
 
-If `x` is a record with a field `name` that holds a function, that function is called instead, which lets you group functions in a record or a module. `x.name` without parentheses is always a field or property, never a call.
+If `x` is a record with a field `name` that holds a function, that function is called instead. This is how you call a function that is stored in a record or imported under a namespace (see [Modules](modules.md#importing-under-a-name)). `x.name` without parentheses is always a field or property, never a call.
 
 ## Calls in pipelines
 
-A pipeline passes the value on its left as the first argument of the call on its right: `a | f(x)` means `f(a, x)`, and `a | f` means `f(a)`. Because every list function takes the list first, your own functions work in pipelines in the same way, as long as they take their main input first:
+A pipeline passes the value on its left as the first argument of the call on its right: `a | f(x)` means `f(a, x)`, and `a | f` means `f(a)`. Every list function takes the list first. Your own functions work in pipelines too when they take their main input as the first parameter:
 
 ```ok file=pipeline-calls.ok
 fn scale(xs, factor) {
@@ -354,4 +356,4 @@ print([1, 2, 3] | scale 10)
 [10, 20, 30]
 ```
 
-The second line is a juxtaposed stage: inside a pipeline, a name followed by one argument, `scale 10`, means `scale(10)`. Pipeline stages, laziness and the other stage forms are covered in [Pipelines](pipelines.md).
+The second line uses a juxtaposed call: inside a pipeline, a name followed by one argument, `scale 10`, means `scale(10)`. Laziness and the other forms of a stage are covered in [Pipelines](pipelines.md).
