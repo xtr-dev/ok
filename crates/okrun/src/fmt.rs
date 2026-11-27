@@ -1204,6 +1204,8 @@ mod tests {
         let out = fmt("run  4      \\");
         assert_eq!(out, fmt(&out));
         assert_eq!(fmt("run a \\"), fmt("run a \\\n"));
+        assert_eq!(fmt("run a b\\"), fmt("run a b\\\n"));
+        assert_eq!(fmt("_ + run . y\\"), fmt("_ + run . y\\\n"));
     }
 
     #[test]

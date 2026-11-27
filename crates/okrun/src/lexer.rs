@@ -1504,9 +1504,12 @@ impl<'a> Lexer<'a> {
             match c {
                 b' ' | b'\t' | b'\n' | b'|' | b'>' | b'<' | b')' | b'}' => break,
                 b'\r' => break,
+                // A line continuation ends the word, also at the end of
+                // the file (see `line_continuation`).
                 b'\\'
                     if self.src[self.pos + 1..].starts_with('\n')
-                        || self.src[self.pos + 1..].starts_with("\r\n") =>
+                        || self.src[self.pos + 1..].starts_with("\r\n")
+                        || self.pos + 1 == self.src.len() =>
                 {
                     break;
                 }
