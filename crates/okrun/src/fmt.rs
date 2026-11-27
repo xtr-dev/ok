@@ -787,6 +787,12 @@ impl<'a> Formatter<'a> {
         if matches!(ta, Tok::Minus) && matches!(tb, Tok::Command(_) | Tok::RunFn { .. }) {
             return keep;
         }
+        // A keyword after `.` is a field name (`s.or[0]`, `x.and(1)`), not
+        // the operator, so its spacing stays as written: `s.or [0]` would
+        // parse differently.
+        if matches!(ta, Tok::Kw(_)) && a > 0 && matches!(self.toks[a - 1].tok, Tok::Dot) {
+            return keep;
+        }
         if matches!(tb, Tok::Comma) {
             return false;
         }
@@ -1214,6 +1220,19 @@ mod tests {
         assert_eq!(fmt("run a \\"), fmt("run a \\\n"));
         assert_eq!(fmt("run a b\\"), fmt("run a b\\\n"));
         assert_eq!(fmt("_ + run . y\\"), fmt("_ + run . y\\\n"));
+    }
+
+    #[test]
+    fn keyword_field_names_keep_their_spacing() {
+        // Found by fuzzing: `s.or[0]` became `s.or [0]`, spaced like the
+        // operator `or`, which parses differently.
+        for src in [
+            "print(s.or[0])\n",
+            "print(x.and(1))\n",
+            "let y = x.or + 1\n",
+        ] {
+            assert_eq!(fmt(src), src);
+        }
     }
 
     #[test]
