@@ -1,12 +1,12 @@
 # Coming from bash and make
 
-How common bash idioms and Makefile patterns look in ok, and the differences that matter: no shell, no quoting, no globbing, loud errors and tasks.
+This page shows how common bash idioms and Makefile patterns are written in ok, and where ok behaves differently. ok runs commands without a shell, so there is no quoting and no globbing in a command. Errors stop the script, and tasks take the place of make targets. The page assumes that you know bash or make. To learn ok from the start, read [Your first script](first-script.md).
 
-## The big difference: there is no shell
+## ok runs commands without a shell
 
-In bash, a command line is a string that the shell takes apart: it splits words on spaces, expands `$VAR`, `*.txt` and `~`, and interprets `&&`, `;` and `|`. Most of bash's pitfalls come from that step: a file name with a space becomes two arguments, an empty variable disappears, a `*` that matches nothing is passed on literally.
+In bash, a command line is a string that the shell takes apart. The shell splits the string into words on spaces, expands `$VAR`, `*.txt` and `~`, and interprets `&&`, `;` and `|`. Most of the common bash mistakes come from that step. A file name with a space becomes two arguments, an empty variable disappears, and a `*` that matches nothing is passed on literally.
 
-ok never runs a shell, on any OS. `run` starts the program directly with a list of arguments, and you can see exactly what that list is: every word you write is one argument, and every `{expression}` is exactly one argument, whatever it contains. There is nothing to quote for safety.
+ok never runs a shell, on any OS. `run` starts the program directly with a list of arguments. Every word that you write is one argument, and every `{expression}` is exactly one argument, whatever it contains. You never need quotes to keep an argument together.
 
 ```ok file=commit.ok
 let msg = "fix the build"
@@ -17,7 +17,7 @@ run git commit -m {msg}
 run echo *.txt $HOME ~
 ```
 
-`--dry-run` prints each command instead of running it, with quotes around arguments that contain spaces or special characters, so you can see the arguments the program would get:
+To see the arguments that each program would get, run the script with `--dry-run`. ok then prints each command and does not run it. It puts quotes around an argument that contains spaces or special characters:
 
 ```output run="ok --dry-run commit.ok" browser=no
 ~ git add -- src/main.rs "my notes.txt"
@@ -25,15 +25,15 @@ run echo *.txt $HOME ~
 ~ echo "*.txt" "$HOME" ~
 ```
 
-- `{msg}` is one argument even though it contains spaces. In bash you would need `"$msg"`.
-- `{...files}` spreads a list into one argument per element, so `my notes.txt` stays one file name. This is what bash arrays and `"${files[@]}"` are for.
-- `*.txt`, `$HOME` and `~` are passed through literally. Use `glob("*.txt")`, `env.HOME` or `home` when you mean them.
+- `{msg}` is one argument although it contains spaces. In bash you need `"$msg"` for that.
+- `{...files}` spreads a list into one argument per element, so `my notes.txt` stays one file name. In bash you need an array and `"${files[@]}"` for that.
+- `*.txt`, `$HOME` and `~` are passed on literally. Write `glob("*.txt")`, `env.HOME` or `home` when you mean the files, the variable or the home directory.
 
-Because there is no shell, the same script runs on Windows without Git Bash, WSL or Cygwin. Programs are looked up on `PATH` (and with `PATHEXT` on Windows, so `run npm ci` finds `npm.cmd`). [Running commands](commands.md) covers capturing output, pipes between programs, redirects, timeouts and the rest.
+Because ok uses no shell, the same script runs on Windows without Git Bash, WSL or Cygwin. ok looks up a program on `PATH`. On Windows it also tries the extensions in `PATHEXT`, so `run npm ci` finds `npm.cmd`. [Running commands](commands.md) covers what this page only touches: captured output, pipes between programs, redirects and options such as `timeout`.
 
-## Shell habits ok catches
+## Shell syntax that ok rejects
 
-When you write shell syntax in a command, ok refuses to start and tells you what to write instead. These are syntax errors, so nothing in the script has run yet:
+When a command contains shell syntax, ok does not start the script and tells you what to write instead. These are syntax errors, so no line of the script has run when you see them. `&&` between two commands:
 
 ```ok file=build.ok nocheck
 run make && make test
@@ -49,6 +49,8 @@ error[syntax]: `&&` is not allowed in a command
   = help: ok commands are not shell: put the next command on its own `run` line (a failure already stops the script)
 ```
 
+An environment assignment in front of a command:
+
 ```ok file=build.ok nocheck
 run FOO=1 make
 ```
@@ -62,6 +64,8 @@ error[syntax]: `FOO=1` looks like a shell environment assignment
   |
   = help: set environment variables with options: run cmd with {env: {FOO: "..."}}
 ```
+
+A command substitution:
 
 ```ok file=build.ok nocheck
 let today = run echo $(date)
@@ -77,15 +81,16 @@ error[syntax]: `$(...)` is shell syntax
   = help: capture the output first: let x = (run cmd).out, then use {x}
 ```
 
-The same goes for `;`, `||`, `&` and backticks. Outside commands, ok also points out habits from other languages, such as `&&` instead of `and`, `!x` instead of `not x` and `elif` instead of `else if`.
+ok rejects `;`, `||`, `&` and backticks in a command in the same way. Outside commands, ok also recognises syntax from other languages and names the ok form: `and` for `&&`, `not x` for `!x` and `else if` for `elif`.
 
 ## Errors stop the script
 
-A bash script carries on after a failed command unless you remember `set -euo pipefail`, and even then some failures slip through (a failure inside `$(...)` in a `local` declaration, for example). In ok, failing is the default:
+A bash script continues after a failed command unless you remember `set -euo pipefail`. Even then bash ignores some failures, for example a failure inside `$(...)` in a `local` declaration. In ok, a failure stops the script unless you say otherwise:
 
 - A command that exits with a nonzero code stops the script. The error shows the command, its exit code and the last lines of its stderr, and ok exits with the command's own exit code.
-- A missing file, a missing record field, an unset environment variable or a value of the wrong type is an error too, never an empty string.
-- `run!` runs a command without failing on a nonzero exit code, for commands whose exit code is an answer (like `grep -q` or `git diff --quiet`). The result record has `.ok` and `.code`.
+- A missing file, a missing record field, an unset environment variable or a value of the wrong type is an error too. None of them becomes an empty string.
+
+For a command whose exit code is an answer, such as `grep -q` or `git diff --quiet`, use `run!`. It does not fail on a nonzero exit code, and its result record has the fields `.ok` and `.code`:
 
 ```ok
 let r = run! git diff --quiet
@@ -94,7 +99,7 @@ if not r.ok {
 }
 ```
 
-An unset variable shows how this differs from bash, where `$NOPE` quietly becomes an empty string:
+In bash, an unset variable such as `$TARGET` becomes an empty string. In ok, it is an error that names the variable:
 
 ```ok file=env.ok
 print("deploying to {env.TARGET}")
@@ -110,13 +115,15 @@ error[key]: the environment variable TARGET is not set
   = help: give a default with env.get("TARGET", "..."), or test it with env.has("TARGET")
 ```
 
+With the variable set, the script runs:
+
 ```output run="TARGET=staging ok env.ok"
 deploying to staging
 ```
 
-The exit codes follow the usual conventions: 0 for success, 1 for an error in the script, 2 for wrong command-line usage, 127 for a program that is not found, and the program's own code when a command fails. [Errors](errors.md) explains `?`, `??` and `try` for the cases where you do want to carry on.
+ok has no truthiness either. `if` needs a `bool`, so an empty string or a zero is never taken for "false". `if count` is an error that suggests `count > 0`, and `if files` suggests `files != []`.
 
-There is no truthiness either: `if` needs a `bool`. `if count` is an error that suggests `count > 0`, and `if files` suggests `files != []`, so an empty string or a zero can never be taken for "false" by accident.
+The exit codes follow the usual conventions. ok exits with 0 for success, 1 for an error in the script, 2 for wrong command-line usage, 127 for a program that is not found, and the program's own code when a command fails. [Errors](errors.md) explains `?`, `??` and `try`, for the places where a script should continue after an error.
 
 ## Bash idioms in ok
 
@@ -127,7 +134,7 @@ There is no truthiness either: `if` needs a `bool`. `if count` is an error that 
 | `name="world"` | `let name = "world"` (or `var` if you reassign it) |
 | `echo "hello $name"` | `print("hello {name}")` |
 | `echo "oops" >&2` | `eprint("oops")` |
-| `$1`, `${1:-default}` | `fn main(name: string = "default")`, see [below](#arguments-and-help) |
+| `$1`, `${1:-default}` | `fn main(name: string = "default")`, see [Arguments and help](#arguments-and-help) |
 | `"$@"` | a rest parameter: `fn main(...files: path)` |
 | `$#` | `len(args)` in a script without `main` |
 | `$HOME`, `${PORT:-8080}` | `env.HOME`, `env.get("PORT", "8080")` |
@@ -139,7 +146,7 @@ There is no truthiness either: `if` needs a `bool`. `if count` is an error that 
 | `uname -s` | `os.name` (`"linux"`, `"macos"`, `"windows"`) |
 | `command -v docker` | `which("docker")` (a path, or `null`) |
 
-Arithmetic needs no special syntax, but note that `/` on two integers gives a float: `7 / 2` is `3.5`. Use `floor(7 / 2)` for `3`.
+Arithmetic needs no special syntax. Unlike `$(( 7 / 2 ))`, `/` on two integers gives a float, so `7 / 2` is `3.5`. Use `floor(7 / 2)` for `3`.
 
 ### Running programs
 
@@ -158,9 +165,9 @@ Arithmetic needs no special syntax, but note that `/` on two integers gives a fl
 | `cmd >/dev/null 2>&1` | `run cmd with {quiet: true}` |
 | `set -x` | `ok --trace script.ok` |
 
-`cd` in a bash script changes the directory for everything after it, which is easy to lose track of. ok has no `cd`: each command that needs another directory says so with `cwd`.
+`cd` in a bash script changes the directory for every command after it. ok has no `cd`. Each command that needs another directory names the directory with `cwd`.
 
-Output is captured or shown depending on where the `run` stands. A `run` on its own line shows the program's output live; a `run` whose value you use (in a `let`, as an argument, in `{...}`) captures it into `.out` and `.err`, with trailing newlines removed as `$(...)` does.
+Where a `run` stands decides whether its output is shown or captured. A `run` on its own line shows the program's output while the program runs. A `run` whose value you use (in a `let`, as an argument, in `{...}`) captures the output in `.out` and `.err`, and removes trailing newlines as `$(...)` does.
 
 ### Files and directories
 
@@ -183,7 +190,7 @@ Output is captured or shown depending on where the `run` stands. A `run` on its 
 | `tar czf out.tar.gz dir` | `tar("dir", "out.tar.gz")` |
 | `curl -fsSL "$url"` | `fetch(url).body` |
 
-A pattern in `glob` that matches nothing gives an empty list, never the pattern itself. Matching is case-sensitive and the results are sorted the same way on every OS.
+A `glob` pattern that matches nothing gives an empty list, where bash passes on the pattern itself. Matching is case-sensitive, and the results are sorted the same way on every OS. This script uses several of the file functions:
 
 ```ok file=files.ok
 mkdir("build/assets")
@@ -203,11 +210,13 @@ true false
 true
 ```
 
-Paths print with `/` on every OS, including Windows. The `\{` and `\}` in the CSS text are escapes: in a double-quoted string, `{` starts an interpolation. Single-quoted strings have no escapes and no interpolation, which suits regular expressions and Windows paths. The file functions are printed by `--trace` and skipped by `--dry-run`, like commands. [Files and paths](files.md) has the full set.
+Paths print with `/` on every OS, including Windows. Like commands, the file functions are printed by `--trace` and skipped by `--dry-run`. [Files and paths](files.md) describes all of them.
+
+The `\{` and `\}` in the CSS text are escapes, because `{` starts an interpolation in a double-quoted string. A single-quoted string has no escapes and no interpolation, which suits regular expressions and Windows paths.
 
 ### Text processing
 
-The `grep`, `cut`, `sort`, `uniq` and `wc` pipelines of a shell script become pipelines of functions. They work on lines and records instead of bytes, and large files are streamed rather than read into memory.
+The `grep`, `cut`, `sort`, `uniq` and `wc` pipelines of a shell script become pipelines of functions in ok. The functions work on lines and records, where the shell tools work on bytes. A large file is streamed through the pipeline and is not read into memory as a whole. In this script, the comment above each pipeline is the shell command that it replaces:
 
 ```text file=access.log
 GET /index.html 200
@@ -254,6 +263,8 @@ GET /missing 404
 /ABOUT
 ```
 
+The table lists more text idioms:
+
 | bash | ok |
 |---|---|
 | `grep ERROR app.log` | `read("app.log") \| lines \| where .contains("ERROR")` |
@@ -271,11 +282,11 @@ GET /missing 404
 | `sleep 5` | `sleep(5s)` |
 | `date +%Y-%m-%d` | `now().format("%Y-%m-%d")` |
 
-Regular expressions use the syntax of Rust's `regex` crate, which is close to what `grep -E` and Perl accept, but without backreferences.
+Regular expressions use the syntax of Rust's `regex` crate. It is close to what `grep -E` and Perl accept, but it has no backreferences.
 
-## .env files
+## `.env` files are data
 
-Many projects keep settings in a `.env` file and load it with `source .env` or `set -a`. Sourcing runs the file as shell code, which is why a value with a space or a `$` behaves strangely. In ok, `.env` is a data format: `read(".env")` gives a record of strings and runs nothing.
+In ok, `.env` is a data format. `read(".env")` gives a record of strings and runs nothing. Many bash projects load a `.env` file with `source .env` or `set -a`, which runs the file as shell code, so a value with a space or a `$` in it changes meaning.
 
 ```text file=.env
 # local settings
@@ -297,11 +308,13 @@ hello world
 ${HOME}/cache
 ```
 
-The leading `export` is accepted so existing files work, quotes are removed, comments are ignored, and `${HOME}` stays as written: there is no variable expansion. In a project, `env file ".env"` in the root file loads the file into the environment of every task, as shown below. Variables that are already set in your environment win over the file, so `PORT=9000 ok serve` still works.
+ok accepts the leading `export`, so existing files work. It removes the quotes and ignores the comments. It does not expand variables, so `${HOME}` stays as written.
+
+In a project, `env file ".env"` in the root file loads the file into the environment of every task, as [From make to tasks](#from-make-to-tasks) shows. A variable that is already set in your environment wins over the file, so `PORT=9000 ok serve` still works.
 
 ## Arguments and help
 
-A bash script parses its arguments with `$1`, `shift` and `getopts`, and its `--help` is a hand-written `usage()` function that drifts out of date. In ok, `fn main` declares them:
+In ok, the parameters of `fn main` declare a script's arguments, and ok checks the arguments and writes `--help` from them. A bash script parses its arguments with `$1`, `shift` and `getopts`, and its `--help` is a hand-written `usage()` function that someone must keep up to date.
 
 ```ok file=greet.ok
 # Greet someone.
@@ -319,17 +332,19 @@ fn main(
 HELLO, ANNA
 ```
 
+Without the required argument, ok prints an error and the usage line, and `main` does not run:
+
 ```output run="ok greet.ok" exit=2
 error: missing argument <name>
 usage: ok greet.ok <name> [--greeting <value>] [--shout]
 run with --help for details
 ```
 
-`ok greet.ok --help` prints the description, the usage line and every parameter with its comment and default. A quick script that just wants its raw arguments can leave out `main` and use `args`, a list of strings, like `"$@"`. [Command-line scripts](script-cli.md) covers types, choices, short flags and rest parameters.
+`ok greet.ok --help` prints the description, the usage line and every parameter with its comment and default. A script that needs only its raw arguments can leave out `main` and use `args`, a list of strings like `"$@"`. [Command-line scripts](script-cli.md) covers types, choices, short flags and rest parameters.
 
 ## From make to tasks
 
-A Makefile is usually less about building files than about naming the project's commands: `make test`, `make deploy`. ok's tasks are made for that. They live in `.ok/ok.ok` (or a single `.ok` file) at the root of the project and are written in the same language as scripts:
+Most Makefiles name a project's commands, such as `make test` and `make deploy`, more than they build files. ok's tasks do that job. You declare tasks in the project's root file, which is `.ok/ok.ok` or a single file named `.ok` in the project root, and you write them in the same language as scripts. This project has three tasks:
 
 ```text file=VERSION
 1.4.0
@@ -359,11 +374,15 @@ task dist needs [build(release: true)] {
 }
 ```
 
+`ok dist` runs `gen` and `build` first, because `dist` needs `build` and `build` needs `gen`:
+
 ```output run="ok dist"
 generated build/version.txt
 building (release: true) on port 8080
 packaging
 ```
+
+ok checks a task's arguments as it checks a script's:
 
 ```output run="ok build --relase" exit=2
 error: unknown flag --relase
@@ -372,7 +391,9 @@ usage: ok build [--release]
 run with --help for details
 ```
 
-Running `ok` on its own in the project lists the tasks with the first line of their comments, which replaces the `help` target many Makefiles grow. Run `ok dist` a second time and `gen` prints `gen: up to date` instead of running, because its output is newer than its source.
+`ok` without arguments lists the project's tasks with the first line of their comments, so the project needs no hand-written `help` target. When you run `ok dist` a second time, `gen` does not run and prints `gen: up to date`, because its output is newer than its source.
+
+The table maps make to ok:
 
 | make | ok |
 |---|---|
@@ -391,13 +412,15 @@ Running `ok` on its own in the project lists the tasks with the first line of th
 | `@echo` to hide the command | nothing: commands are not echoed; `ok --trace` shows them |
 | `$(shell git rev-parse HEAD)` | `(run git rev-parse HEAD).out` inside the task |
 
-The differences that matter:
+### How tasks differ from make targets
 
-- **Tasks are not files.** A make target is a file name, and a target whose file exists does nothing, which is why `.PHONY` exists. A task is a name. It is skipped only when it declares `outputs` and they are newer than its `sources`.
-- **One recipe, one process.** Every line of a make recipe runs in its own shell, so `cd` and variables do not carry over to the next line. A task body is ordinary code: variables, loops, functions and error handling work as in a script.
-- **Parameters, not variables.** Task parameters are declared like `main`'s, are checked, and appear in `ok build --help`. Dependencies can pass arguments: `needs [build(release: true)]`.
-- **Project files run nothing when they load.** The top level of a project file holds only tasks, functions, constant `let`s and imports, so listing tasks, printing help and completing names never run project code. Compute values inside the task that needs them.
-- **Tasks run in the project root**, wherever in the project you type `ok`. Relative path arguments are resolved against the directory you typed them in.
-- **Trust.** The first time you run a task in a project you have not approved, ok shows you the project's files and asks. In CI, set `OK_TRUST=1`. See [Trust](trust.md).
+- A task is a name, not a file. A make target is a file name, and a target whose file exists does nothing, which is why make has `.PHONY`. ok skips a task only when the task declares `outputs` and they are newer than its `sources`.
+- A task body is one piece of ordinary code. Every line of a make recipe runs in its own shell, so `cd` and variables do not carry over to the next line. In a task body, variables, loops, functions and error handling work as they do in a script.
+- A task takes parameters where make takes variables. You declare task parameters as you declare the parameters of `main`. ok checks them and lists them in `ok build --help`. A dependency can pass arguments, as in `needs [build(release: true)]`.
+- Loading a project file runs nothing. The top level of a project file holds only tasks, functions, constant `let`s and imports, so ok can list tasks, print help and complete names without running project code. Compute a value inside the task that needs it, where a Makefile would use `$(shell ...)` at the top.
+- A task runs in the project root, wherever in the project you type `ok`. A relative path that you pass as an argument is resolved against the directory where you typed it.
+- ok asks before it runs a project's tasks for the first time. It shows you the project's files and asks whether you trust them. In CI, set `OK_TRUST=1`. See [Trust](trust.md).
 
-[Tasks](tasks.md) covers namespaces (`ok db migrate`), mounted sub-projects, `confirm`, hidden tasks and parallel runs. The [docker-image](../examples/docker-image/), [codegen-build](../examples/codegen-build/) and [monorepo](../examples/monorepo/) examples are real Makefiles next to their ok versions, and [log-summary](../examples/log-summary/), [pre-commit](../examples/pre-commit/) and [tidy-names](../examples/tidy-names/) do the same for bash scripts.
+[Tasks](tasks.md) covers namespaces (`ok db migrate`), mounted sub-projects, `confirm`, hidden tasks and parallel runs.
+
+The [docker-image](../examples/docker-image/), [codegen-build](../examples/codegen-build/) and [monorepo](../examples/monorepo/) examples are real Makefiles next to their ok versions. The [log-summary](../examples/log-summary/), [pre-commit](../examples/pre-commit/) and [tidy-names](../examples/tidy-names/) examples are bash scripts next to theirs.
