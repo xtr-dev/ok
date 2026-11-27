@@ -294,10 +294,10 @@ Options:
 <section>
   <div class="wrap">
     <h2>A task runner that needs nothing installed</h2>
-    <p class="sub">Tasks live in <code>ok.ok</code>. <code>ok self init</code> adds small <code>./ok</code> and <code>ok.cmd</code> wrappers that fetch the pinned, checksum-verified ok on first use, so contributors and CI just run <code>./ok build</code>.</p>
+    <p class="sub">Tasks live in <code>.ok/ok.ok</code>, out of the way of your other tools. <code>ok self init --wrappers</code> adds small <code>./ok</code> and <code>ok.cmd</code> wrappers that fetch the pinned, checksum-verified ok on first use, so contributors and CI just run <code>./ok build</code>.</p>
     <div class="split">
       <figure>
-        <figcaption>ok.ok</figcaption>
+        <figcaption>.ok/ok.ok</figcaption>
 <pre><span class="k">let</span> image = <span class="s">"ghcr.io/example/api"</span>
 
 <span class="c"># Build the container image</span>

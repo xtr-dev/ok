@@ -88,7 +88,8 @@ fuzz/                   cargo-fuzz targets: lex, parse, fmt (formatter and
                         not change their output), data (every format,
                         gzip), archive (unzip/untar must stay inside the
                         destination)
-ok.ok                   the repo's own tasks (dogfooding)
+ok.ok                   the repo's own tasks (dogfooding; the `ok.ok` root file
+                        form, kept on purpose, so the repo has no `.ok/`)
 site/                   landing page, playground (playground.js, playground-worker.js)
                         and install.sh / install.ps1, published to
                         https://okrun.dev/ by pages.yml (after the install
@@ -149,12 +150,12 @@ from `lazy::cursor`.
 | `net.rs` | `fetch` (ureq + rustls + platform verifier) |
 | `archive.rs` | `zip`/`unzip`/`tar`/`untar` with zip-slip checks |
 | `sig.rs` | command-line parsing and `--help` from a signature (scripts and tasks) |
-| `project.rs` | project loading, namespaces, mounts, `needs`, running tasks, listing, completions |
+| `project.rs` | root file forms (`ok.ok`, `.ok`, `.ok/ok.ok`) and discovery, project loading, namespaces (`.ok/`, deprecated `ok/`), mounts, `needs`, running tasks, listing, completions |
 | `jobs.rs` | dependency plan (task instances with arguments), sequential and parallel runs, `--task-worker` processes |
 | `trust.rs` | fingerprints, trust store, prompt, diff, `ok trust`/`untrust` |
 | `fmt.rs` | `ok self fmt`: token layout guided by the syntax tree, line breaking, self-check of tree and comments |
 | `check.rs` | static checks of `ok self check`: scope model, unknown names, argument counts, lints |
-| `tools.rs` | `ok self check`, `fmt`, `init` and the bootstrap wrapper templates |
+| `tools.rs` | `ok self check`, `fmt`, `init`, `promote` and the bootstrap wrapper templates |
 | `cli.rs` | `ok` command line |
 
 Tests: unit tests next to the code; `tests/golden.rs` (cases in
@@ -164,7 +165,9 @@ files the cases write go to the ignored `tests/cases/out/`),
 `tests/cli.rs`, `tests/examples_parse.rs` (every example parses and is in
 canonical format), `tests/examples_run.rs` (examples with fake tools,
 expectations in `tests/examples/`), `tests/project.rs` (project mode and
-trust), `tests/bootstrap.rs` (`ok self init` and the `./ok` wrapper),
+trust, the root file forms, `ok/` deprecation, `ok self init` without
+wrappers, `ok self promote`), `tests/bootstrap.rs` (`ok self init
+--wrappers` and the `./ok` wrapper, Unix only),
 `tests/no_panic.rs` (lexing, parsing and sandboxed evaluation of mutated
 programs), `tests/processes.rs` (timeouts, process trees,
 interrupts and pipeline failures, which depend on timing),

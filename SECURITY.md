@@ -8,7 +8,7 @@ Say what an attacker controls (a script, a cloned project, a data file, an archi
 
 ## Supported versions
 
-Only the latest release gets security fixes. `ok self init` pins projects to a version, so update the pin after a security release.
+Only the latest release gets security fixes. `ok self init --wrappers` pins projects to a version, so update the pin after a security release.
 
 ## What ok defends against
 

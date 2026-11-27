@@ -4,7 +4,7 @@ Things that are deliberately **not** in v1. They are collected here instead of
 in the code. Each needs a spec change and review before it is built.
 
 - Content-hash mode for `sources`/`outputs` up-to-date checks.
-- Nested namespaces (`ok/db/seed.ok`) and reaching a mounted sub-project's
+- Nested namespaces (`.ok/db/seed.ok`) and reaching a mounted sub-project's
   namespaces.
 - Questions (`prompt`, `confirm()`) from tasks that run in parallel, asked
   one at a time through the parent ok instead of failing.

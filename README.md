@@ -19,7 +19,8 @@ fn main(input: path, --out: path = "active.json") {
 }
 ```
 
-Inside a project, `ok` is the task runner. Tasks live in `ok.ok`:
+Inside a project, `ok` is the task runner. Tasks live in `.ok/ok.ok` (or, for
+a small project, in a single file named `.ok`):
 
 ```
 # Build the app
@@ -78,9 +79,9 @@ ok-x86_64-pc-windows-msvc.exe     ok-aarch64-pc-windows-msvc.exe
 Download the one for your machine, check it against `SHA256SUMS`, rename it
 to `ok` (`ok.exe` on Windows) and put it on your PATH.
 
-**In a project, nobody needs to install anything.** Run `ok self init` once:
-it writes a starter `ok.ok` and the wrappers `./ok` (POSIX sh), `ok.cmd` and
-`ok.ps1`, which pin this version of ok and the checksum of every release
+**In a project, nobody needs to install anything.** Run
+`ok self init --wrappers` once: it writes a starter `.ok/ok.ok` and the
+wrappers `./ok` (POSIX sh), `ok.cmd` and `ok.ps1`, which pin this version of ok and the checksum of every release
 binary. A contributor or CI job then runs `./ok build` (or `ok.cmd build`);
 the wrapper downloads the right binary into the user cache once, refuses it
 if the checksum does not match, and runs it. `OK_DOWNLOAD_URL` points the
