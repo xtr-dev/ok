@@ -492,6 +492,16 @@ pub fn promote(args: &[String], start: &Path) -> R<Value> {
     // (from, to), relative to the root with `/`.
     let mut moves: Vec<(String, String)> = Vec::new();
     if root_rel == ".ok" {
+        // A link moved one directory down no longer points at its file
+        // when its target is relative, and the project would be gone.
+        if std::fs::symlink_metadata(&dot_dir).is_ok_and(|m| m.file_type().is_symlink()) {
+            return Err(OkError::new(
+                ErrKind::Io,
+                ".ok is a symbolic link; ok self promote only moves regular files",
+            )
+            .with_help("make .ok/ and put the file, or a link to it, at .ok/ok.ok by hand")
+            .into());
+        }
         moves.push((".ok".into(), ".ok/ok.ok".into()));
     }
     if old_used {

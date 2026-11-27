@@ -1576,6 +1576,25 @@ fn promote_moves_the_old_ok_directory() {
     );
 }
 
+/// A linked `.ok` with a relative target would dangle one directory
+/// down, and the project would be gone, so promote leaves it alone.
+#[cfg(unix)]
+#[test]
+fn promote_refuses_a_linked_dot_ok_file() {
+    let p = Proj::new("promote-link", &[("real/tasks.ok", HELLO)]);
+    std::os::unix::fs::symlink("real/tasks.ok", p.dir.join(".ok")).unwrap();
+    let o = p.run(&["self", "promote"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        err(&o).starts_with(
+            "error: .ok is a symbolic link; ok self promote only moves regular files\n"
+        ),
+        "{}",
+        err(&o)
+    );
+    assert!(p.dir.join(".ok").is_file(), "the link still works");
+}
+
 #[test]
 fn promote_refuses_before_moving_anything() {
     // A name that exists in both directories.
