@@ -2,7 +2,7 @@
 // under Node's WASI and checks that a script can read and write files, that
 // errors render, and that `run` explains it is unavailable. It also covers
 // the file functions whose std implementation differs on WASI: imports and
-// mounts (no canonicalize), `touch`, temporary files (no system temp
+// mounts (no canonicalize), the project layouts and `ok self promote`, `touch`, temporary files (no system temp
 // directory), `tar` (no tar header metadata) and `os.exe`.
 //
 //   node tests/wasm/smoke.mjs target/wasm32-wasip1/release/ok.wasm
@@ -50,6 +50,15 @@ if (process.env.OK_WASM_CHILD) {
     'import "web/ok.ok" as web\n\n# Build everything\ntask build needs [web.bundle] {\n  print("server built")\n}\n',
   );
   await writeFile(join(dir, "proj", "web", "ok.ok"), '# Bundle the frontend\ntask bundle {\n  print("bundle written")\n}\n');
+  // The .ok/ layout: a root file and a namespace in .ok/, a mount from
+  // there; and a single .ok file that `ok self promote` moves into .ok/.
+  await mkdir(join(dir, "dotproj", ".ok"), { recursive: true });
+  await mkdir(join(dir, "dotproj", "web"));
+  await writeFile(join(dir, "dotproj", ".ok", "ok.ok"), 'import "../web/ok.ok" as web\n\ntask build needs [web.bundle, db.migrate] {\n  print("built")\n}\n');
+  await writeFile(join(dir, "dotproj", ".ok", "db.ok"), 'task migrate {\n  print("migrated")\n}\n');
+  await writeFile(join(dir, "dotproj", "web", "ok.ok"), 'task bundle {\n  print("bundled")\n}\n');
+  await mkdir(join(dir, "single"));
+  await writeFile(join(dir, "single", ".ok"), 'task hello {\n  print("hello")\n}\n');
   await writeFile(
     join(dir, "files.ok"),
     [
@@ -84,6 +93,10 @@ if (process.env.OK_WASM_CHILD) {
     ["import", ok("imports.ok"), (r) => r.code === 0 && r.out === "hello wasi\n"],
     ["missing import", ok("-e", 'import "./nope.ok"'), (r) => r.code === 1 && r.err.includes('cannot import "./nope.ok": no such file')],
     ["mount", ok("-C", "proj", "--yes", "build"), (r) => r.code === 0 && r.out === "bundle written\nserver built\n"],
+    ["the .ok/ layout", ok("-C", "dotproj", "-j", "1", "build"), (r) => r.code === 0 && r.out === "bundled\nmigrated\nbuilt\n"],
+    ["a single .ok file", ok("-C", "single", "hello"), (r) => r.code === 0 && r.out === "hello\n"],
+    ["ok self promote", ok("-C", "single", "self", "promote"), (r) => r.code === 0 && r.out.startsWith("moved .ok to .ok/ok.ok\n")],
+    ["after promote", ok("-C", "single", "hello"), (r) => r.code === 0 && r.out === "hello\n"],
     [
       "touch, temp files, tar",
       ok("files.ok"),
