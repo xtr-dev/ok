@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-28
+
+A bug fix for `zip`, and a revision of the guide, the specification's wording and the comments in the source. No script or project needs changes.
+
 ### Fixed
 
 - `zip` packs a directory that contains a symbolic link to a directory. Before, it failed with "cannot write out.zip: Is a directory". `zip` stores what a link points to, which is the content of a file or a directory with its entries. A link to a directory that contains the link is an `io` error that names the link. `tar` stores links as links, as before.
@@ -15,6 +19,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Documentation
 
 - The guide and the comments in the source were revised for accuracy and plain wording. About a dozen statements in the guide that did not match ok's behaviour are corrected, and every standard library entry has the same layout.
+- `SPEC.md` 9.7 said that a command that times out raises a `command` error. It raises a `timeout` error, as 9.6 and 10.2 say and as ok does. The rest of the specification is reworded in places without a change of meaning.
+- The README opens with a runnable example and lists what ok does not do. `CONTRIBUTING.md` no longer says that CI is switched off.
 
 ## [0.4.0] - 2026-11-27
 

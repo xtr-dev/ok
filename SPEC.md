@@ -1,6 +1,6 @@
 # The ok language specification
 
-Version: 0.4.0 (2026-11-27).
+Version: 0.4.1 (2026-11-28).
 
 This document is normative. When the implementation and this document
 disagree, one of them is a bug. `SPEC.md` is changed first, in the same

@@ -4,7 +4,7 @@ members = ["crates/okrun", "crates/ok-fixture", "crates/okdocs"]
 exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 rust-version = "1.100"
 license = "MIT OR Apache-2.0"

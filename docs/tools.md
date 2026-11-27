@@ -236,7 +236,7 @@ With `--wrappers`, `ok self init` also writes the three [`./ok` wrappers](#the-o
 
 ```text
 $ ok self init --wrappers
-wrote .ok/ok.ok, ./ok, ok.cmd and ok.ps1 (pinned to ok 0.4.0)
+wrote .ok/ok.ok, ./ok, ok.cmd and ok.ps1 (pinned to ok 0.4.1)
 run ./ok hello (or ok.cmd hello on Windows)
 ```
 
@@ -314,7 +314,7 @@ The wrappers are the only shell code that ok produces, and they are short, so yo
 | `ok self tasks` | Prints the task listing, like `ok` with no arguments. `--all` includes [hidden tasks](tasks.md#hidden-tasks). |
 | `ok self completions SHELL` | Prints a completion script for `bash`, `zsh`, `fish` or `powershell` (see [Tasks](tasks.md#shell-completions)). |
 | `ok self complete -- WORDS...` | Prints the completion candidates for the last word. The completion scripts call it. |
-| `ok self version` | Prints the version, such as `ok 0.4.0`. `ok --version` does the same. |
+| `ok self version` | Prints the version, such as `ok 0.4.1`. `ok --version` does the same. |
 
 `ok self --help` prints the list of all `ok self` commands.
 

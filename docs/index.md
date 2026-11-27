@@ -42,7 +42,7 @@ To check the installation, print the version:
 ok --version
 ```
 
-This prints `ok` and a version number, for example `ok 0.4.0`. A shell alias or another program can also be called `ok`, because the name is short. If the command prints something else, `which ok` shows which program runs.
+This prints `ok` and a version number, for example `ok 0.4.1`. A shell alias or another program can also be called `ok`, because the name is short. If the command prints something else, `which ok` shows which program runs.
 
 A project that uses ok can include wrapper scripts (`./ok`, `ok.cmd`, `ok.ps1`), which `ok self init --wrappers` adds. On first use, a wrapper downloads the version of ok that the project pins and checks the download against a pinned checksum. It then runs ok with your arguments, so you can run that project's tasks without installing ok. See [The `./ok` wrappers](tools.md#the-ok-wrappers).
 
