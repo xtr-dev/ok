@@ -481,7 +481,6 @@ impl Interp {
                     Some(String::new()),
                     Some(String::new()),
                     Duration::ZERO,
-                    false,
                 ),
             });
         }
@@ -818,7 +817,7 @@ impl Interp {
         if code != 0 && !p.bang {
             return Err(failure(&p, code, None).into());
         }
-        Ok(result_record(&p.argv, code, None, None, elapsed, false))
+        Ok(result_record(&p.argv, code, None, None, elapsed))
     }
 
     fn spawn_captured(&mut self, mut p: Prepared, mode: Mode) -> R<Value> {
@@ -896,10 +895,10 @@ impl Interp {
             return Err(failure(&p, code, tail).into());
         }
         if p.opts.quiet && mode == Mode::Live {
-            return Ok(result_record(&p.argv, code, None, None, elapsed, false));
+            return Ok(result_record(&p.argv, code, None, None, elapsed));
         }
         if p.opts.bytes {
-            let mut r = result_record(&p.argv, code, None, None, elapsed, false);
+            let mut r = result_record(&p.argv, code, None, None, elapsed);
             if let Value::Record(rec) = &mut r {
                 let rec = Rc::make_mut(rec);
                 rec.insert("out", Value::Bytes(out.into()));
@@ -926,7 +925,6 @@ impl Interp {
             Some(strip_trailing_newlines(&out)),
             Some(strip_trailing_newlines(&err)),
             elapsed,
-            false,
         ))
     }
 
@@ -1095,7 +1093,6 @@ fn result_record(
     out: Option<String>,
     err: Option<String>,
     elapsed: Duration,
-    _: bool,
 ) -> Value {
     let mut r = Record::new();
     r.insert("out", out.map(Value::str).unwrap_or(Value::Null));

@@ -1658,9 +1658,9 @@ impl Interp {
                 };
                 self.call_value(&f, a, e.span, Some(e))
             }
-            Stage::Run(e) => {
-                Err(OkError::unimplemented(e.span, "piping into commands (`run`)", "M3").into())
-            }
+            // The one caller, `eval` of a pipe, hands a command stage to
+            // `eval_run` before it evaluates the left side.
+            Stage::Run(_) => unreachable!("a command stage is run by eval_run"),
         }
     }
 

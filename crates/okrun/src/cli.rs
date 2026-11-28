@@ -67,7 +67,6 @@ Usage:
 
 /// Global options (SPEC.md 2.2).
 #[derive(Default)]
-#[allow(dead_code)]
 struct Opts {
     dir: Option<String>,
     eval: Option<String>,

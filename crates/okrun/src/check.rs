@@ -618,9 +618,9 @@ struct CallArgs<'a> {
 }
 
 impl<'a> CallArgs<'a> {
-    fn new(first: Option<&'a Expr>, implicit_first: bool, args: &'a [Arg]) -> CallArgs<'a> {
+    fn new(first: Option<&'a Expr>, args: &'a [Arg]) -> CallArgs<'a> {
         let mut pos: Vec<&Expr> = first.into_iter().collect();
-        let mut count = Some(pos.len() + usize::from(implicit_first));
+        let mut count = Some(pos.len());
         let mut named = Vec::new();
         for a in args {
             match a {
@@ -880,7 +880,7 @@ impl Checker<'_> {
                 if let ExprKind::Ident(name) = &callee.kind
                     && let Found::Sym(sym) = self.lookup(name)
                 {
-                    let a = CallArgs::new(None, false, args);
+                    let a = CallArgs::new(None, args);
                     self.check_call(&sym, &a, e.span);
                 }
             }
@@ -992,7 +992,7 @@ impl Checker<'_> {
                     _ => self.expr(callee),
                 }
                 self.args(args);
-                let a = CallArgs::new(Some(lhs), false, args);
+                let a = CallArgs::new(Some(lhs), args);
                 match &callee.kind {
                     ExprKind::Ident(name) => {
                         if let Found::Sym(sym) = self.lookup(name) {
@@ -1019,7 +1019,7 @@ impl Checker<'_> {
                     match m.exports.get(name) {
                         Some(sym) => {
                             let sym = sym.clone();
-                            let a = CallArgs::new(Some(lhs), false, args);
+                            let a = CallArgs::new(Some(lhs), args);
                             self.check_call(&sym, &a, recv.span);
                         }
                         None => self.missing_export(recv, &m, name, recv.span),
@@ -1069,14 +1069,12 @@ impl Checker<'_> {
         if let Some(m) = self.module_of(recv) {
             if let Some(sym) = m.exports.get(name) {
                 let sym = sym.clone();
-                self.check_call(&sym, &CallArgs::new(None, false, args), span);
+                self.check_call(&sym, &CallArgs::new(None, args), span);
                 return;
             }
             // Not exported: called as `name(module, args)`, like any value.
             match self.lookup(name) {
-                Found::Sym(sym) => {
-                    self.check_call(&sym, &CallArgs::new(Some(recv), false, args), span)
-                }
+                Found::Sym(sym) => self.check_call(&sym, &CallArgs::new(Some(recv), args), span),
                 Found::Missing => self.missing_export(recv, &m, name, name_span),
             }
             return;
@@ -1091,7 +1089,7 @@ impl Checker<'_> {
         if self.may_have_fn_field(recv, name) {
             return;
         }
-        let a = CallArgs::new(Some(recv), false, args);
+        let a = CallArgs::new(Some(recv), args);
         match self.lookup(name) {
             Found::Sym(sym) => self.check_call(&sym, &a, span),
             Found::Missing => {
@@ -1155,7 +1153,7 @@ impl Checker<'_> {
             );
             return;
         };
-        let a = CallArgs::new(None, false, args);
+        let a = CallArgs::new(None, args);
         let fname = format!("env.{name}");
         if let Some((n, s)) = a.named.first() {
             self.report(OkError::at(

@@ -27,9 +27,6 @@ pub enum ErrKind {
     Net,
     Fail,
     Trust,
-    /// A feature that SPEC.md specifies and ok does not implement. Scripts
-    /// cannot catch it as a kind of its own: its name is `value`.
-    Unimplemented,
 }
 
 impl ErrKind {
@@ -38,7 +35,7 @@ impl ErrKind {
             ErrKind::Syntax => "syntax",
             ErrKind::Name => "name",
             ErrKind::Type => "type",
-            ErrKind::Value | ErrKind::Unimplemented => "value",
+            ErrKind::Value => "value",
             ErrKind::Index => "index",
             ErrKind::Key => "key",
             ErrKind::Arg => "arg",
@@ -190,14 +187,6 @@ impl OkError {
             self.help = help;
         }
         self
-    }
-
-    pub fn unimplemented(span: Span, what: &str, milestone: &str) -> OkError {
-        OkError::at(
-            ErrKind::Unimplemented,
-            span,
-            format!("{what} is not implemented yet (milestone {milestone})"),
-        )
     }
 }
 
