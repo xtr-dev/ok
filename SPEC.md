@@ -117,7 +117,7 @@ error: unknown flag --trace for task `build`
 | Code | Meaning |
 |---|---|
 | 0 | Success. |
-| 1 | Runtime error, syntax error, load error, refused trust or confirmation. |
+| 1 | Runtime error, syntax error, load-time error, refused trust or confirmation. |
 | 2 | Bad command-line usage: unknown task, unknown flag, missing or malformed argument. |
 | N | An uncaught failure of a child command exits with the child's exit code N. |
 | 124 | An uncaught command timeout. |
@@ -259,8 +259,9 @@ before them is kept and the indentation before them is removed. Dedenting
 applies to the literal's source text; interpolated values are inserted
 afterwards unchanged. A triple-quoted string ends at the first `"""` after
 its opening quotes, so an interpolation inside it must close before that
-point. An interpolation that runs past it is a syntax error. Build such an
-inner string in a `let` first.
+point. An interpolation that runs past it is a syntax error. To interpolate
+an expression that contains `"""`, bind its value with `let` first and
+interpolate the name.
 
 ```
 let msg = """
@@ -440,8 +441,9 @@ run_expr    = ( "run" | "run!" ) command           (* 9.2 *)
 
 `expr_nostruct` is `expr` in which a `{` at the outermost level starts the
 following block instead of a record literal. Wrap a record literal in
-parentheses to use it there: `if x == ({a: 1}) { ... }`. In a `match` arm and
-after `=>` of an arm, `{` starts a block.
+parentheses to use it there: `if x == ({a: 1}) { ... }`. After the `=>` of a
+`match` arm, `{` starts a block. Before the `=>`, `{` starts a record
+pattern (6.6).
 
 A call's `(` must follow the callee with no whitespace: `f(x)` is a call,
 `f (x)` is not (and in a pipeline stage it is a juxtaposed argument).
@@ -474,7 +476,7 @@ stack.
 
 `type(x)` returns the kind name as a string.
 
-`time` is not in the original value list of the brief; it is added because
+`time` exists because
 `stat().modified`, `now()` and backup rotation need instants that subtract to
 durations. See DECISIONS.md, 2026-11-24.
 
@@ -539,9 +541,11 @@ never a wrap. `float` is IEEE 754 binary64.
 | mixed `int` and `float` | `float` |
 | division or `%` by zero | error, for ints and floats |
 
-An operation that would produce NaN or infinity is an error. Integer division
-is `floor(a / b)`, `ceil`, `round` (halves round away from zero: `round(2.5)
-== 3`, `round(-2.5) == -3`), or `int(x)` (truncation toward zero).
+An operation that would produce NaN or infinity is an error. `/` always
+gives a float, and there is no integer division operator. Turn the quotient
+into an int with `floor(a / b)`, `ceil(a / b)`, `round(a / b)` (halves round
+away from zero: `round(2.5) == 3`, `round(-2.5) == -3`) or `int(a / b)`
+(truncation toward zero).
 
 ### 5.6 Strings
 
@@ -829,8 +833,8 @@ Ctrl-C ends ok without running `finally` blocks (2.3, code 130).
 ### 6.8 Closures
 
 `fn(x, y) { ... }` is an anonymous function with a block body. `x => expr`
-and `(x, y) => expr` are single-expression closures; the body extends over
-`??` level and below but not over `|`, so
+and `(x, y) => expr` are single-expression closures. The body takes every
+operator except `|` (it is a `coalesce` of 4.4), so
 
 ```
 xs | map(x => x * 2) | sum
@@ -936,8 +940,8 @@ The right side of `|` (a **stage**) is one of:
    belongs to the surrounding call or list, so `print(xs | count, ys |
    count)` passes two values to `print`. A stage that needs more arguments
    uses parentheses: `| sort(.size, desc: true)`. Juxtaposition is allowed
-   only in pipeline stages, and its argument cannot begin with an operator
-   other than `.`, `not` or `-` followed directly by a digit. Examples: `|
+   only in pipeline stages. Its argument cannot begin with an operator,
+   except `.`, `not`, and a `-` that is followed directly by a digit. Examples: `|
    take 5`, `| sort .name`, `| join ", "`, `| where not .done`.
 4. **A command** `run ...`: the left value becomes the command's stdin
    (9.5).
@@ -954,8 +958,8 @@ error: a pipeline stage must be a call
 
 ### 8.3 Laziness
 
-`read` of a line-oriented or row-oriented format, `lines`, `range`,
-`stdin()` and the stdout of a piped command produce **lazy** values (13.2).
+`read` of a line-oriented or row-oriented format, `range`, `stdin()` and
+the stdout of a piped command produce **lazy** values (13.2).
 The stages `where`, `map`, `take`, `skip`, `uniq`, `flat`, `enumerate` and
 `lines` stream: given a lazy list they return one. `each`, `count`, `sum`,
 `min`, `max`, `first`, `last`, `any`, `all`, `join` and `write` consume a
@@ -1270,7 +1274,7 @@ script, not a guaranteed preview of every branch.
 
 Every error shows the kind, message, location and a source snippet with the
 span underlined, followed by optional notes, a call trace and a help line.
-Errors without a source location (command-line and some load errors) show
+Errors without a source location (command-line and some load-time errors) show
 only `error: message` and their notes and help. Trust errors (16) show
 `error[trust]: message`, so a refusal to run is recognisable.
 
@@ -1514,15 +1518,15 @@ running code is in), `invocation_dir` (where the user ran `ok`).
 | `os.arch` | `string` | `"x86_64"`, `"aarch64"`, ... |
 | `os.exe` | `string` | `".exe"` on Windows, `""` elsewhere |
 | `which(cmd: string)` | `path?` | Same search as 9.3. |
-| `args` | `list[string]` | Script arguments when there is no `main`. |
+| `args` | `list[string]` | The script's arguments as written on the command line, also when the script has `main` (7.4). Empty in a task. |
 
 Environment variable names are case-insensitive on Windows and
 case-sensitive elsewhere. `env.set` and `env.remove` refuse, with a `value`
 error, a name that is empty or contains `=` or NUL (the operating system
 stores a variable as `NAME=value`, so such a name would set a different
-variable). In the same way, `env.set` refuses a value containing NUL. An
-argument containing NUL is a `command` error, since no program can receive
-it. `get`, `has`, `set`, `remove` and `all` are methods of `env`; read a
+variable). In the same way, `env.set` refuses a value containing NUL. A
+command argument (9.2) containing NUL is a `command` error, since no
+program can receive it. `get`, `has`, `set`, `remove` and `all` are methods of `env`; read a
 variable with such a name through `env.get("get")`.
 
 ### 12.4 Text
@@ -1621,7 +1625,7 @@ exactly in decimal, so every float formats as digits, never as `inf%`.
 | `print(...xs)` | Display forms joined by spaces, then `\n`, to stdout. If stdout has been closed (output piped into a program that stopped reading), the script ends quietly with exit code 0. |
 | `eprint(...xs)` | The same to stderr. |
 | `fail(msg)` | Raise a `fail` error (10.2). |
-| `exit(code: int = 0)` | Exit after cleanup (temp files). |
+| `exit(code: int = 0)` | Exit after cleanup (temporary files). |
 | `prompt(msg: string, --default: string? = null)` | Read a line from the terminal. Without a terminal: the default, or an error if there is none. |
 | `confirm(msg: string, --default: bool = false)` | Ask yes/no. With `--yes`: `true`. Without a terminal and without `--yes`: an error. |
 
@@ -1930,9 +1934,12 @@ written after the long name and a comma: `--verbose, -v: bool`,
   parameter, a short form that is not a single letter, the same letter twice
   in one signature, a short form for a `bool` flag whose default is `true`
   (such a switch is only turned off, with `--no-name`), and the letters `h`,
-  `C` and `e`, which are ok's own options (2.2). `-h` always prints help,
-  and `-C`/`-e` are kept free so that a short option means the same before
-  and after the task name.
+  `C` and `e`, which are ok's own options (2.2). `-h` always prints help.
+  `-C` and `-e` are kept free so that a signature cannot give them a second
+  meaning. `-j` is also one of ok's options and is not reserved: before the
+  script or task name it is ok's, and after the name it belongs to the
+  signature.
+
 ### 14.2 Help
 
 `--help` (and `-h`) prints:
@@ -2061,9 +2068,9 @@ directory. Files in subdirectories of `.ok/` are only reachable through
 `trust`, `untrust` or `self`, or the name of a root task.
 
 **Deprecated:** earlier versions kept namespaces in an `ok/` directory, whose
-name clashes with the `./ok` wrapper (18). For one release, the `*.ok` files
-directly in `ok/` are still loaded as namespaces under the same rules (and
-are project files for trust, 16.2), and ok prints a warning once per run
+name clashes with the `./ok` wrapper (18). Version 0.4 still loads the
+`*.ok` files directly in `ok/` as namespaces under the same rules (they
+are project files for trust, 16.2); a later version will not. ok prints a warning once per run
 that says to move `ok/` to `.ok/` (`ok self promote`, 17, does it). A
 directory whose `ok/` and `.ok/` both hold `*.ok` files (other than
 `.ok/ok.ok`) is a load-time error.
@@ -2249,9 +2256,10 @@ task gen sources ["schema/*.json"] outputs ["src/gen.rs"] { run codegen }
 relative to the project root. After a task's dependencies have run, the task
 is **skipped** when it declares `outputs`, every output pattern matches at
 least one existing file, and the oldest output is newer than the newest
-source. A skipped task prints `gen: up to date` to stderr. `--force` disables
+source. A task that declares `outputs` and no `sources` is skipped once its
+outputs exist. A skipped task prints `gen: up to date` to stderr. `--force` disables
 skipping for every task in the invocation. Comparison is by modification
-time; there is no content-hash mode in v1.
+time; there is no content-hash mode.
 
 ### 15.7 Modifiers and environment
 
@@ -2289,7 +2297,7 @@ file, so from `.ok/ok.ok` it is `import "../frontend/ok.ok" as fe`. The
 mounted file must be the sub-project's only root file (15.1). Mounted tasks
 run with the sub-project's directory as working directory, and their
 `sources` and `outputs` are relative to it. The sub-project's own namespaces
-are not reachable through the mount in v1 (use `ok -C frontend db migrate`),
+are not reachable through the mount (use `ok -C frontend db migrate`),
 and its `ok/` or `.ok/` directory is not read. A mount name must not clash
 with a namespace file.
 
@@ -2326,8 +2334,8 @@ Trust answers "did I agree to run this code?", not "is this code safe?".
 
 Running a task (including with `--dry-run`) needs trust. Listing tasks,
 `--help`, completions, `ok self check` and `ok self fmt` only parse files
-and need no trust. Standalone scripts run by explicit path are not subject to
-trust.
+and need no trust. Standalone scripts run by explicit path, and the source
+given to `-e`, are not subject to trust.
 
 ### 16.2 What is trusted
 
@@ -2443,7 +2451,7 @@ The only reserved first arguments are `trust`, `untrust` and `self`.
 | Command | Meaning |
 |---|---|
 | `ok self init [--wrappers [--checksums FILE]]` | Write a starter `.ok/ok.ok` (with `requires` set to this version's major.minor, such as `"0.4"`) in the current directory. With `--wrappers`, also write the wrappers `./ok`, `ok.cmd`, `ok.ps1` (18), for which the checksums of this version's release are downloaded from the release (`SHA256SUMS`), or read from `FILE`; without it, nothing is downloaded, and `--checksums` is a usage error. In a directory that already has a root file (15.1), `ok self init` is an error, and `ok self init --wrappers` writes only the wrappers, which is how an existing project gets them. Refuses to overwrite a file, and with `--wrappers` refuses next to an `ok/` directory, whose name `./ok` needs. |
-| `ok self promote` | Move the project to the `.ok/` layout (15.1), in the project root that discovery finds: a `.ok` root file moves to `.ok/ok.ok`, byte for byte, and the contents of a deprecated `ok/` directory (one that holds `*.ok` files) move into `.ok/`, after which the empty `ok/` is removed. It checks every move before making any and refuses, changing nothing, when a target exists, when `ok/ok.ok` would become a second root file, or when the `.ok` file, `ok/` or `.ok/` is a symbolic link; a failed move undoes the earlier ones. A root `ok.ok` stays where it is; when there is nothing to move, the error says which root file the project has, and for `.ok/ok.ok` it reports that there is nothing to promote and exits with 0. Since imports are relative to the importing file, it lists each import in the root file and the moved ok files whose path no longer points at the same file, with the path to write instead; it changes no file's content. Moved files have new paths, so the project needs trust again (16.2), which it says; it never carries trust over. |
+| `ok self promote` | Move the project to the `.ok/` layout (15.1), in the project root that discovery finds: a `.ok` root file moves to `.ok/ok.ok`, byte for byte, and the contents of a deprecated `ok/` directory (one that holds `*.ok` files) move into `.ok/`, after which the empty `ok/` is removed. It checks every move before making any and refuses, changing nothing, when a target exists, when `ok/ok.ok` would become a second root file, or when the `.ok` file, `ok/` or `.ok/` is a symbolic link; a failed move undoes the earlier ones. A root `ok.ok` stays where it is. When there is nothing to move, a project with a root `ok.ok` gets an error that names that file, and a project already at `.ok/ok.ok` gets the message that there is nothing to promote, with exit code 0. Since imports are relative to the importing file, it lists each import in the root file and the moved ok files whose path no longer points at the same file, with the path to write instead; it changes no file's content. Moved files have new paths, so the project needs trust again (16.2), which it says; it never carries trust over. |
 | `ok self completions SHELL` | Print a completion script for `zsh`, `bash`, `fish` or `powershell`. |
 | `ok self complete -- WORDS...` | Used by completion scripts; prints candidates. |
 | `ok self fmt [--check] [FILES...]` | Format ok files in the canonical layout (17.2). Default: the project files. `--check` lists files that would change and exits with 1. |
@@ -2537,8 +2545,8 @@ summary also counts its tasks (`ok: 2 files and 3 tasks checked, no problems
 found`). A load-time error of the project stops the check before any file is
 checked, since the files are only known once the project loads. The error is
 shown like a finding, followed by `ok: the project failed to load: 1 error`.
-The exit code is 1 when there is an error, 0 when there are only warnings,
-or 1 with `--strict`, and 2 for bad usage.
+The exit code is 1 when there is an error, 0 when there are only warnings
+or no findings, and 2 for bad usage. With `--strict`, warnings give 1 too.
 
 ```
 error[name]: unknown name `relase`
@@ -2662,7 +2670,7 @@ the project and stay short.
 
 `ok self init --wrappers` takes the checksums from `--checksums FILE` or downloads
 `SHA256SUMS` from the base URL, which must then be `https://`. Every entry
-used must be exactly 64 hex digits (normalised to lower case); anything else
+used must be exactly 64 hex digits (normalised to lowercase); anything else
 is an error and nothing is written.
 
 The wrappers are files in the repository that the shell or cmd.exe runs
@@ -2699,8 +2707,8 @@ not reviewed, run the installed `ok` instead of `./ok`.
 ## 20. Reserved for later versions
 
 - `task name allow [net, env "KEY"] { }` is reserved for a permission system.
-  ok v1 parses the `allow` modifier and rejects it: `error: task permissions
+  ok parses the `allow` modifier and rejects it: `error: task permissions
   (allow) are not implemented yet`.
-- Not in v1: a REPL beyond `ok -e`, a package manager, user-defined types,
+- Not part of ok: a REPL beyond `ok -e`, a package manager, user-defined types,
   async, sandboxing, content-hash up-to-date checks, nested
   namespaces. Ideas are collected in `IDEAS.md`.

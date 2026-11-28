@@ -12,6 +12,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `ok self check` warns about a `\` at the end of a command line that has spaces or tabs after it. Such a `\` does not continue the command: it is passed to the program as an argument, and the next line runs as a separate statement. Remove the spaces, or write `"\\"` to pass a backslash.
 
+### Documentation
+
+- `SPEC.md` no longer contradicts itself or ok in these places. `lines` is lazy only on lazy input (8.3). `args` is also set in a script with `main` (12.3). After the `=>` of a `match` arm `{` starts a block, and before it a record pattern (4.4). `-j` is not a reserved short flag (14.1). `ok self check --strict` exits with 1 only when there are findings (17.1). The source given to `-e` needs no trust (16.1). A task with `outputs` and no `sources` is skipped once its outputs exist (15.6).
+- `SPEC.md` no longer says "v1" or refers to the removed brief, and it names 0.4 as the version that still loads the deprecated `ok/` directory.
+
 ## [0.4.1] - 2026-11-28
 
 A bug fix for `zip`, and a revision of the guide, the specification's wording and the comments in the source. No script or project needs changes.

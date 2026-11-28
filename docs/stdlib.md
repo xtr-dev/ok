@@ -914,7 +914,7 @@ The names in this section are global values, not functions. `env` and `os` are r
 | `os.name` | `string` | `"linux"`, `"macos"`, `"windows"`, or another OS name in lower case. |
 | `os.arch` | `string` | The processor architecture, such as `"x86_64"` or `"aarch64"`. |
 | `os.exe` | `string` | `".exe"` on Windows, `""` elsewhere. |
-| `args` | `list[string]` | The script's arguments, when the script has no `main` function. |
+| `args` | `list[string]` | The script's arguments as written on the command line. It is set in a script with a `main` function too, and it is empty in a task. |
 | `cwd` | `path` | The working directory, which is the project root when a task runs. |
 | `invocation_dir` | `path` | The directory where you ran `ok`. |
 | `script_dir` | `path` | The directory of the file that the running code is in. |
