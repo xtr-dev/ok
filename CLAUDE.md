@@ -18,8 +18,10 @@ Its rules are kept below, and the language it described is now `SPEC.md`.
 - Milestones M0 to M10 are implemented. Released: `v0.1.0` (2026-11-25),
   `v0.2.0` (2026-11-26), `v0.3.0` (2026-11-26), `v0.4.0` (2026-11-27),
   `v0.4.1` (2026-11-28).
-- GitHub: public repo `xtr-dev/ok`. Publishing a release and publishing to
-  crates.io are done by hand by a project owner; never do either yourself.
+- GitHub: public repo `xtr-dev/ok`. Publishing a release is done by hand
+  by a project owner; never do it yourself. ok is not published to
+  crates.io and there is no plan to publish it there; never run
+  `cargo publish`.
   CI runs on every push to `main` and every pull request (Linux, macOS,
   Windows).
 - The release workflow (started by hand) builds the six binaries, runs

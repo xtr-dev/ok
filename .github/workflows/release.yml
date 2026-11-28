@@ -1,6 +1,6 @@
 # Builds static release binaries for the six supported targets when a tag
 # like v0.1.0 is pushed, and attaches them to a *draft* GitHub release.
-# Publishing the release (and crates.io) is done by hand by the project owner.
+# Publishing the release is done by hand by the project owner.
 name: Release
 
 # Runs only when started by hand. Started on a tag ref (`gh workflow run
