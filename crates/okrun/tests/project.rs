@@ -1576,6 +1576,31 @@ fn promote_moves_the_old_ok_directory() {
     );
 }
 
+/// Paths that are not imports are relative to the project root, so a
+/// glob or an argument that names `ok/` stops matching after the move.
+/// promote cannot know what such a string means, so it only lists them.
+#[test]
+fn promote_lists_strings_and_arguments_that_name_the_old_directory() {
+    let root = "task gen sources \"ok/**/*.sql\", \"book/x\" outputs \"out/ok.txt\" {\n  run tool --dir=ok/data .ok/x \"./ok/{name}\" > ok/log.txt\n  print(\"see https://example.com/ok/doc\")\n}\n";
+    let p = Proj::new(
+        "promote-mentions",
+        &[
+            ("ok.ok", root),
+            (
+                "ok/db.ok",
+                "task m {\n  print(read(\"ok/data/seed.sql\"))\n}\n",
+            ),
+            ("ok/data/seed.sql", "select 1;\n"),
+        ],
+    );
+    let o = p.run(&["self", "promote"]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert_eq!(
+        out(&o),
+        "moved ok/data to .ok/data\nmoved ok/db.ok to .ok/db.ok\nthese still name ok/, which is now .ok/ (check each one):\n  ok.ok:1: \"ok/**/*.sql\"\n  ok.ok:2: --dir=ok/data\n  ok.ok:2: \"./ok/{name}\"\n  ok.ok:2: ok/log.txt\n  .ok/db.ok:2: \"ok/data/seed.sql\"\nthe project files moved, so the next task run asks for trust again (or run ok trust)\n"
+    );
+}
+
 /// A linked `.ok` with a relative target would dangle one directory
 /// down, and the project would be gone, so promote leaves it alone.
 #[cfg(unix)]

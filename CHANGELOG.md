@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `ok self check` warns about a `\` at the end of a command line that has spaces or tabs after it. Such a `\` does not continue the command: it is passed to the program as an argument, and the next line runs as a separate statement. Remove the spaces, or write `"\\"` to pass a backslash.
 
+### Changed
+
+- `ok self promote` lists the strings and command arguments that still name `ok/` after it moved that directory to `.ok/`, such as a `sources` glob `"ok/**/*.sql"` or an argument `--dir=ok/data`. Before, it reported only the imports that the move broke, and such a path stopped matching without a message. It still changes no file's content.
+
 ### Documentation
 
 - `SPEC.md` no longer contradicts itself or ok in these places. `lines` is lazy only on lazy input (8.3). `args` is also set in a script with `main` (12.3). After the `=>` of a `match` arm `{` starts a block, and before it a record pattern (4.4). `-j` is not a reserved short flag (14.1). `ok self check --strict` exits with 1 only when there are findings (17.1). The source given to `-e` needs no trust (16.1). A task with `outputs` and no `sources` is skipped once its outputs exist (15.6).

@@ -575,6 +575,11 @@ pub fn promote(args: &[String], start: &Path) -> R<Value> {
         }
     }
     let notes = import_notes(&root, root_rel, &moves);
+    let old_dir_notes = if old_used {
+        old_dir_notes(&root, root_rel, &moves)
+    } else {
+        Vec::new()
+    };
 
     let native = |rel: &str| root.join(OkPath::parse(rel).native());
     let mut steps: Vec<Step> = Vec::new();
@@ -654,6 +659,12 @@ pub fn promote(args: &[String], start: &Path) -> R<Value> {
             println!("  {}", crate::error::terminal_safe_line(n));
         }
     }
+    if !old_dir_notes.is_empty() {
+        println!("these still name ok/, which is now .ok/ (check each one):");
+        for n in &old_dir_notes {
+            println!("  {}", crate::error::terminal_safe_line(n));
+        }
+    }
     println!(
         "the project files moved, so the next task run asks for trust again (or run ok trust)"
     );
@@ -718,10 +729,9 @@ fn moved(rel: &str, moves: &[(String, String)]) -> String {
     rel.to_string()
 }
 
-/// The imports that `moves` breaks: in the root file and in the moved ok
-/// files, each import whose path, read from the file's new place, names a
-/// different file than it did. Each note gives the path to write instead.
-fn import_notes(root: &Path, root_rel: &str, moves: &[(String, String)]) -> Vec<String> {
+/// The root file and every ok file under `ok/`, relative to the root and
+/// sorted: the files whose imports and paths a promotion can break.
+fn ok_files_to_review(root: &Path, root_rel: &str) -> Vec<String> {
     let mut files = vec![root_rel.to_string()];
     let mut stack = vec![root.join("ok")];
     while let Some(d) = stack.pop() {
@@ -738,8 +748,104 @@ fn import_notes(root: &Path, root_rel: &str, moves: &[(String, String)]) -> Vec<
         }
     }
     files.sort();
+    files
+}
+
+/// Whether `text` names something in the old `ok/` directory: `ok/` at the
+/// start of a path segment, as in `ok/data/seed.sql`, `./ok/x` or
+/// `--dir=ok/x`, but not `book/x`, `.ok/x` or a URL.
+fn names_old_dir(text: &str) -> bool {
+    if text.contains("://") {
+        return false;
+    }
+    let t = text.replace('\\', "/");
+    t.match_indices("ok/").any(|(i, _)| {
+        t[..i]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !(c.is_alphanumeric() || matches!(c, '.' | '_' | '-')))
+    })
+}
+
+/// Strings and command arguments that name the old `ok/` directory, in the
+/// root file and the moved ok files, one note per source line. Unlike an
+/// import, such a path is not known to be a file name (it may be a glob of
+/// `sources`, an argument of a program, or text), so the notes only ask
+/// for a look; they do not say what to write.
+fn old_dir_notes(root: &Path, root_rel: &str, moves: &[(String, String)]) -> Vec<String> {
+    use crate::lexer::{StrPart, Tok, Token, WordPart};
+    fn scan(tokens: &[Token], hits: &mut Vec<(u32, u32)>) {
+        let mut after_import = false;
+        for t in tokens {
+            match &t.tok {
+                // An import path is relative to its file, and `import_notes`
+                // has already judged it.
+                Tok::Str(parts) if !after_import => {
+                    let mut text = String::new();
+                    for p in parts {
+                        match p {
+                            StrPart::Lit(s) => text.push_str(s),
+                            StrPart::Interp { tokens, .. } => scan(tokens, hits),
+                        }
+                    }
+                    if names_old_dir(&text) {
+                        hits.push((t.span.start, t.span.end));
+                    }
+                }
+                Tok::Command(c) => {
+                    let words = c.words.iter().chain(c.redirects.iter().map(|r| &r.target));
+                    for w in words {
+                        let mut text = String::new();
+                        for p in &w.parts {
+                            match p {
+                                WordPart::Lit { text: s, .. } => text.push_str(s),
+                                WordPart::Interp { tokens, .. }
+                                | WordPart::Spread { tokens, .. } => scan(tokens, hits),
+                            }
+                        }
+                        if names_old_dir(&text) {
+                            hits.push((w.span.start, w.span.end));
+                        }
+                    }
+                    if let Some(with) = &c.with {
+                        scan(with, hits);
+                    }
+                }
+                _ => {}
+            }
+            after_import = matches!(t.tok, Tok::Kw(crate::lexer::Kw::Import));
+        }
+    }
     let mut notes = Vec::new();
-    for old in files {
+    for old in ok_files_to_review(root, root_rel) {
+        let Ok(text) = std::fs::read_to_string(root.join(OkPath::parse(&old).native())) else {
+            continue;
+        };
+        let Ok(lexed) = crate::lexer::lex(0, &text) else {
+            continue;
+        };
+        let mut hits = Vec::new();
+        scan(&lexed.tokens, &mut hits);
+        hits.sort();
+        let new = moved(&old, moves);
+        for (start, end) in hits {
+            let line = text[..start as usize].matches('\n').count() + 1;
+            let shown = text[start as usize..end as usize]
+                .lines()
+                .next()
+                .unwrap_or("");
+            notes.push(format!("{new}:{line}: {shown}"));
+        }
+    }
+    notes
+}
+
+/// The imports that `moves` breaks: in the root file and in the moved ok
+/// files, each import whose path, read from the file's new place, names a
+/// different file than it did. Each note gives the path to write instead.
+fn import_notes(root: &Path, root_rel: &str, moves: &[(String, String)]) -> Vec<String> {
+    let mut notes = Vec::new();
+    for old in ok_files_to_review(root, root_rel) {
         let Ok(text) = std::fs::read_to_string(root.join(OkPath::parse(&old).native())) else {
             continue;
         };

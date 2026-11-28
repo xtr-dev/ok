@@ -275,7 +275,7 @@ ok checks every move before it makes one. If a file would replace an existing fi
 
 An import is relative to the file it is in, so an import in a moved file can point at another place than before. `import "lib/util.ok"` in the file `.ok` means `lib/util.ok`, and in `.ok/ok.ok` it means `.ok/lib/util.ok`. `ok self promote` does not edit your files. It lists each import that changed its meaning, with the path to write instead (here `"../lib/util.ok"`).
 
-Paths in `sources`, in `outputs` and in commands are relative to the project root. They stay correct, unless they name files in `ok/`.
+Paths in `sources`, in `outputs` and in commands are relative to the project root. They stay correct, unless they name files in `ok/`. After it moves `ok/`, `ok self promote` lists each string and command argument that still names `ok/`, with its file and line. Check each one and write `.ok/` where the path means the moved directory.
 
 ok trusts files under their paths, so the project needs [trust](trust.md) again after the move. Review the files and answer the prompt on the next task run, or run `ok trust`.
 
