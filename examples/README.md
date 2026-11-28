@@ -2,8 +2,8 @@
 
 Real-world bash scripts, Makefiles and Python scripts rewritten in ok. Each
 directory holds the original next to the ok version, plus any sample data the
-script reads. They are the design review for milestone M0: if an ok version
-does not read more clearly than its original, the language should change.
+script reads. They test the language's design: if an ok version does not read
+more clearly than its original, the language should change.
 
 The test suite runs 15 of them (`crates/okrun/tests/examples_run.rs`) with
 fake tools in place of `git`, `docker`, `psql` and the rest, so the results

@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `SPEC.md` no longer contradicts itself or ok in these places. `lines` is lazy only on lazy input (8.3). `args` is also set in a script with `main` (12.3). After the `=>` of a `match` arm `{` starts a block, and before it a record pattern (4.4). `-j` is not a reserved short flag (14.1). `ok self check --strict` exits with 1 only when there are findings (17.1). The source given to `-e` needs no trust (16.1). A task with `outputs` and no `sources` is skipped once its outputs exist (15.6).
 - `SPEC.md` no longer says "v1" or refers to the removed brief, and it names 0.4 as the version that still loads the deprecated `ok/` directory.
+- Heading anchors in the guide follow GitHub's rule, so a link between guide pages works on GitHub as well as on okrun.dev. The anchors of 19 headings changed, among them the standard library entries with `_` in their name: `#trim-start` is now `#trim_start`.
 
 ## [0.4.1] - 2026-11-28
 

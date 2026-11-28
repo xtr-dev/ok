@@ -353,7 +353,7 @@ print(before)
 {server: {port: 80}, tags: []}
 ```
 
-Reading a field that does not exist is an error. Its help line lists the record's fields or suggests a close match. Add `?` to get `null` instead (see [null, ?? and ?](#null-and)).
+Reading a field that does not exist is an error. Its help line lists the record's fields or suggests a close match. Add `?` to get `null` instead (see [null, ?? and ?](#null--and-)).
 
 A record pattern on the left of `let` takes the fields you name out of a record. Other fields are ignored, and a pattern can contain another pattern:
 

@@ -346,17 +346,21 @@ pub fn escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// Heading text to a fragment id: lower case, words joined by `-`.
+/// Heading text to a fragment id, by the rule GitHub uses for Markdown
+/// headings, so a link such as `tasks.md#parallel-runs-and---jobs` works
+/// both on the site and when the files are read on GitHub: lower case,
+/// every space becomes `-`, and every other character that is not a
+/// letter, a digit, `-` or `_` is dropped. Runs of `-` are kept.
 fn slugify(text: &str) -> String {
     let mut id = String::new();
     for ch in text.chars() {
-        if ch.is_alphanumeric() {
+        if ch.is_alphanumeric() || ch == '-' || ch == '_' {
             id.extend(ch.to_lowercase());
-        } else if !id.is_empty() && !id.ends_with('-') {
+        } else if ch == ' ' {
             id.push('-');
         }
     }
-    id.trim_end_matches('-').to_string()
+    id
 }
 
 /// Where a Markdown link points on the site. Links between pages are written
