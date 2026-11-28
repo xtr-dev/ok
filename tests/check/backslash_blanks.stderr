@@ -1,0 +1,16 @@
+warning[syntax]: this `\` does not continue the command: spaces follow it
+ --> backslash_blanks.ok:1:17
+  |
+1 | run cargo build \  
+  |                 ^^^
+  |
+  = note: the `\` is passed to the program as an argument, and the command ends on this line
+  = help: remove the spaces after `\` to continue on the next line, or write "\\" to pass a backslash
+error[name]: unknown name `release`
+ --> backslash_blanks.ok:2:5
+  |
+2 |   --release
+  |     ^^^^^^^ not defined here
+  |
+  = help: did you mean `reverse`?
+ok: 1 file checked: 1 error and 1 warning

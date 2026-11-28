@@ -1032,7 +1032,9 @@ Rules:
     and `if x { run make }` work.
 11. A `\` as the last character of a line continues the command on the next
     line. At the end of the file it continues onto nothing, as it would
-    with a final newline.
+    with a final newline. A `\` followed by spaces or tabs is not the last
+    character of its line: it is passed as an argument, and the command
+    ends on that line. `ok self check` warns about it (17.1).
 12. `$(` and backticks are errors suggesting `{run ...}` interpolation or a
     `let`.
 13. `2>`, `2>>` and `2>&1` are stderr redirects only where a word would
@@ -2513,7 +2515,13 @@ The check does not follow calls: a function with an unknown name in its body
 is reported even if nothing calls it.
 
 **Lints** are warnings about code that runs but is almost certainly wrong.
-There is one: **swapped `write` arguments** (12.1). `write(value, path)` is
+There are two.
+
+**A `\` followed by blanks at the end of a line** (9.2 rule 11) is reported
+when it ends the last word of a command and is not quoted. It looks like a
+line continuation and is not one.
+
+**Swapped `write` arguments** (12.1): `write(value, path)` is
 reported when its first argument is a string or `path(...)` literal that
 looks like a file name (no spaces or newlines, and the extension of a format
 of 13.1, `.txt`, `.log`, `.md` or `.gz`) and its second does not, as in

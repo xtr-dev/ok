@@ -966,6 +966,10 @@ impl Checker<'_> {
                 self.expr(lhs);
                 self.stage(lhs, stage, e.span);
             }
+            ExprKind::Run(cmd) => {
+                self.backslash_before_blanks(cmd);
+                walk_children(e, self);
+            }
             _ => walk_children(e, self),
         }
     }
@@ -1313,6 +1317,47 @@ impl Checker<'_> {
         }
     }
 
+    /// The lint for a `\\` that is meant to continue a command and does not,
+    /// because blanks follow it before the end of the line (SPEC.md 9.2
+    /// rule 11). The blanks are invisible in an editor, and with them the
+    /// command runs with `\\` as an argument and without the next line.
+    fn backslash_before_blanks(&mut self, cmd: &Command) {
+        let Some(end) = cmd
+            .words
+            .iter()
+            .chain(cmd.redirects.iter().map(|(_, w)| w))
+            .map(|w| w.span)
+            .max_by_key(|s| s.end)
+        else {
+            return;
+        };
+        let (before, after) = self.text.split_at(end.end as usize);
+        let blanks = after.len() - after.trim_start_matches([' ', '\t']).len();
+        let rest = &after[blanks..];
+        // A quoted word ends in its quote, so a word that ends in `\\` in the
+        // source ends in an unquoted one.
+        if !before.ends_with('\\')
+            || blanks == 0
+            || !(rest.is_empty() || rest.starts_with('\n') || rest.starts_with("\r\n"))
+        {
+            return;
+        }
+        let span = Span {
+            start: end.end - 1,
+            end: end.end + blanks as u32,
+            ..end
+        };
+        let e = OkError::at(
+            ErrKind::Syntax,
+            span,
+            "this `\\` does not continue the command: spaces follow it",
+        )
+        .with_note("the `\\` is passed to the program as an argument, and the command ends on this line")
+        .with_help("remove the spaces after `\\` to continue on the next line, or write \"\\\\\" to pass a backslash")
+        .as_warning();
+        self.report(e);
+    }
+
     /// The lint for `write(path, value)` (SPEC.md 12.1): `write` takes the
     /// value first.
     fn swapped_write(&mut self, a: &CallArgs, span: Span) {
@@ -1560,6 +1605,21 @@ mod tests {
             "print(\"x\".split(\",\", 1))\n",
             "`split` takes 1 to 2 arguments, got 3",
         );
+    }
+
+    #[test]
+    fn backslash_before_blanks_is_a_warning() {
+        let want = "warning syntax: this `\\` does not continue the command";
+        one("run cargo build \\ \n", want);
+        one("run cargo build \\\t\r\nprint(1)\n", want);
+        one("run cargo build\\  ", want);
+        one("run cat < in\\ \n", want);
+        // A continuation, a quoted backslash, and a `\\` inside the line.
+        clean("run cargo build \\\n  --release\n");
+        clean("run echo \"\\\\\" \n");
+        clean("run echo '\\' \n");
+        clean("run dir C:\\ x \n");
+        clean("run echo a\\ | upper\n");
     }
 
     #[test]

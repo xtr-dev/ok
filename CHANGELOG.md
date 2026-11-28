@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `ok self check` warns about a `\` at the end of a command line that has spaces or tabs after it. Such a `\` does not continue the command: it is passed to the program as an argument, and the next line runs as a separate statement. Remove the spaces, or write `"\\"` to pass a backslash.
+
 ## [0.4.1] - 2026-11-28
 
 A bug fix for `zip`, and a revision of the guide, the specification's wording and the comments in the source. No script or project needs changes.

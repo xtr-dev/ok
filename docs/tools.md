@@ -113,7 +113,7 @@ Running the script would find only the first problem, and only when `args` is no
 - Wrong arguments in a call of a function that the checker knows: a `fn` of the file or of an import, a closure bound with `let`, or a builtin. It reports too many or too few positional arguments, a missing required flag, and a named argument that is not a flag of the function.
 - An import of a file that does not exist.
 
-The checker also has one lint, which is a warning about code that runs but is almost certainly wrong. The lint reports a call of `write` with its arguments swapped, as in the sample above.
+The checker also has two lints, which are warnings about code that runs but is almost certainly wrong. One reports a call of `write` with its arguments swapped, as in the sample above. The other reports a `\` at the end of a command line that has spaces or tabs after it. Such a `\` does not continue the command on the next line. It is passed to the program as an argument.
 
 ### What the checker does not find
 

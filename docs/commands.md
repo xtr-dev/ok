@@ -26,7 +26,7 @@ ok splits a command into arguments by these rules:
 - `*`, `?`, `~`, `$` and `[ ]` are ordinary characters. ok does not expand file patterns, `~` or variables, so `run ls *.txt` passes the text `*.txt` to `ls`. Use [`glob`](files.md#finding-files-with-glob) to find files.
 - A backslash is an ordinary character too, so `C:\tools\x.exe` works as written.
 - A `#` at the start of a word starts a comment. In the middle of a word, as in `http://host/#top`, it is literal.
-- A `\` at the very end of a line continues the command on the next line.
+- A `\` at the very end of a line continues the command on the next line. A `\` with spaces after it does not, and `ok self check` warns about it.
 
 Shell syntax that would mean something else in ok is an error that says what to write instead. This is the error for joining commands with `&&`:
 
